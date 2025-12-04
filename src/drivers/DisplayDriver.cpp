@@ -3,7 +3,7 @@
 // Constructor: Initialize the display object with pin definitions
 // GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
 DisplayDriver::DisplayDriver()
-    : display(GxEPD2_420_SSD1619(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
+    : display(GxEPD2_420_Z96(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
 
 void DisplayDriver::init() {
   // SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS); // Initialize SPI if needed

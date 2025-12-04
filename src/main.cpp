@@ -35,55 +35,57 @@ void setup() {
 
   pinMode(SD_EN, OUTPUT);
   pinMode(SD_CS, OUTPUT);
-
+  digitalWrite(SD_EN, SD_PWD_OFF);
   // Init Drivers
   displayDriver.init();
   displayDriver.showMessage("Initializing...");
-  sdCardDriver.begin();
-
-  if (!rtcDriver.init())
-    Serial.println("RTC Init Failed");
-  if (!sensorDriver.init())
-    Serial.println("Sensor Init Failed");
+  // sdCardDriver.begin();
+  // Wire.begin(I2C_SDA, I2C_SCL);
+  // if (!rtcDriver.init()){
+  //   Serial.println("RTC Init Failed");
+  //   return;
+  // }
+  // if (!sensorDriver.init())
+  //   Serial.println("Sensor Init Failed");
   // Radio and Audio init might need to be delayed or handled carefully
   // radioDriver.init();
   // audioDriver.init();
 
   // Init Managers
-  configManager.begin();
-  connectionManager.begin(&configManager, &rtcDriver);
-  weatherManager.begin(&configManager);
+  // configManager.begin();
+  // connectionManager.begin(&configManager, &rtcDriver);
+  // weatherManager.begin(&configManager);
 
-  uiManager.init();
+  // uiManager.init();
 
   // Check WiFi
-  if (configManager.config.wifi_ssid.length() == 0) {
-    displayDriver.showMessage("Setup WiFi: Connect to ESP32-Clock");
-  }
+  // if (configManager.config.wifi_ssid.length() == 0) {
+    // displayDriver.showMessage("Setup WiFi: Connect to ESP32-Clock");
+  // }
 }
 
 void loop() {
-  connectionManager.loop();
-  weatherManager.update();
-  alarmManager.check(rtcDriver.getTime());
-  uiManager.update();
-  audioDriver.loop(); // For audio processing
+  // connectionManager.loop();
+  // weatherManager.update();
+  // alarmManager.check(rtcDriver.getTime());
+  // uiManager.update();
+  // audioDriver.loop(); // For audio processing
 
   // Handle Alarm Ringing
-  if (alarmManager.isRinging()) {
-    if (!audioDriver.isPlaying()) {
-      // Ensure audio is init
-      audioDriver.init();
-      audioDriver.play("/alarm.mp3");
-    }
-  }
+  // if (alarmManager.isRinging()) {
+  //   if (!audioDriver.isPlaying()) {
+  //     // Ensure audio is init
+  //     audioDriver.init();
+  //     audioDriver.play("/alarm.mp3");
+  //   }
+  // }
 
   // Simple Serial Input for testing
-  if (Serial.available()) {
-    char c = Serial.read();
-    if (c == 'm')
-      uiManager.handleInput(1); // Menu
-  }
+  // if (Serial.available()) {
+  //   char c = Serial.read();
+  //   if (c == 'm')
+  //     uiManager.handleInput(1); // Menu
+  // }
 
   delay(10);
 }
