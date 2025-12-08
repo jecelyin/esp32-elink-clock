@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../drivers/RadioDriver.h"
+#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
@@ -39,6 +40,7 @@ public:
       display->u8g2Fonts.setCursor(50, 250);
       display->u8g2Fonts.print("[<] Seek Down   [>] Seek Up");
 
+      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

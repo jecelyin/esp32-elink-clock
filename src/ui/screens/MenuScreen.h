@@ -2,6 +2,7 @@
 
 #include "../Screen.h"
 #include "../UIManager.h"
+#include "../../managers/BusManager.h"
 
 class MenuScreen : public Screen {
 public:
@@ -75,6 +76,7 @@ public:
         display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
       }
 
+      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

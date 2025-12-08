@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../managers/WeatherManager.h"
+#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
@@ -44,6 +45,7 @@ public:
       display->u8g2Fonts.print("Forecast: ");
       display->u8g2Fonts.print(weather->data.forecast_weather);
 
+      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

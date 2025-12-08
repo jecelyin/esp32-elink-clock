@@ -1,16 +1,16 @@
 #include "DisplayDriver.h"
+#include "../managers/BusManager.h"
 
 // Constructor: Initialize the display object with pin definitions
 // GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
 DisplayDriver::DisplayDriver()
-    : display(GxEPD2_420_Z96(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
+    : display(EPD2_DRV(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
 
 void DisplayDriver::init() {
-  // SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS); // Initialize SPI if needed
-  // SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
-  // SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  BusManager::getInstance().requestDisplay();
+  
   SPISettings spisettings(4000000, MSBFIRST, SPI_MODE0);
-  SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
+  // SPI.begin is handled by BusManager
   display.epd2.selectSPI(SPI, spisettings);
   // explicitly, GxEPD2 usually handles it if standard pins
   // display.init(115200);
@@ -25,6 +25,7 @@ void DisplayDriver::init() {
 }
 
 void DisplayDriver::clear() {
+  BusManager::getInstance().requestDisplay();
   display.setFullWindow();
   display.firstPage();
   do {
@@ -33,11 +34,13 @@ void DisplayDriver::clear() {
 }
 
 void DisplayDriver::update() {
+  BusManager::getInstance().requestDisplay();
   // This might be used for partial updates or triggering a refresh
   display.display();
 }
 
 void DisplayDriver::showMessage(const char *msg) {
+  BusManager::getInstance().requestDisplay();
   display.setFullWindow();
   display.firstPage();
   do {

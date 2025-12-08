@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../managers/ConfigManager.h"
+#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
@@ -38,6 +39,7 @@ public:
       display->u8g2Fonts.print("Format: ");
       display->u8g2Fonts.print(config->config.time_format_24 ? "24H" : "12H");
 
+      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

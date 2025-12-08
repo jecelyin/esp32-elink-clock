@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../drivers/AudioDriver.h"
+#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
@@ -42,6 +43,7 @@ public:
       display->u8g2Fonts.setCursor(200, 200);
       display->u8g2Fonts.print("F"); // Stop
 
+      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

@@ -1,9 +1,11 @@
 #include "RtcDriver.h"
+#include "../managers/BusManager.h"
 
 RtcDriver::RtcDriver() {}
 
 bool RtcDriver::init() {
-  Wire.begin();
+  BusManager::getInstance().requestI2C();
+  // Wire.begin(); // Handled by BusManager
 
   // Check Voltage Low Flag (VLF) [cite: 1278]
   // Register 0x1E, Bit 1. If 1, data is invalid (power loss).
@@ -31,6 +33,7 @@ DateTime RtcDriver::getTime() {
   DateTime dt;
 
   // Burst read from 0x10 to 0x16 [cite: 507]
+  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(RX8010_REG_SEC);
   Wire.endTransmission();
@@ -63,6 +66,7 @@ void RtcDriver::setTime(DateTime dt) {
   writeRegister(RX8010_REG_CTRL, ctrl | RX8010_CTRL_STOP);
 
   // 2. Write time data
+  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(RX8010_REG_SEC);
 
@@ -233,6 +237,7 @@ uint8_t RtcDriver::bcdToDec(uint8_t val) {
 }
 
 uint8_t RtcDriver::readRegister(uint8_t reg) {
+  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(reg);
   Wire.endTransmission();
@@ -241,6 +246,7 @@ uint8_t RtcDriver::readRegister(uint8_t reg) {
 }
 
 void RtcDriver::writeRegister(uint8_t reg, uint8_t val) {
+  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(reg);
   Wire.write(val);

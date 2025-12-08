@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../drivers/RtcDriver.h"
+#include "../../managers/BusManager.h"
 #include "../../managers/ConnectionManager.h"
 #include "../../managers/WeatherManager.h"
 #include "../Screen.h"
@@ -63,6 +64,7 @@ public:
       display->u8g2Fonts.print("TODO:");
       display->u8g2Fonts.setCursor(200, 220);
       display->u8g2Fonts.print("- Buy milk");
+      BusManager::getInstance().requestDisplay();
 
       // display->display.refresh();
     } while (display->display.nextPage());

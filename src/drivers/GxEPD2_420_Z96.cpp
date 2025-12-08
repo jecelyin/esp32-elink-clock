@@ -336,10 +336,10 @@ void GxEPD2_420_Z96::_InitDisplay()
   _writeData(0x2B);    // (HEIGHT - 1) % 256
   _writeData(0x01);    // (HEIGHT - 1) / 256
   _writeData(0x00);
-  _writeCommand(0x3C); //BorderWavefrom
-  _writeData(0x03);
-  _writeCommand(0x2C); //VCOM Voltage
-  _writeData(0x70);    // NA ??
+  _writeCommand(0x3C); //BorderWavefrom 影响背景
+  _writeData(0x03); // 0x00: 黑边, 0x01: 白边, 0x03: 可能变灰、留影
+  _writeCommand(0x2C); //VCOM Voltage 影响背景
+  _writeData(0x44);    // 0x08~0x78 电压 -0.2V ~ -3V
   _writeCommand(0x03); //Gate Driving voltage Control
   _writeData(0x15);    // 19V
   _writeCommand(0x04); //Source Driving voltage Control
@@ -347,7 +347,7 @@ void GxEPD2_420_Z96::_InitDisplay()
   _writeData(0xA8);    // VSH2 5V
   _writeData(0x32);    // VSL -15V
   _writeCommand(0x3A); //Dummy Line
-  _writeData(0x30);
+  _writeData(0x2C);
   _writeCommand(0x3B); //Gate time
   _writeData(0x0A);
   _setPartialRamArea(0, 0, WIDTH, HEIGHT);

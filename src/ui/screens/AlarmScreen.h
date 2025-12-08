@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../managers/AlarmManager.h"
+#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
@@ -41,6 +42,7 @@ public:
       display->u8g2Fonts.setCursor(50, 280);
       display->u8g2Fonts.print("Press MENU to return");
 
+      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

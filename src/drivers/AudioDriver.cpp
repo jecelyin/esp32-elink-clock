@@ -1,4 +1,5 @@
 #include "AudioDriver.h"
+#include "../managers/BusManager.h"
 
 AudioDriver::AudioDriver() {}
 
@@ -36,6 +37,7 @@ void AudioDriver::loop() { audio.loop(); }
 bool AudioDriver::isPlaying() { return audio.isRunning(); }
 
 void AudioDriver::initES8311() {
+  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(ES8311_ADDR);
   if (Wire.endTransmission() != 0) {
     Serial.println("ES8311 not found!");
@@ -65,6 +67,7 @@ void AudioDriver::initES8311() {
 }
 
 void AudioDriver::writeES8311(uint8_t reg, uint8_t val) {
+  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(ES8311_ADDR);
   Wire.write(reg);
   Wire.write(val);

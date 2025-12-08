@@ -6,6 +6,7 @@
 #include "drivers/SensorDriver.h"
 #include "drivers/SDCardDriver.h"
 #include "managers/AlarmManager.h"
+#include "managers/BusManager.h"
 #include "managers/ConfigManager.h"
 #include "managers/ConnectionManager.h"
 #include "managers/WeatherManager.h"
@@ -33,6 +34,9 @@ void setup() {
   Serial.begin(115200);
   Serial.println("System Starting...");
 
+  // Init Bus Manager (Arbitration for SPI/I2C on 18/23)
+  BusManager::getInstance().begin();
+
   pinMode(SD_EN, OUTPUT);
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_OFF);
@@ -43,7 +47,7 @@ void setup() {
   // i2c 需要拉高CODEC_EN
   pinMode(CODEC_EN, OUTPUT);
   digitalWrite(CODEC_EN, HIGH);
-  Wire.begin(I2C_SDA, I2C_SCL);
+  // Wire.begin() is handled by BusManager on demand
   // scan i2c devices
   // int nDevices = 0;
   // for (int i = 1; i < 127; i++) {
