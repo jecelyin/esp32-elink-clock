@@ -1,8 +1,10 @@
 #include "ConnectionManager.h"
+#include <WiFiManager.h>
 
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 8 * 3600; // UTC+8 for China
 const int daylightOffset_sec = 0;
+WiFiManager wifiManager;
 
 ConnectionManager::ConnectionManager() {}
 
@@ -10,10 +12,11 @@ void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
   configMgr = config;
   rtcDriver = rtc;
 
-  WiFi.mode(WIFI_STA);
+  // WiFi.mode(WIFI_STA);
   if (configMgr->config.wifi_ssid.length() > 0) {
-    WiFi.begin(configMgr->config.wifi_ssid.c_str(),
-               configMgr->config.wifi_pass.c_str());
+    wifiManager.autoConnect(
+      configMgr->config.wifi_ssid.c_str(),
+      configMgr->config.wifi_pass.c_str());
   } else {
     startAP();
   }
@@ -31,10 +34,9 @@ void ConnectionManager::loop() {
 bool ConnectionManager::isConnected() { return WiFi.status() == WL_CONNECTED; }
 
 void ConnectionManager::startAP() {
-  WiFi.softAP("ESP32-Clock", "12345678");
-  // Here we would start a web server to handle config
-  // For now, we assume user will set via serial or hardcode for testing if UI
-  // not ready
+  // WiFi.softAP("ESP32-Clock", "12345678");
+  
+
 }
 
 void ConnectionManager::syncTime() {

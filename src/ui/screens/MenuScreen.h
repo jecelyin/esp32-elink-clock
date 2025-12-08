@@ -8,6 +8,7 @@ public:
   MenuScreen() { menuIndex = 0; }
 
   void draw(DisplayDriver *display) override {
+    Serial.println("Drawing Menu Screen");
     display->display.setFullWindow();
     display->display.firstPage();
     do {

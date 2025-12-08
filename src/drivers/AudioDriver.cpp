@@ -3,8 +3,13 @@
 AudioDriver::AudioDriver() {}
 
 bool AudioDriver::init() {
+  pinMode(AMP_EN, OUTPUT);
+  // pinMode(CODEC_EN, OUTPUT);
+  digitalWrite(AMP_EN, LOW);
+  // 必须要开启ES8311才能使I2C正常工作
+  // digitalWrite(CODEC_EN, HIGH);
   // Initialize ES8311 Codec
-  initES8311();
+  // initES8311();
 
   // Initialize I2S Audio
   audio.setPinout(I2S_BCK, I2S_WS, I2S_DOUT);

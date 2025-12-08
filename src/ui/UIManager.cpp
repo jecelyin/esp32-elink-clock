@@ -37,8 +37,6 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
 }
 
 void UIManager::init() {
-  display->init();
-  display->clear();
   if (currentScreenObj)
     currentScreenObj->init();
 }

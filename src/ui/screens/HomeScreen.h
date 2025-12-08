@@ -18,7 +18,7 @@ public:
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
-#ifdef LIVE
+
       // Status Bar
       drawStatusBar(display);
 
@@ -56,7 +56,7 @@ public:
       display->u8g2Fonts.setCursor(60, 230);
       display->u8g2Fonts.print(weather->data.humidity);
       display->u8g2Fonts.print("%");
-#endif
+
       // Todo List
       display->u8g2Fonts.setFont(u8g2_font_helvB12_tf);
       display->u8g2Fonts.setCursor(200, 200);
@@ -64,6 +64,7 @@ public:
       display->u8g2Fonts.setCursor(200, 220);
       display->u8g2Fonts.print("- Buy milk");
 
+      // display->display.refresh();
     } while (display->display.nextPage());
   }
 
