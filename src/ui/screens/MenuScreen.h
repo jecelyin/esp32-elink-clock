@@ -3,10 +3,11 @@
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../../managers/BusManager.h"
+#include "../components/StatusBar.h"
 
 class MenuScreen : public Screen {
 public:
-  MenuScreen() { menuIndex = 0; }
+  MenuScreen(StatusBar *statusBar) : statusBar(statusBar) { menuIndex = 0; }
 
   void draw(DisplayDriver *display) override {
     Serial.println("Drawing Menu Screen");
@@ -14,6 +15,8 @@ public:
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
+
+      statusBar->draw(display);
 
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
       display->u8g2Fonts.setCursor(150, 40);
@@ -115,4 +118,5 @@ public:
 
 private:
   int menuIndex;
+  StatusBar *statusBar;
 };

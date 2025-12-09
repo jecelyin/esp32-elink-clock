@@ -2,18 +2,20 @@
 
 #include "../../drivers/RadioDriver.h"
 #include "../../managers/BusManager.h"
+#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
 class RadioScreen : public Screen {
 public:
-  RadioScreen(RadioDriver *radio) : radio(radio) {}
+  RadioScreen(RadioDriver *radio, StatusBar *statusBar) : radio(radio), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
+      statusBar->draw(display);
 
       // Header
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
@@ -57,4 +59,5 @@ public:
 
 private:
   RadioDriver *radio;
+  StatusBar *statusBar;
 };

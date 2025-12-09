@@ -2,18 +2,20 @@
 
 #include "../../managers/AlarmManager.h"
 #include "../../managers/BusManager.h"
+#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
 class AlarmScreen : public Screen {
 public:
-  AlarmScreen(AlarmManager *alarmMgr) : alarmMgr(alarmMgr) {}
+  AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar) : alarmMgr(alarmMgr), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
+      statusBar->draw(display);
 
       // Header
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
@@ -54,4 +56,5 @@ public:
 
 private:
   AlarmManager *alarmMgr;
+  StatusBar *statusBar;
 };

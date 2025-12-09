@@ -2,18 +2,20 @@
 
 #include "../../managers/ConfigManager.h"
 #include "../../managers/BusManager.h"
+#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
 class SettingsScreen : public Screen {
 public:
-  SettingsScreen(ConfigManager *config) : config(config) {}
+  SettingsScreen(ConfigManager *config, StatusBar *statusBar) : config(config), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
+      statusBar->draw(display);
 
       // Header
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
@@ -51,4 +53,5 @@ public:
 
 private:
   ConfigManager *config;
+  StatusBar *statusBar;
 };

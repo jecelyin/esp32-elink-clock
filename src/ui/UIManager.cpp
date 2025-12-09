@@ -15,14 +15,16 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
     : display(disp), rtc(rtc), weather(weather), conn(conn), alarmMgr(alarm),
       radio(radio), audio(audio), config(config) {
 
+  statusBar = new StatusBar(conn, rtc);
+
   // Create Screens
-  homeScreen = new HomeScreen(rtc, weather, conn);
-  menuScreen = new MenuScreen();
-  alarmScreen = new AlarmScreen(alarmMgr);
-  radioScreen = new RadioScreen(radio);
-  musicScreen = new MusicScreen(audio);
-  weatherScreen = new WeatherScreen(weather);
-  settingsScreen = new SettingsScreen(config);
+  homeScreen = new HomeScreen(rtc, weather, statusBar);
+  menuScreen = new MenuScreen(statusBar);
+  alarmScreen = new AlarmScreen(alarmMgr, statusBar);
+  radioScreen = new RadioScreen(radio, statusBar);
+  musicScreen = new MusicScreen(audio, statusBar);
+  weatherScreen = new WeatherScreen(weather, statusBar);
+  settingsScreen = new SettingsScreen(config, statusBar);
 
   // Set UIManager reference
   homeScreen->setUIManager(this);

@@ -4,13 +4,14 @@
 #include "../../managers/BusManager.h"
 #include "../../managers/ConnectionManager.h"
 #include "../../managers/WeatherManager.h"
+#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
 class HomeScreen : public Screen {
 public:
-  HomeScreen(RtcDriver *rtc, WeatherManager *weather, ConnectionManager *conn)
-      : rtc(rtc), weather(weather), conn(conn) {}
+  HomeScreen(RtcDriver *rtc, WeatherManager *weather, StatusBar *statusBar)
+      : rtc(rtc), weather(weather), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     Serial.println("Drawing Home Screen");
@@ -21,7 +22,7 @@ public:
       display->display.fillScreen(GxEPD_WHITE);
 
       // Status Bar
-      drawStatusBar(display);
+      statusBar->draw(display);
 
       DateTime now = rtc->getTime();
 
@@ -79,15 +80,7 @@ public:
 private:
   RtcDriver *rtc;
   WeatherManager *weather;
-  ConnectionManager *conn;
+  StatusBar *statusBar;
 
-  void drawStatusBar(DisplayDriver *display) {
-    display->u8g2Fonts.setFont(u8g2_font_open_iconic_embedded_2x_t);
-    display->u8g2Fonts.setCursor(370, 20);
-    if (conn->isConnected()) {
-      display->u8g2Fonts.print("P"); // WiFi Icon
-    } else {
-      display->u8g2Fonts.print("Q"); // No WiFi
-    }
-  }
+
 };

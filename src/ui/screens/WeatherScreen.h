@@ -2,18 +2,20 @@
 
 #include "../../managers/WeatherManager.h"
 #include "../../managers/BusManager.h"
+#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
 class WeatherScreen : public Screen {
 public:
-  WeatherScreen(WeatherManager *weather) : weather(weather) {}
+  WeatherScreen(WeatherManager *weather, StatusBar *statusBar) : weather(weather), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
+      statusBar->draw(display);
 
       // Header
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
@@ -57,4 +59,5 @@ public:
 
 private:
   WeatherManager *weather;
+  StatusBar *statusBar;
 };

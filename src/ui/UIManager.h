@@ -17,7 +17,11 @@ class WeatherScreen;
 #include "../drivers/AudioDriver.h"
 #include "../drivers/RadioDriver.h"
 #include "../managers/AlarmManager.h"
+#include "../drivers/AudioDriver.h"
+#include "../drivers/RadioDriver.h"
+#include "../managers/AlarmManager.h"
 #include "../managers/ConfigManager.h"
+#include "components/StatusBar.h"
 
 enum ScreenState {
   SCREEN_HOME,
@@ -61,4 +65,5 @@ private:
   RadioDriver *radio;
   AudioDriver *audio;
   ConfigManager *config;
+  StatusBar *statusBar;
 };

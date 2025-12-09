@@ -2,18 +2,20 @@
 
 #include "../../drivers/AudioDriver.h"
 #include "../../managers/BusManager.h"
+#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 
 class MusicScreen : public Screen {
 public:
-  MusicScreen(AudioDriver *audio) : audio(audio) {}
+  MusicScreen(AudioDriver *audio, StatusBar *statusBar) : audio(audio), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
+      statusBar->draw(display);
 
       // Header
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
@@ -56,4 +58,5 @@ public:
 
 private:
   AudioDriver *audio;
+  StatusBar *statusBar;
 };
