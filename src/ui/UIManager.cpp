@@ -16,9 +16,13 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
       radio(radio), audio(audio), config(config) {
 
   statusBar = new StatusBar(conn, rtc);
+  todoMgr = new TodoManager();
+
+  
+  webMgr = new WebManager(todoMgr);
 
   // Create Screens
-  homeScreen = new HomeScreen(rtc, weather, statusBar);
+  homeScreen = new HomeScreen(rtc, weather, statusBar, todoMgr);
   menuScreen = new MenuScreen(statusBar);
   alarmScreen = new AlarmScreen(alarmMgr, statusBar);
   radioScreen = new RadioScreen(radio, statusBar);
@@ -39,6 +43,9 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
 }
 
 void UIManager::init() {
+  todoMgr->begin(); // Initialize TodoManager
+  // webMgr->begin(); // Start Web Server
+
   if (currentScreenObj)
     currentScreenObj->init();
 }
@@ -58,6 +65,8 @@ void UIManager::update() {
 
   if (currentScreenObj)
     currentScreenObj->update();
+    
+  if (webMgr) webMgr->loop();
 }
 
 void UIManager::handleInput(int key) {
