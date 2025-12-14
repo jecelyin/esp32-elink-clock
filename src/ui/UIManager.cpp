@@ -51,17 +51,12 @@ void UIManager::init() {
 }
 
 void UIManager::update() {
-  // Refresh logic (e.g. every minute for clock)
-  static unsigned long lastRefresh = 0;
-  // Force refresh every minute or if requested (not impl)
-  // For now, let's just redraw if needed.
-  // E-Ink shouldn't refresh too often.
-
-  if (millis() - lastRefresh > 60000 || lastRefresh == 0) {
-    if (currentScreenObj)
-      currentScreenObj->draw(display);
-    lastRefresh = millis();
-  }
+  // Refresh logic is now handled by individual screens
+  // if (millis() - lastRefresh > 60000 || lastRefresh == 0) {
+  //   if (currentScreenObj)
+  //     currentScreenObj->draw(display);
+  //   lastRefresh = millis();
+  // }
 
   if (currentScreenObj)
     currentScreenObj->update();

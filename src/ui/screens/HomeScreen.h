@@ -31,216 +31,83 @@ public:
       : rtc(rtc), weather(weather), sensor(sensor), statusBar(statusBar),
         todoMgr(todoMgr) {}
 
+  void init() override {
+    fullRefreshNeeded = true;
+    lastMinute = -1;
+    lastTasksMinute = -1;
+  }
+
+  void enter() override {
+    fullRefreshNeeded = true;
+    lastMinute = -1;
+    lastTasksMinute = -1;
+  }
+
   void draw(DisplayDriver *displayDrv) override {
-    Serial.println("Drawing Home Screen");
-    auto &display = displayDrv->display;
-    auto &u8g2 = displayDrv->u8g2Fonts;
-    display.setFullWindow();
-    display.firstPage();
-    do {
-      // Status Bar
-      statusBar->draw(displayDrv);
+    // Full refresh entry point
+    Serial.println("HomeScreen draw called");
+    fullRefreshNeeded = true;
+    renderAll(displayDrv);
+    fullRefreshNeeded = false;
+    updateState();
+  }
 
-      DateTime now = rtc->getTime();
+  void update() override {
+    if (!uiManager) return;
+    DisplayDriver *displayDrv = uiManager->getDisplayDriver();
+    if (!displayDrv) return;
 
-      u8g2.setForegroundColor(GxEPD_BLACK);
-      u8g2.setBackgroundColor(GxEPD_WHITE);
+    DateTime now = rtc->getTime();
+    
+    // Ensure full refresh if requested (e.g. at startup)
+    if (fullRefreshNeeded) {
+        draw(displayDrv);
+        return;
+    }
 
-      // ==========================================
-      // 区域 2: 时间与天气 (y: 24 -> 199)
-      // ==========================================
+    bool needsUpdate = false;
 
-      // 分割线
-      display.drawLine(0, 199, 400, 199, GxEPD_BLACK);
-      display.drawLine(0, 200, 400, 200, GxEPD_BLACK); // 双线加粗
+    // Check Time (every minute)
+    if (now.minute != lastMinute) {
+      renderTimePartial(displayDrv);
+      lastMinute = now.minute;
+    }
 
-      // 左侧：时间 (x: 0-280)
-      // -------------------
+    // Check Sensor (threshold based)
+    float temp, hum;
+    sensor->readData(temp, hum);
+    if (abs(temp - lastTemp) > 0.4 || abs(hum - lastHum) > 1.0) {
+      renderSensorPartial(displayDrv);
+      lastTemp = temp;
+      lastHum = hum;
+    }
 
-      // 时间 (Logisoso 字体非常适合做大数字)
-      u8g2.setFont(u8g2_font_logisoso92_tn);
-      char timeStr[6];
-      sprintf(timeStr, "%02d:%02d", now.hour, now.minute);
-      int timeWidth = u8g2.getUTF8Width(timeStr);
-      u8g2.setCursor((280 - timeWidth) / 2, 150); // 居中
-      u8g2.print(timeStr);
+    // Check Weather
+    if (weather->data.temp != lastWeatherTemp || 
+        weather->data.weather != lastWeatherStr ||
+        String(weather->data.icon_str) != lastWeatherIcon) {
+        renderWeatherPartial(displayDrv);
+        lastWeatherTemp = weather->data.temp;
+        lastWeatherStr = weather->data.weather;
+        lastWeatherIcon = weather->data.icon_str;
+    }
 
-      // 日期 (中文)
-      char dateStr[18];
-      sprintf(dateStr, "%04d年%02d月%02d日", now.year + 2000, now.month,
-              now.day);
-      int16_t w = u8g2.getUTF8Width(dateStr);
-      u8g2.setFont(u8g2_font_wqy16_t_gb2312); // 文泉驿 16pt 中文
-      u8g2.setCursor(22, 183);
-      u8g2.print(dateStr);
+    // Check Tasks (Count change or minute change which affects countdown)
+    std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
+    // Note: Minute change (handled above) might affect countdowns, but we need to redraw tasks if minute changed.
+    // Ideally we checked minute above. If minute changed, we ALSO need to redraw tasks if they have countdowns.
+    // Logic: If minute changed OR tasks content changed.
+    // Tasks content change is hard to check deeply, checking size for now.
+    // For countdowns, we should update tasks every minute.
+    
+    // Simplification: Update tasks if minute changed OR size changed.
+    bool tasksNeedUpdate = (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount);
 
-      // 星期 (黑底白字胶囊样式)
-      char *weekdayStrs[] = {"日", "一", "二", "三", "四", "五", "六"};
-      char weekdayStr[7];
-      sprintf(weekdayStr, "周%s", weekdayStrs[now.week]);
-      w = u8g2.getUTF8Width(weekdayStr);
-      display.fillRect(190, 167, 60, 20, GxEPD_BLACK);
-      u8g2.setForegroundColor(GxEPD_WHITE);
-      u8g2.setBackgroundColor(GxEPD_BLACK);
-      u8g2.setCursor(190 + w / 2, 182);
-      u8g2.print(weekdayStr);
-      u8g2.setForegroundColor(GxEPD_BLACK);
-      u8g2.setBackgroundColor(GxEPD_WHITE);
-
-      // 右侧：天气 (x: 280-400)
-      // ---------------------
-      display.drawLine(280, 24, 280, 200, GxEPD_BLACK); // 竖向分割线
-
-      // 1. 室内 (y: 24-82)
-      // Read Sensor
-      float indoorTemp = 0, indoorHum = 0;
-      sensor->readData(indoorTemp, indoorHum);
-
-      // calculated center y for single line: (24+82)/2 = 53
-
-      // --- Temperature (Left) ---
-      // Icon: Thermometer (x: ~285, y: centered ~53)
-      int iconY = 45;
-      display.drawInvertedBitmap(285, iconY, Bitmap_tempSHT30, 16, 16,
-                                 GxEPD_BLACK);
-
-      // Value
-      u8g2.setFont(u8g2_font_helvB14_tr);
-      u8g2.setCursor(303, iconY + 14); // Shifted right slightly for 16px icon
-      u8g2.print(indoorTemp, 1);       // 25.5
-
-      // Degree symbol
-      int tWidth = u8g2.getUTF8Width(String(indoorTemp, 1).c_str());
-      u8g2.drawGlyph(303 + tWidth + 2, iconY + 12, 176);
-
-      // --- Humidity (Right) ---
-      // Icon: Droplet (x: ~350)
-      int humX = 340;
-      display.drawInvertedBitmap(humX, iconY, Bitmap_humiditySHT30, 16, 16,
-                                 GxEPD_BLACK);
-
-      // Value
-      u8g2.setCursor(humX + 18, iconY + 14); // Icon is 16px wide
-
-      u8g2.print((int)indoorHum);
-      u8g2.print("%");
-
-      display.drawLine(280, 82, 400, 82, GxEPD_BLACK);
-
-      // 2. 今日 (y: 82-140)
-      u8g2.setFont(u8g2_font_helvB08_tr);
-      u8g2.setCursor(305, 100);
-      u8g2.print("TODAY");
-
-      u8g2.setFont(u8g2_font_qweather_icon_16);
-      u8g2.drawUTF8(290, 130, weather->data.icon_str);
-
-      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
-      u8g2.setCursor(325, 124);
-      u8g2.print(weather->data.weather);
-      tWidth = u8g2.getUTF8Width(weather->data.weather.c_str());
-      // u8g2.setCursor(325 + tWidth + 10, 124);
-      u8g2.print(" ");
-      u8g2.print(weather->data.temp);
-      u8g2.print("°");
-
-      display.drawLine(280, 140, 400, 140, GxEPD_BLACK);
-
-      // 3. 明日 (y: 140-200)
-      u8g2.setFont(u8g2_font_helvB08_tr);
-      // u8g2.setForegroundColor(GxEPD_DARKGREY); // 如果屏幕支持灰阶，不支持则显示黑
-      u8g2.setCursor(300, 160);
-      u8g2.print("TOMORROW");
-
-      u8g2.setFont(u8g2_font_qweather_icon_16);
-      // u8g2.drawGlyph(290, 190, 67); // Rain icon
-      u8g2.drawUTF8(290, 190, weather->data.forecast_icon_str);
-
-      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
-      u8g2.setCursor(325, 183);
-      u8g2.print(weather->data.forecast_weather);
-      u8g2.print(" ");
-      u8g2.print(weather->data.forecast_temp_low);
-      u8g2.print("°-");
-      u8g2.print(weather->data.forecast_temp_high);
-      u8g2.print("°");
-      u8g2.setForegroundColor(GxEPD_BLACK);
-
-      // ==========================================
-      // 区域 3: TODO 列表 (y: 200 -> 300)
-      // ==========================================
-
-      // ==========================================
-
-      std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
-
-      // 列表头
-      u8g2.setFont(u8g2_font_helvB08_tr);
-      u8g2.setCursor(10, 215);
-      u8g2.print("UPCOMING TASKS");
-
-      // 数量 Badge
-      display.fillRect(370, 205, 20, 14, GxEPD_BLACK);
-      u8g2.setForegroundColor(GxEPD_WHITE);
-      u8g2.setBackgroundColor(GxEPD_BLACK);
-      u8g2.setCursor(377, 216);
-      u8g2.print(tasks.size());
-      u8g2.setForegroundColor(GxEPD_BLACK);
-      u8g2.setBackgroundColor(GxEPD_WHITE);
-
-      display.drawLine(0, 220, 400, 220, GxEPD_BLACK);
-
-      // 渲染列表项
-      int startY = 221;
-      int rowHeight = 26; // (300 - 221) / 3 approx
-
-      u8g2.setFont(u8g2_font_wqy12_t_gb2312); // 中文小字体
-
-      for (int i = 0; i < 3 && i < tasks.size(); i++) {
-        int itemY = startY + (i * rowHeight);
-
-        // 斑马纹
-        // (偶数行画浅灰色背景，由于通常E-Ink不支持浅灰，这里模拟为白色，奇数行不变或用黑色抖动)
-        // 注意：如果你有灰阶屏幕 (4-gray)，可以使用 GxEPD_LIGHTGREY
-        if (i % 2 != 0) {
-          // 简单的斑马纹效果在纯黑白屏上可以忽略，或者用点阵模拟
-          // display.fillRect(0, itemY, 400, rowHeight, GxEPD_LIGHTGREY);
-        }
-
-        // 优先级条 (左侧)
-        if (tasks[i].highPriority) {
-          display.fillRect(5, itemY + 4, 4, 18, GxEPD_BLACK);
-        } else {
-          display.drawRect(5, itemY + 4, 4, 18, GxEPD_BLACK);
-        }
-
-        // 时间
-        u8g2.setCursor(18, itemY + 18);
-        u8g2.print(tasks[i].time);
-
-        // 垂直分割线
-        display.drawLine(55, itemY + 4, 55, itemY + 22, GxEPD_BLACK);
-
-        // 内容
-        u8g2.setCursor(65, itemY + 18);
-        u8g2.print(tasks[i].content);
-
-        // 倒计时 (右侧)
-        // 简单计算一下右对齐
-        int cdWidth = u8g2.getUTF8Width(tasks[i].countdown.c_str());
-        u8g2.setCursor(390 - cdWidth, itemY + 18);
-        u8g2.print(tasks[i].countdown);
-
-        // 分割线
-        if (i < 2)
-          display.drawLine(0, itemY + rowHeight, 400, itemY + rowHeight,
-                           GxEPD_BLACK);
-      }
-
-      BusManager::getInstance().requestDisplay();
-
-      // display->display.refresh();
-    } while (display.nextPage());
+    if (tasksNeedUpdate) {
+      renderTasksPartial(displayDrv);
+      lastTaskCount = tasks.size();
+      lastTasksMinute = now.minute;
+    }
   }
 
   void handleInput(int key) override {
@@ -255,4 +122,281 @@ private:
   SensorDriver *sensor;
   StatusBar *statusBar;
   TodoManager *todoMgr;
+
+  // State for change detection
+  bool fullRefreshNeeded = true;
+  int lastMinute = -1;
+  int lastTasksMinute = -1;
+  float lastTemp = -999;
+  float lastHum = -999;
+  int lastWeatherTemp = -999;
+  String lastWeatherStr = "";
+  String lastWeatherIcon = "";
+  int lastTaskCount = -1;
+
+  void updateState() {
+     DateTime now = rtc->getTime();
+     lastMinute = now.minute;
+     lastTasksMinute = now.minute;
+     
+     float t, h;
+     sensor->readData(t, h);
+     lastTemp = t;
+     lastHum = h;
+
+     lastWeatherTemp = weather->data.temp;
+     lastWeatherStr = weather->data.weather;
+     lastWeatherIcon = weather->data.icon_str;
+     
+     lastTaskCount = todoMgr->getVisibleTodos(now).size();
+  }
+
+  void renderAll(DisplayDriver *displayDrv) {
+    Serial.println("Drawing Home Screen (Full)");
+    auto &display = displayDrv->display;
+    auto &u8g2 = displayDrv->u8g2Fonts;
+
+    BusManager::getInstance().requestDisplay();
+    display.setFullWindow();
+    display.firstPage();
+    do {
+      display.fillScreen(GxEPD_WHITE);
+      // Static Lines
+      display.drawLine(0, 199, 400, 199, GxEPD_BLACK);
+      display.drawLine(0, 200, 400, 200, GxEPD_BLACK);
+      display.drawLine(280, 24, 280, 200, GxEPD_BLACK); // Vertical
+      display.drawLine(280, 82, 400, 82, GxEPD_BLACK);
+      display.drawLine(280, 140, 400, 140, GxEPD_BLACK);
+      display.drawLine(0, 220, 400, 220, GxEPD_BLACK);
+
+      drawContent(displayDrv);
+      BusManager::getInstance().requestDisplay();
+    } while (display.nextPage());
+  }
+
+  void renderTimePartial(DisplayDriver *displayDrv) {
+    Serial.println("Partial Update: Time");
+    auto &display = displayDrv->display;
+    BusManager::getInstance().requestDisplay(); // Request before setup
+    // Time Area: Left side, top part.
+    // Static Lines: y=199/200, x=280.
+    // Safe Rect: (0, 50, 280, 145) -> y[50, 194], x[0, 279]
+    display.setPartialWindow(0, 50, 280, 145); 
+    display.firstPage();
+    do {
+       display.fillRect(0, 50, 280, 145, GxEPD_WHITE);
+       drawTimeSection(displayDrv);
+       BusManager::getInstance().requestDisplay(); // Must be called before nextPage
+    } while (display.nextPage());
+  }
+
+  void renderSensorPartial(DisplayDriver *displayDrv) {
+      Serial.println("Partial Update: Sensor");
+      auto &display = displayDrv->display;
+      BusManager::getInstance().requestDisplay();
+      // Sensor Area: 
+      // Static vertical line at x=280. Partial must start > 280. 281 safe.
+      // Static horizontal line at y=82. Partial must end < 82.
+      // y=24, h=57 -> ends 80. Safe.
+      display.setPartialWindow(281, 24, 119, 57);
+      display.firstPage();
+      do {
+          display.fillRect(281, 24, 119, 57, GxEPD_WHITE);
+          drawSensorSection(displayDrv);
+          BusManager::getInstance().requestDisplay();
+      } while(display.nextPage());
+  }
+
+  void renderWeatherPartial(DisplayDriver *displayDrv) {
+      Serial.println("Partial Update: Weather");
+      auto &display = displayDrv->display;
+      BusManager::getInstance().requestDisplay();
+      // Weather Area:
+      // Static vertical line x=280 -> start 281.
+      // Static horiz line y=82 -> start 83.
+      // Static horiz line y=199 -> end 198.
+      // y=83, h=115 -> ends 197. Safe.
+      display.setPartialWindow(281, 83, 119, 115);
+      display.firstPage();
+      do {
+          display.fillRect(281, 83, 119, 115, GxEPD_WHITE);
+          display.drawLine(281, 140, 400, 140, GxEPD_BLACK); // internal line, start 281
+          drawWeatherSection(displayDrv);
+          BusManager::getInstance().requestDisplay();
+      } while(display.nextPage());
+  }
+
+  void renderTasksPartial(DisplayDriver *displayDrv) {
+      Serial.println("Partial Update: Tasks");
+      auto &display = displayDrv->display;
+      BusManager::getInstance().requestDisplay();
+      // Tasks Area:
+      // Static lines y=199, 200.
+      // Start y=202. h=98 -> ends 299. Safe.
+      display.setPartialWindow(0, 202, 400, 98);
+      display.firstPage();
+      do {
+          display.fillRect(0, 202, 400, 98, GxEPD_WHITE);
+          // Header parts
+          // Static line at 220 is inside 202-300 range, MUST redraw it.
+          display.drawLine(0, 220, 400, 220, GxEPD_BLACK);
+          drawTasksSection(displayDrv);
+          BusManager::getInstance().requestDisplay();
+      } while(display.nextPage());
+  }
+
+  void drawContent(DisplayDriver *displayDrv) {
+      statusBar->draw(displayDrv);
+      drawTimeSection(displayDrv);
+      drawSensorSection(displayDrv);
+      drawWeatherSection(displayDrv);
+      drawTasksSection(displayDrv);
+  }
+
+  // --- Section Drawers (No page loop, just drawing commands) ---
+
+  void drawTimeSection(DisplayDriver *displayDrv) {
+      auto &u8g2 = displayDrv->u8g2Fonts;
+      auto &display = displayDrv->display;
+      DateTime now = rtc->getTime();
+
+      u8g2.setForegroundColor(GxEPD_BLACK);
+      u8g2.setBackgroundColor(GxEPD_WHITE);
+
+      // Time
+      u8g2.setFont(u8g2_font_logisoso92_tn);
+      char timeStr[6];
+      sprintf(timeStr, "%02d:%02d", now.hour, now.minute);
+      int timeWidth = u8g2.getUTF8Width(timeStr);
+      u8g2.setCursor((280 - timeWidth) / 2, 150);
+      u8g2.print(timeStr);
+
+      // Date
+      char dateStr[18];
+      sprintf(dateStr, "%04d年%02d月%02d日", now.year + 2000, now.month, now.day);
+      u8g2.setFont(u8g2_font_wqy16_t_gb2312);
+      u8g2.setCursor(22, 183);
+      u8g2.print(dateStr);
+
+      // Weekday
+      char *weekdayStrs[] = {"日", "一", "二", "三", "四", "五", "六"};
+      char weekdayStr[7];
+      sprintf(weekdayStr, "周%s", weekdayStrs[now.week]);
+      int w = u8g2.getUTF8Width(weekdayStr);
+      display.fillRect(190, 167, 60, 20, GxEPD_BLACK);
+      u8g2.setForegroundColor(GxEPD_WHITE);
+      u8g2.setBackgroundColor(GxEPD_BLACK);
+      u8g2.setCursor(190 + w / 2, 182);
+      u8g2.print(weekdayStr);
+      u8g2.setForegroundColor(GxEPD_BLACK);
+      u8g2.setBackgroundColor(GxEPD_WHITE);
+  }
+
+  void drawSensorSection(DisplayDriver *displayDrv) {
+      auto &u8g2 = displayDrv->u8g2Fonts;
+      auto &display = displayDrv->display;
+      float indoorTemp = 0, indoorHum = 0;
+      sensor->readData(indoorTemp, indoorHum);
+
+      int iconY = 45;
+      display.drawInvertedBitmap(285, iconY, Bitmap_tempSHT30, 16, 16, GxEPD_BLACK);
+
+      u8g2.setFont(u8g2_font_helvB14_tr);
+      u8g2.setCursor(303, iconY + 14);
+      u8g2.print(indoorTemp, 1);
+
+      int tWidth = u8g2.getUTF8Width(String(indoorTemp, 1).c_str());
+      u8g2.drawGlyph(303 + tWidth + 2, iconY + 12, 176); // Degree
+
+      int humX = 340;
+      display.drawInvertedBitmap(humX, iconY, Bitmap_humiditySHT30, 16, 16, GxEPD_BLACK);
+      u8g2.setCursor(humX + 18, iconY + 14);
+      u8g2.print((int)indoorHum);
+      u8g2.print("%");
+  }
+
+  void drawWeatherSection(DisplayDriver *displayDrv) {
+      auto &u8g2 = displayDrv->u8g2Fonts;
+      auto &display = displayDrv->display; // needed?
+
+      // Today
+      u8g2.setFont(u8g2_font_helvB08_tr);
+      u8g2.setCursor(305, 100);
+      u8g2.print("TODAY");
+
+      u8g2.setFont(u8g2_font_qweather_icon_16);
+      u8g2.drawUTF8(290, 130, weather->data.icon_str);
+
+      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+      u8g2.setCursor(325, 124);
+      u8g2.print(weather->data.weather);
+      u8g2.print(" ");
+      u8g2.print(weather->data.temp);
+      u8g2.print("°");
+
+      // Tomorrow
+      u8g2.setFont(u8g2_font_helvB08_tr);
+      u8g2.setCursor(300, 160);
+      u8g2.print("TOMORROW");
+
+      u8g2.setFont(u8g2_font_qweather_icon_16);
+      u8g2.drawUTF8(290, 190, weather->data.forecast_icon_str);
+
+      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+      u8g2.setCursor(325, 183);
+      u8g2.print(weather->data.forecast_weather);
+      u8g2.print(" ");
+      u8g2.print(weather->data.forecast_temp_low);
+      u8g2.print("°-");
+      u8g2.print(weather->data.forecast_temp_high);
+      u8g2.print("°");
+  }
+
+  void drawTasksSection(DisplayDriver *displayDrv) {
+      auto &u8g2 = displayDrv->u8g2Fonts;
+      auto &display = displayDrv->display;
+      DateTime now = rtc->getTime();
+      std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
+
+      u8g2.setFont(u8g2_font_helvB08_tr);
+      u8g2.setCursor(10, 215);
+      u8g2.print("UPCOMING TASKS");
+
+      display.fillRect(370, 205, 20, 14, GxEPD_BLACK);
+      u8g2.setForegroundColor(GxEPD_WHITE);
+      u8g2.setBackgroundColor(GxEPD_BLACK);
+      u8g2.setCursor(377, 216);
+      u8g2.print(tasks.size());
+      u8g2.setForegroundColor(GxEPD_BLACK);
+      u8g2.setBackgroundColor(GxEPD_WHITE);
+
+      int startY = 221;
+      int rowHeight = 26;
+      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+
+      for (int i = 0; i < 3 && i < tasks.size(); i++) {
+        int itemY = startY + (i * rowHeight);
+
+        if (tasks[i].highPriority) {
+          display.fillRect(5, itemY + 4, 4, 18, GxEPD_BLACK);
+        } else {
+          display.drawRect(5, itemY + 4, 4, 18, GxEPD_BLACK);
+        }
+
+        u8g2.setCursor(18, itemY + 18);
+        u8g2.print(tasks[i].time);
+
+        display.drawLine(55, itemY + 4, 55, itemY + 22, GxEPD_BLACK);
+
+        u8g2.setCursor(65, itemY + 18);
+        u8g2.print(tasks[i].content);
+
+        int cdWidth = u8g2.getUTF8Width(tasks[i].countdown.c_str());
+        u8g2.setCursor(390 - cdWidth, itemY + 18);
+        u8g2.print(tasks[i].countdown);
+
+        if (i < 2)
+          display.drawLine(0, itemY + rowHeight, 400, itemY + rowHeight, GxEPD_BLACK);
+      }
+  }
 };

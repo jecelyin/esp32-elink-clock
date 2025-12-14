@@ -46,6 +46,8 @@ public:
   void handleInput(int key); // 0: None, 1: Menu/Select, 2: Up, 3: Down
   void switchScreen(ScreenState state);
 
+  DisplayDriver *getDisplayDriver() { return display; }
+
 private:
   DisplayDriver *display;
 
