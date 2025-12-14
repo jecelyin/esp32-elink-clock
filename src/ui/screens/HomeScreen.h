@@ -111,12 +111,12 @@ public:
   }
 
   void handleInput(UIKey key) override {
-      // No specific short press actions for Home Screen yet
-      // Short press Enter (1) could refresh?
       if (key == UI_KEY_ENTER) {
-          // Trigger manual update?
-          update(); // check updates
+          if (uiManager) uiManager->switchScreen(SCREEN_MENU);
       }
+  }
+  void onLongPress() override {
+      if (uiManager) uiManager->switchScreen(SCREEN_MENU);
   }
 
 private:

@@ -8,6 +8,7 @@ struct AppConfig {
   String wifi_pass;
   uint8_t volume;
   bool time_format_24;
+  uint16_t radio_presets[8];
   // Add more config items as needed
 };
 

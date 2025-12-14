@@ -7,7 +7,15 @@
 
 class MenuScreen : public Screen {
 public:
-  MenuScreen(StatusBar *statusBar) : statusBar(statusBar) { menuIndex = 0; }
+  MenuScreen(StatusBar *statusBar) : statusBar(statusBar) { 
+    menuIndex = 0;
+    items[0] = {SCREEN_HOME, "Home", u8g2_font_open_iconic_embedded_4x_t, 'D'};
+    items[1] = {SCREEN_ALARM, "Alarm", u8g2_font_open_iconic_embedded_4x_t, 'A'};
+    items[2] = {SCREEN_MUSIC, "Music", u8g2_font_open_iconic_play_4x_t, 'C'};
+    items[3] = {SCREEN_RADIO, "Radio", u8g2_font_open_iconic_embedded_4x_t, 'F'};
+    items[4] = {SCREEN_WEATHER, "Weather", u8g2_font_open_iconic_weather_4x_t, '@'};
+    items[5] = {SCREEN_SETTINGS, "Settings", u8g2_font_open_iconic_embedded_4x_t, 'B'};
+  }
 
   void draw(DisplayDriver *display) override {
     Serial.println("Drawing Menu Screen");
@@ -18,19 +26,6 @@ public:
 
       statusBar->draw(display, true);
 
-      struct MenuItem {
-        const char *label;
-        const uint8_t *font;
-        uint16_t icon;
-      };
-
-      MenuItem items[] = {
-          {"Home", u8g2_font_open_iconic_embedded_4x_t, 'D'},
-          {"Alarm", u8g2_font_open_iconic_embedded_4x_t, 'A'},
-          {"Music", u8g2_font_open_iconic_play_4x_t, 'C'},
-          {"Radio", u8g2_font_open_iconic_embedded_4x_t, 'F'},
-          {"Weather", u8g2_font_open_iconic_weather_4x_t, '@'},
-          {"Settings", u8g2_font_open_iconic_embedded_4x_t, 'B'}};
 
       int x_start = 40;
       int y_start = 100;
@@ -79,6 +74,10 @@ public:
     } while (display->display.nextPage());
   }
 
+
+  void onLongPress() override {
+      uiManager->switchScreen(SCREEN_HOME);
+  }
   void handleInput(UIKey key) override {
     bool updateNeeded = false;
     if (key == UI_KEY_LEFT) { // Left (KEY_LEFT)
@@ -92,26 +91,7 @@ public:
         menuIndex = 0;
       updateNeeded = true;
     } else if (key == UI_KEY_ENTER) { // Select (KEY_ENTER Short)
-      switch (menuIndex) {
-      case 0:
-        uiManager->switchScreen(SCREEN_HOME);
-        break;
-      case 1:
-        uiManager->switchScreen(SCREEN_ALARM);
-        break;
-      case 2:
-        uiManager->switchScreen(SCREEN_SETTINGS);
-        break;
-      case 3:
-        uiManager->switchScreen(SCREEN_MUSIC);
-        break;
-      case 4:
-        uiManager->switchScreen(SCREEN_RADIO);
-        break;
-      case 5:
-        uiManager->switchScreen(SCREEN_WEATHER);
-        break;
-      }
+      uiManager->switchScreen(items[menuIndex].id);
       return; // Switch screen handles draw
     }
     
@@ -124,6 +104,13 @@ public:
   }
 
 private:
+  struct MenuItem {
+    ScreenState id;
+    const char *label;
+    const uint8_t *font;
+    uint16_t icon;
+  };
+  MenuItem items[6];
   int menuIndex;
   StatusBar *statusBar;
 };

@@ -20,6 +20,7 @@ public:
   virtual void update() {} // Called periodically
   virtual void draw(DisplayDriver *display) = 0;
   virtual void handleInput(UIKey key) = 0;
+  virtual void onLongPress() {}
 
   void setUIManager(UIManager *mgr) { uiManager = mgr; }
 
