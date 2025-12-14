@@ -4,9 +4,12 @@
 #include "../../drivers/RtcDriver.h"
 #include "../../managers/ConnectionManager.h"
 
+#include "../../drivers/SensorDriver.h"
+
 class StatusBar {
 public:
-  StatusBar(ConnectionManager *conn, RtcDriver *rtc) : conn(conn), rtc(rtc) {}
+  StatusBar(ConnectionManager *conn, RtcDriver *rtc, SensorDriver *sensor)
+      : conn(conn), rtc(rtc), sensor(sensor) {}
 
   void draw(DisplayDriver *display) {
     auto u8g2 = display->u8g2Fonts;
@@ -20,25 +23,44 @@ public:
     u8g2.setFont(u8g2_font_open_iconic_embedded_1x_t); // 图标字体
 
     // Wifi Icon & Text
-    u8g2.drawGlyph(
-        10, 17,
-        80); // Wifi icon code 'P' in open_iconic usually, adjust per font map
-    u8g2.setFont(u8g2_font_helvB08_tr);
-    u8g2.setCursor(24, 17);
-    u8g2.print("WIFI");
+    if (conn->isConnected()) {
+      u8g2.drawGlyph(10, 17, 80); // Wifi icon
+      u8g2.setFont(u8g2_font_helvB08_tr);
+      u8g2.setCursor(24, 17);
+      u8g2.print("WIFI");
+    } else {
+      u8g2.drawGlyph(10, 17, 64); // "Prohibited" icon indicating disconnected
+      u8g2.setFont(u8g2_font_helvB08_tr);
+      u8g2.setCursor(24, 17);
+      u8g2.print("OFF");
+    }
 
-    // Sync Icon
-    u8g2.setFont(u8g2_font_open_iconic_embedded_1x_t);
-    u8g2.drawGlyph(80, 17, 65); // Refresh/Sync icon
-    u8g2.setFont(u8g2_font_helvB08_tr);
-    u8g2.setCursor(94, 17);
-    u8g2.print("SYNC");
 
     // Battery (Right aligned)
-    u8g2.setCursor(370, 17);
-    u8g2.print("82%");
-    u8g2.setFont(u8g2_font_open_iconic_embedded_1x_t);
-    u8g2.drawGlyph(355, 17, 73); // Battery icon
+    int battLevel = sensor->getBatteryLevel();
+    u8g2.setFont(u8g2_font_helvB08_tr);
+    u8g2.setCursor(370, 15);
+    u8g2.print(battLevel);
+    u8g2.print("%");
+    
+    // Draw Custom Battery Icon
+    // x=350, y=6, w=16, h=10
+    int bx = 350;
+    int by = 6;
+    int bw = 16;
+    int bh = 10;
+    
+    // Outline
+    display->display.drawRect(bx, by, bw, bh, GxEPD_WHITE);
+    // Nub
+    display->display.fillRect(bx + bw, by + 3, 2, 4, GxEPD_WHITE);
+    // Fill
+    if (battLevel > 0) {
+      int fillW = (bw - 4) * battLevel / 100;
+      if (fillW < 1) fillW = 1;
+      // Use fillRect for white bar
+      display->display.fillRect(bx + 2, by + 2, fillW, bh - 4, GxEPD_WHITE);
+    }
 
     // 恢复默认颜色
     u8g2.setForegroundColor(GxEPD_BLACK);
@@ -48,4 +70,5 @@ public:
 private:
   ConnectionManager *conn;
   RtcDriver *rtc;
+  SensorDriver *sensor;
 };

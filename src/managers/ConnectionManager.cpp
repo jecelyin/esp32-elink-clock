@@ -13,13 +13,13 @@ void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
   rtcDriver = rtc;
 
   // WiFi.mode(WIFI_STA);
-  if (configMgr->config.wifi_ssid.length() > 0) {
-    wifiManager.autoConnect(
-      configMgr->config.wifi_ssid.c_str(),
-      configMgr->config.wifi_pass.c_str());
-  } else {
-    startAP();
-  }
+  // if (configMgr->config.wifi_ssid.length() > 0) {
+  //   wifiManager.autoConnect(configMgr->config.wifi_ssid.c_str(),
+  //                           configMgr->config.wifi_pass.c_str());
+  // } else {
+  //   startAP();
+  // }
+  wifiManager.autoConnect();
 }
 
 void ConnectionManager::loop() {
@@ -35,8 +35,6 @@ bool ConnectionManager::isConnected() { return WiFi.status() == WL_CONNECTED; }
 
 void ConnectionManager::startAP() {
   // WiFi.softAP("ESP32-Clock", "12345678");
-  
-
 }
 
 void ConnectionManager::syncTime() {

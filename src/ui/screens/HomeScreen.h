@@ -3,16 +3,33 @@
 #include "../../drivers/RtcDriver.h"
 #include "../../managers/BusManager.h"
 #include "../../managers/ConnectionManager.h"
+#include "../../managers/TodoManager.h"
 #include "../../managers/WeatherManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
-#include "../../managers/TodoManager.h"
+
+#include "../../drivers/SensorDriver.h"
+#include "../../utils/qweather_fonts.h"
+
+// sht30温度小图标 width: 16, height: 16
+const unsigned char Bitmap_tempSHT30[] PROGMEM = {
+    0xfc, 0x3f, 0xf9, 0x9f, 0xfb, 0xdf, 0xf8, 0xdf, 0xfb, 0xdf, 0xf8,
+    0xdf, 0xfb, 0xdf, 0xf3, 0xcf, 0xf7, 0xef, 0xe7, 0xe7, 0xef, 0xf7,
+    0xef, 0xd7, 0xef, 0xb7, 0xe7, 0x67, 0xf3, 0xcf, 0xf8, 0x1f};
+
+// sht30湿度小图标 width: 16, height: 16
+const unsigned char Bitmap_humiditySHT30[] PROGMEM = {
+    0xfe, 0x7f, 0xfc, 0x3f, 0xf9, 0x9f, 0xf3, 0xcf, 0xf7, 0xef, 0xe7,
+    0xe7, 0xef, 0xf7, 0xcf, 0xf3, 0xdf, 0xfb, 0xd1, 0xfb, 0xd0, 0x1b,
+    0xd0, 0x0b, 0xc8, 0x13, 0xe4, 0x27, 0xf3, 0xcf, 0xf8, 0x1f};
 
 class HomeScreen : public Screen {
 public:
-  HomeScreen(RtcDriver *rtc, WeatherManager *weather, StatusBar *statusBar, TodoManager *todoMgr)
-      : rtc(rtc), weather(weather), statusBar(statusBar), todoMgr(todoMgr) {}
+  HomeScreen(RtcDriver *rtc, WeatherManager *weather, SensorDriver *sensor,
+             StatusBar *statusBar, TodoManager *todoMgr)
+      : rtc(rtc), weather(weather), sensor(sensor), statusBar(statusBar),
+        todoMgr(todoMgr) {}
 
   void draw(DisplayDriver *displayDrv) override {
     Serial.println("Drawing Home Screen");
@@ -75,13 +92,38 @@ public:
       display.drawLine(280, 24, 280, 200, GxEPD_BLACK); // 竖向分割线
 
       // 1. 室内 (y: 24-82)
-      u8g2.setFont(u8g2_font_helvB08_tr);
-      u8g2.setCursor(300, 45);
-      u8g2.print("INDOOR");
+      // Read Sensor
+      float indoorTemp = 0, indoorHum = 0;
+      sensor->readData(indoorTemp, indoorHum);
+
+      // calculated center y for single line: (24+82)/2 = 53
+
+      // --- Temperature (Left) ---
+      // Icon: Thermometer (x: ~285, y: centered ~53)
+      int iconY = 45;
+      display.drawInvertedBitmap(285, iconY, Bitmap_tempSHT30, 16, 16,
+                                 GxEPD_BLACK);
+
+      // Value
       u8g2.setFont(u8g2_font_helvB14_tr);
-      u8g2.setCursor(310, 70);
-      u8g2.print("24");
-      u8g2.drawGlyph(335, 70, 176); // Degree symbol
+      u8g2.setCursor(303, iconY + 14); // Shifted right slightly for 16px icon
+      u8g2.print(indoorTemp, 1);       // 25.5
+
+      // Degree symbol
+      int tWidth = u8g2.getUTF8Width(String(indoorTemp, 1).c_str());
+      u8g2.drawGlyph(303 + tWidth + 2, iconY + 12, 176);
+
+      // --- Humidity (Right) ---
+      // Icon: Droplet (x: ~350)
+      int humX = 340;
+      display.drawInvertedBitmap(humX, iconY, Bitmap_humiditySHT30, 16, 16,
+                                 GxEPD_BLACK);
+
+      // Value
+      u8g2.setCursor(humX + 18, iconY + 14); // Icon is 16px wide
+
+      u8g2.print((int)indoorHum);
+      u8g2.print("%");
 
       display.drawLine(280, 82, 400, 82, GxEPD_BLACK);
 
@@ -90,29 +132,38 @@ public:
       u8g2.setCursor(305, 100);
       u8g2.print("TODAY");
 
-      u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
-      u8g2.drawGlyph(290, 130, 69); // Sun icon
+      u8g2.setFont(u8g2_font_qweather_icon_16);
+      u8g2.drawUTF8(290, 130, weather->data.icon_str);
 
-      u8g2.setFont(u8g2_font_helvB14_tr);
-      u8g2.setCursor(325, 128);
-      u8g2.print("18");
-      u8g2.drawGlyph(350, 128, 176);
+      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+      u8g2.setCursor(325, 124);
+      u8g2.print(weather->data.weather);
+      tWidth = u8g2.getUTF8Width(weather->data.weather.c_str());
+      // u8g2.setCursor(325 + tWidth + 10, 124);
+      u8g2.print(" ");
+      u8g2.print(weather->data.temp);
+      u8g2.print("°");
 
       display.drawLine(280, 140, 400, 140, GxEPD_BLACK);
 
       // 3. 明日 (y: 140-200)
       u8g2.setFont(u8g2_font_helvB08_tr);
-      u8g2.setForegroundColor(
-          GxEPD_DARKGREY); // 如果屏幕支持灰阶，不支持则显示黑
+      // u8g2.setForegroundColor(GxEPD_DARKGREY); // 如果屏幕支持灰阶，不支持则显示黑
       u8g2.setCursor(300, 160);
       u8g2.print("TOMORROW");
 
-      u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
-      u8g2.drawGlyph(290, 190, 67); // Rain icon
+      u8g2.setFont(u8g2_font_qweather_icon_16);
+      // u8g2.drawGlyph(290, 190, 67); // Rain icon
+      u8g2.drawUTF8(290, 190, weather->data.forecast_icon_str);
 
-      u8g2.setFont(u8g2_font_helvB12_tr);
-      u8g2.setCursor(325, 188);
-      u8g2.print("15");
+      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+      u8g2.setCursor(325, 183);
+      u8g2.print(weather->data.forecast_weather);
+      u8g2.print(" ");
+      u8g2.print(weather->data.forecast_temp_low);
+      u8g2.print("°-");
+      u8g2.print(weather->data.forecast_temp_high);
+      u8g2.print("°");
       u8g2.setForegroundColor(GxEPD_BLACK);
 
       // ==========================================
@@ -120,7 +171,7 @@ public:
       // ==========================================
 
       // ==========================================
-      
+
       std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
 
       // 列表头
@@ -201,6 +252,7 @@ public:
 private:
   RtcDriver *rtc;
   WeatherManager *weather;
+  SensorDriver *sensor;
   StatusBar *statusBar;
   TodoManager *todoMgr;
 };

@@ -9,20 +9,20 @@
 
 
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
-                     WeatherManager *weather, ConnectionManager *conn,
-                     AlarmManager *alarm, RadioDriver *radio,
-                     AudioDriver *audio, ConfigManager *config)
-    : display(disp), rtc(rtc), weather(weather), conn(conn), alarmMgr(alarm),
-      radio(radio), audio(audio), config(config) {
+                     WeatherManager *weather, SensorDriver *sensor,
+                     ConnectionManager *conn, AlarmManager *alarm,
+                     RadioDriver *radio, AudioDriver *audio,
+                     ConfigManager *config)
+    : display(disp), rtc(rtc), weather(weather), sensor(sensor), conn(conn),
+      alarmMgr(alarm), radio(radio), audio(audio), config(config) {
 
-  statusBar = new StatusBar(conn, rtc);
+  statusBar = new StatusBar(conn, rtc, sensor);
   todoMgr = new TodoManager();
-
   
   webMgr = new WebManager(todoMgr);
 
   // Create Screens
-  homeScreen = new HomeScreen(rtc, weather, statusBar, todoMgr);
+  homeScreen = new HomeScreen(rtc, weather, sensor, statusBar, todoMgr);
   menuScreen = new MenuScreen(statusBar);
   alarmScreen = new AlarmScreen(alarmMgr, statusBar);
   radioScreen = new RadioScreen(radio, statusBar);

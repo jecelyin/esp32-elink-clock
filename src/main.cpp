@@ -26,7 +26,7 @@ ConnectionManager connectionManager;
 WeatherManager weatherManager;
 AlarmManager alarmManager;
 
-UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager,
+UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
                     &connectionManager, &alarmManager, &radioDriver,
                     &audioDriver, &configManager);
 

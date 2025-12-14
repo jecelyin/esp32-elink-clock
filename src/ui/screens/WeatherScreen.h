@@ -2,6 +2,7 @@
 
 #include "../../managers/WeatherManager.h"
 #include "../../managers/BusManager.h"
+#include "../../utils/qweather_fonts.h"
 #include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
@@ -23,9 +24,13 @@ public:
       display->u8g2Fonts.print("WEATHER");
 
       // Icon
-      display->u8g2Fonts.setFont(u8g2_font_open_iconic_weather_4x_t);
+      // Icon
+      display->u8g2Fonts.setFont(u8g2_font_qweather_icon_16);
       display->u8g2Fonts.setCursor(20, 60);
-      display->u8g2Fonts.print("@");
+      // char iconStr[2] = {weather->data.icon_char, '\0'};
+      display->u8g2Fonts.drawUTF8(20, 90, weather->data.icon_str); // Adjusted Y for UTF8 baseline if needed, but drawUTF8 usually takes x,y. setCursor + print is also fine but print(String) works for UTF8? u8g2.print supports UTF8 if enableUTF8Print is on?
+      // SAFE: drawUTF8(x, y, str)
+
 
       // Details
       display->u8g2Fonts.setFont(u8g2_font_helvB14_tf);
@@ -44,8 +49,13 @@ public:
       display->u8g2Fonts.print(" %");
 
       display->u8g2Fonts.setCursor(50, 210);
-      display->u8g2Fonts.print("Forecast: ");
+      display->u8g2Fonts.print("Tom: "); // Tomorrow
       display->u8g2Fonts.print(weather->data.forecast_weather);
+      display->u8g2Fonts.print(" ");
+      display->u8g2Fonts.print(weather->data.forecast_temp_low);
+      display->u8g2Fonts.print("/");
+      display->u8g2Fonts.print(weather->data.forecast_temp_high);
+      display->u8g2Fonts.print("C");
 
       BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
