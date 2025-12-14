@@ -15,7 +15,7 @@ public:
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
-      statusBar->draw(display);
+      statusBar->draw(display, true);
 
       // Header
       display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
@@ -46,13 +46,13 @@ public:
     } while (display->display.nextPage());
   }
 
-  void handleInput(int key) override {
-    if (key == 1) { // Menu/Back
+  void handleInput(UIKey key) override {
+    if (key == UI_KEY_ENTER) { // Menu/Back
       uiManager->switchScreen(SCREEN_MENU);
-    } else if (key == 2) { // Left
+    } else if (key == UI_KEY_LEFT) { // Left
       radio->seekDown();
       // Trigger redraw needed? UIManager loop handles it
-    } else if (key == 3) { // Right
+    } else if (key == UI_KEY_RIGHT) { // Right
       radio->seekUp();
     }
   }

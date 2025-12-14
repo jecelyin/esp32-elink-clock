@@ -43,13 +43,16 @@ public:
             RadioDriver *radio, AudioDriver *audio, ConfigManager *config);
   void init();
   void update();
-  void handleInput(int key); // 0: None, 1: Menu/Select, 2: Up, 3: Down
+  void handleInput(UIKey key);
+  void onLongPressEnter();
   void switchScreen(ScreenState state);
 
   DisplayDriver *getDisplayDriver() { return display; }
+  ScreenState getCurrentState() { return currentScreenState; }
 
 private:
   DisplayDriver *display;
+  ScreenState currentScreenState;
 
   // Screens
   HomeScreen *homeScreen;

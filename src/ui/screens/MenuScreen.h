@@ -16,27 +16,21 @@ public:
     do {
       display->display.fillScreen(GxEPD_WHITE);
 
-      statusBar->draw(display);
+      statusBar->draw(display, true);
 
-      display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
-      display->u8g2Fonts.setCursor(150, 40);
-      display->u8g2Fonts.print("MENU");
+      struct MenuItem {
+        const char *label;
+        const uint8_t *font;
+        uint16_t icon;
+      };
 
-      // Icons: Home, Alarm, Settings, Music, Radio, Weather
-      // Mapping to Open Iconic:
-      // Home: "H" (embedded)
-      // Alarm: "A" (embedded)
-      // Settings: "G" (embedded)
-      // Music: "M" (embedded)
-      // Radio: "R" (embedded) - maybe not available, use text or generic
-      // Weather: "@" (weather)
-
-      const char *labels[] = {"Home",  "Alarm", "Settings",
-                              "Music", "Radio", "Weather"};
-      const char *icons[] = {"H", "A", "G", "M", "R", "@"};
-      // Note: Need to switch fonts for different icons if they are in different
-      // sets For simplicity, let's assume we use embedded for most and weather
-      // for weather
+      MenuItem items[] = {
+          {"Home", u8g2_font_open_iconic_embedded_4x_t, 'D'},
+          {"Alarm", u8g2_font_open_iconic_embedded_4x_t, 'A'},
+          {"Music", u8g2_font_open_iconic_play_4x_t, 'C'},
+          {"Radio", u8g2_font_open_iconic_embedded_4x_t, 'F'},
+          {"Weather", u8g2_font_open_iconic_weather_4x_t, '@'},
+          {"Settings", u8g2_font_open_iconic_embedded_4x_t, 'B'}};
 
       int x_start = 40;
       int y_start = 100;
@@ -51,28 +45,30 @@ public:
 
         // Draw Selection Box
         if (i == menuIndex) {
-          display->display.fillRect(x - 10, y - 40, 100, 90, GxEPD_BLACK);
+          display->display.fillRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
           display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
           display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
         } else {
-          display->display.drawRect(x - 10, y - 40, 100, 90, GxEPD_BLACK);
+          display->display.drawRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
           display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
           display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
         }
 
         // Draw Icon
-        if (i == 5) { // Weather
-          display->u8g2Fonts.setFont(u8g2_font_open_iconic_weather_4x_t);
-        } else {
-          display->u8g2Fonts.setFont(u8g2_font_open_iconic_embedded_4x_t);
-        }
-        display->u8g2Fonts.setCursor(x + 20, y);
-        display->u8g2Fonts.print(icons[i]);
+        // Box Specs: x start: x-10, width: 100.
+        // Center X = (x-10) + (100/2) = x + 40.
+        int boxCenterX = x + 40;
+
+        // Draw Icon
+        display->u8g2Fonts.setFont(items[i].font);
+        int iconWidth = u8g2_GetGlyphWidth(&(display->u8g2Fonts.u8g2), items[i].icon);
+        display->u8g2Fonts.drawGlyph(boxCenterX - (iconWidth / 2), y, items[i].icon);
 
         // Draw Label
         display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-        display->u8g2Fonts.setCursor(x + 10, y + 30);
-        display->u8g2Fonts.print(labels[i]);
+        int labelWidth = display->u8g2Fonts.getUTF8Width(items[i].label);
+        display->u8g2Fonts.setCursor(boxCenterX - (labelWidth / 2), y + 22);
+        display->u8g2Fonts.print(items[i].label);
 
         // Reset Colors
         display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
@@ -83,16 +79,19 @@ public:
     } while (display->display.nextPage());
   }
 
-  void handleInput(int key) override {
-    if (key == 2) { // Left
+  void handleInput(UIKey key) override {
+    bool updateNeeded = false;
+    if (key == UI_KEY_LEFT) { // Left (KEY_LEFT)
       menuIndex--;
       if (menuIndex < 0)
         menuIndex = 5;
-    } else if (key == 3) { // Right
+      updateNeeded = true;
+    } else if (key == UI_KEY_RIGHT) { // Right (KEY_RIGHT)
       menuIndex++;
       if (menuIndex > 5)
         menuIndex = 0;
-    } else if (key == 1) { // Select
+      updateNeeded = true;
+    } else if (key == UI_KEY_ENTER) { // Select (KEY_ENTER Short)
       switch (menuIndex) {
       case 0:
         uiManager->switchScreen(SCREEN_HOME);
@@ -113,6 +112,14 @@ public:
         uiManager->switchScreen(SCREEN_WEATHER);
         break;
       }
+      return; // Switch screen handles draw
+    }
+    
+    // Only redraw if selection changed
+    if (updateNeeded) {
+        // We could implement partial refresh for selection box moving?
+        // For simplicity, full refresh or just let UIManager call draw() which does full page loop.
+        // UIManager calls draw() after handleInput returns.
     }
   }
 

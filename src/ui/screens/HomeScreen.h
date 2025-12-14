@@ -110,10 +110,13 @@ public:
     }
   }
 
-  void handleInput(int key) override {
-    if (key == 1) { // Menu
-      uiManager->switchScreen(SCREEN_MENU);
-    }
+  void handleInput(UIKey key) override {
+      // No specific short press actions for Home Screen yet
+      // Short press Enter (1) could refresh?
+      if (key == UI_KEY_ENTER) {
+          // Trigger manual update?
+          update(); // check updates
+      }
   }
 
 private:
@@ -246,7 +249,7 @@ private:
   }
 
   void drawContent(DisplayDriver *displayDrv) {
-      statusBar->draw(displayDrv);
+      statusBar->draw(displayDrv, false);
       drawTimeSection(displayDrv);
       drawSensorSection(displayDrv);
       drawWeatherSection(displayDrv);

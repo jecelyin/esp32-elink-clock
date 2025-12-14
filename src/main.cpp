@@ -4,6 +4,7 @@
 #include "drivers/RadioDriver.h"
 #include "drivers/RtcDriver.h"
 #include "drivers/SensorDriver.h"
+#include "drivers/InputDriver.h"
 #include "drivers/SDCardDriver.h"
 #include "managers/AlarmManager.h"
 #include "managers/BusManager.h"
@@ -19,6 +20,7 @@ RtcDriver rtcDriver;
 SensorDriver sensorDriver;
 RadioDriver radioDriver;
 AudioDriver audioDriver;
+InputDriver inputDriver;
 SDCardDriver sdCardDriver;
 
 ConfigManager configManager;
@@ -51,6 +53,7 @@ void setup() {
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_OFF);
   // Init Drivers
+  inputDriver.begin();
   sdCardDriver.begin();
   displayDriver.init();
   displayDriver.showMessage("Initializing...");
@@ -96,7 +99,12 @@ void setup() {
 
 void loop() {
   connectionManager.loop();
-  weatherManager.update();
+  
+  // Only update weather on Home or Weather screens
+  if (uiManager.getCurrentState() == SCREEN_HOME || uiManager.getCurrentState() == SCREEN_WEATHER) {
+      weatherManager.update();
+  }
+
   alarmManager.check(rtcDriver.getTime());
   uiManager.update();
   audioDriver.loop(); // For audio processing
@@ -109,6 +117,28 @@ void loop() {
     }
   }
 
+  // Handle Input
+  ButtonEvent btn = inputDriver.loop();
+  if (btn != BTN_NONE) {
+    Serial.print("Button Event: ");
+    Serial.println((int)btn);
+    if (btn == BTN_ENTER_LONG) {
+      uiManager.onLongPressEnter();
+    } else {
+        // Map other buttons to UI Manager inputs
+        // UIManager handleInput convention:
+        // 1: Select (Enter Short)
+        // 2: Left
+        // 3: Right
+        UIKey key = UI_KEY_NONE;
+        if (btn == BTN_ENTER_SHORT) key = UI_KEY_ENTER;
+        if (btn == BTN_LEFT_CLICK) key = UI_KEY_LEFT;
+        if (btn == BTN_RIGHT_CLICK) key = UI_KEY_RIGHT;
+        
+        if (key != UI_KEY_NONE) uiManager.handleInput(key);
+    }
+  }
+
   // Simple Serial Input for testing
   // if (Serial.available()) {
   //   char c = Serial.read();
@@ -116,5 +146,5 @@ void loop() {
   //     uiManager.handleInput(1); // Menu
   // }
 
-  delay(10);
+  // delay(10);
 }

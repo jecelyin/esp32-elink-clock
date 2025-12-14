@@ -11,7 +11,7 @@ public:
   StatusBar(ConnectionManager *conn, RtcDriver *rtc, SensorDriver *sensor)
       : conn(conn), rtc(rtc), sensor(sensor) {}
 
-  void draw(DisplayDriver *display) {
+  void draw(DisplayDriver *display, bool showTime) {
     auto u8g2 = display->u8g2Fonts;
     // ==========================================
     // 区域 1: 顶部状态栏 (反色: 黑底白字)
@@ -33,6 +33,17 @@ public:
       u8g2.setFont(u8g2_font_helvB08_tr);
       u8g2.setCursor(24, 17);
       u8g2.print("OFF");
+    }
+
+    // Center Time (if requested)
+    if (showTime) {
+      DateTime now = rtc->getTime();
+      char timeStr[6];
+      sprintf(timeStr, "%02d:%02d", now.hour, now.minute);
+      u8g2.setFont(u8g2_font_helvB10_tf);
+      int w = u8g2.getUTF8Width(timeStr);
+      u8g2.setCursor((400 - w) / 2, 17);
+      u8g2.print(timeStr);
     }
 
 

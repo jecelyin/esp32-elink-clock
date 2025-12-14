@@ -39,7 +39,10 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   weatherScreen->setUIManager(this);
   settingsScreen->setUIManager(this);
 
+  settingsScreen->setUIManager(this);
+
   currentScreenObj = homeScreen;
+  currentScreenState = SCREEN_HOME;
 }
 
 void UIManager::init() {
@@ -64,11 +67,30 @@ void UIManager::update() {
   if (webMgr) webMgr->loop();
 }
 
-void UIManager::handleInput(int key) {
+void UIManager::handleInput(UIKey key) {
   if (currentScreenObj) {
     currentScreenObj->handleInput(key);
     // Redraw after input?
     currentScreenObj->draw(display);
+  }
+}
+
+void UIManager::onLongPressEnter() {
+  if (currentScreenObj == homeScreen) {
+      switchScreen(SCREEN_MENU);
+  } else {
+      // From any other screen, long press toggles back to home?
+      // Or specifically for Menu?
+      // User said "Long press key_enter enters menu page".
+      // Usually implies from Home -> Menu.
+      // If already in Menu, maybe do nothing or go back?
+      // Let's implement: Active Screen -> Menu (unless already there)
+      if (currentScreenObj != menuScreen) {
+          switchScreen(SCREEN_MENU);
+      } else {
+          // If in Menu, maybe go back Home?
+          switchScreen(SCREEN_HOME); 
+      }
   }
 }
 
@@ -99,6 +121,8 @@ void UIManager::switchScreen(ScreenState state) {
     currentScreenObj = settingsScreen;
     break;
   }
+  
+  currentScreenState = state;
 
   if (currentScreenObj) {
     currentScreenObj->enter();
