@@ -4,11 +4,15 @@
 #include "config.h"
 #include <GxEPD2_BW.h>
 #include <U8g2_for_Adafruit_GFX.h>
-#define USE_GxEPD2_420_Z96
+// #define USE_GxEPD2_420_Z96
+#define USE_GxEPD2_420_SSD1619A
 
 #ifdef USE_GxEPD2_420_Z96
 #include "GxEPD2_420_Z96.h"
 #define EPD2_DRV GxEPD2_420_Z96
+#elifdef USE_GxEPD2_420_SSD1619A
+#include "GxEPD2_420_SSD1619A.h"
+#define EPD2_DRV GxEPD2_420_SSD1619A
 #else
 #include "GxEPD2_420_SSD1619.h"
 #define EPD2_DRV GxEPD2_420_SSD1619

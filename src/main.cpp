@@ -49,6 +49,9 @@ void setup() {
   // Init Bus Manager (Arbitration for SPI/I2C on 18/23)
   BusManager::getInstance().begin();
 
+  pinMode(EPD_BUSY, OUTPUT);
+  pinMode(EPD_RST, OUTPUT);
+  pinMode(EPD_CS, OUTPUT);
   pinMode(SD_EN, OUTPUT);
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_OFF);
