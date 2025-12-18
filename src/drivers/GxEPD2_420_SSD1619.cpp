@@ -266,7 +266,7 @@ void GxEPD2_420_SSD1619::refresh(int16_t x, int16_t y, int16_t w, int16_t h)
   int16_t y1 = y < 0 ? 0 : y; // limit
   w1 = x1 + w1 < int16_t(WIDTH) ? w1 : int16_t(WIDTH) - x1; // limit
   h1 = y1 + h1 < int16_t(HEIGHT) ? h1 : int16_t(HEIGHT) - y1; // limit
-  if ((w1 <= 0) || (h1 <= 0)) return; 
+  if ((w1 <= 0) || (h1 <= 0)) return;
   // make x1, w1 multiple of 8
   w1 += x1 % 8;
   if (w1 % 8 > 0) w1 += 8 - w1 % 8;
@@ -342,17 +342,17 @@ void GxEPD2_420_SSD1619::_InitDisplay()
   delay(10); // 10ms according to specs
   _writeCommand(0x12);  //SWRESET
   delay(10); // 10ms according to specs
-  _writeCommand(0x01); //Driver output control      
+  _writeCommand(0x01); //Driver output control
   _writeData(0x27);
   _writeData(0x01);
   _writeData(0x00);
   _writeCommand(0x3C); //BorderWavefrom
-  _writeData(0x05);  
+  _writeData(0x05);
   _writeCommand(0x21); //  Display update control
-  _writeData(0x00);    
-  _writeData(0x80);          
+  _writeData(0x00);
+  _writeData(0x80);
   _writeCommand(0x18); //Read built-in temperature sensor
-  _writeData(0x80);  
+  _writeData(0x80);
   _setPartialRamArea(0, 0, WIDTH, HEIGHT);
   _init_display_done = true;
 }

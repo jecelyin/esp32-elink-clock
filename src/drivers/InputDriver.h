@@ -1,36 +1,44 @@
 #pragma once
 
-#include <Arduino.h>
 #include "../config.h"
+#include <Arduino.h>
 
 // Button events
 enum ButtonEvent {
-    BTN_NONE = 0,
-    BTN_ENTER_SHORT,
-    BTN_ENTER_LONG,
-    BTN_LEFT_CLICK,
-    BTN_RIGHT_CLICK
+  BTN_NONE = 0,
+  BTN_ENTER_SHORT,
+  BTN_ENTER_LONG,
+  BTN_LEFT_CLICK,
+  BTN_RIGHT_CLICK
+};
+
+class Button {
+public:
+    Button(uint8_t pin, const char* name);
+    void begin();
+    ButtonEvent update();
+
+private:
+    uint8_t pin;
+    const char* name;
+    int lastPhysicalState = HIGH;
+    int stableState = HIGH;
+    unsigned long lastDebounceTime = 0;
+    unsigned long pressStartTime = 0;
+    bool longPressed = false;
+    
+    static const unsigned long DEBOUNCE_DELAY = 50;
+    static const unsigned long LONG_PRESS_DELAY = 1000;
 };
 
 class InputDriver {
 public:
-    InputDriver();
-    void begin();
-    ButtonEvent loop();
+  InputDriver();
+  void begin();
+  ButtonEvent loop();
 
 private:
-    // State variables for button press detection
-    int lastEnterState = HIGH;
-    unsigned long enterPressTime = 0;
-    bool enterLongHandled = false;
-
-    int lastLeftState = HIGH;
-    unsigned long lastLeftDebounce = 0;
-    
-    int lastRightState = HIGH;
-    unsigned long lastRightDebounce = 0;
-
-    // Adjust these constants as needed
-    const unsigned long DEBOUNCE_DELAY = 50; 
-    const unsigned long LONG_PRESS_DELAY = 1000;
+  Button enterButton;
+  Button leftButton;
+  Button rightButton;
 };

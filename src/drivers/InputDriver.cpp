@@ -1,83 +1,77 @@
 #include "InputDriver.h"
 
-InputDriver::InputDriver() {}
+Button::Button(uint8_t pin, const char* name) : pin(pin), name(name) {}
+
+void Button::begin() {
+    pinMode(pin, INPUT_PULLUP);
+}
+
+ButtonEvent Button::update() {
+    int physicalState = digitalRead(pin);
+    unsigned long now = millis();
+    ButtonEvent event = BTN_NONE;
+
+    if (physicalState == LOW) {
+        Serial.printf("[Button:%s] Pressed\n", name);
+    }
+
+    if (physicalState != lastPhysicalState) {
+        lastDebounceTime = now;
+    }
+
+    if ((now - lastDebounceTime) > DEBOUNCE_DELAY) {
+        if (physicalState != stableState) {
+            stableState = physicalState;
+            if (stableState == LOW) {
+                // Button Pressed
+                pressStartTime = now;
+                longPressed = false;
+                Serial.printf("[Button:%s] Pressed 2\n", name);
+            } else {
+                // Button Released
+                unsigned long duration = now - pressStartTime;
+                Serial.printf("[Button:%s] Released after %lums\n", name, duration);
+                if (!longPressed && duration > DEBOUNCE_DELAY) {
+                    if (strcmp(name, "ENTER") == 0) event = BTN_ENTER_SHORT;
+                    else if (strcmp(name, "LEFT") == 0) event = BTN_LEFT_CLICK;
+                    else if (strcmp(name, "RIGHT") == 0) event = BTN_RIGHT_CLICK;
+                }
+            }
+        }
+    }
+
+    if (stableState == LOW && !longPressed && (now - pressStartTime > LONG_PRESS_DELAY)) {
+        longPressed = true;
+        Serial.printf("[Button:%s] Long Press detected\n", name);
+        if (strcmp(name, "ENTER") == 0) event = BTN_ENTER_LONG;
+    }
+
+    lastPhysicalState = physicalState;
+    return event;
+}
+
+InputDriver::InputDriver() 
+    : enterButton(KEY_ENTER, "ENTER"), 
+      leftButton(KEY_LEFT, "LEFT"), 
+      rightButton(KEY_RIGHT, "RIGHT") {}
 
 void InputDriver::begin() {
-    pinMode(KEY_ENTER, INPUT_PULLUP);
-    pinMode(KEY_LEFT, INPUT_PULLUP);
-    pinMode(KEY_RIGHT, INPUT_PULLUP);
+    enterButton.begin();
+    leftButton.begin();
+    rightButton.begin();
 }
 
 ButtonEvent InputDriver::loop() {
-    unsigned long now = millis();
     ButtonEvent e = BTN_NONE;
-
-    // --- LEFT BUTTON ---
-    int leftState = digitalRead(KEY_LEFT);
-    if (leftState != lastLeftState) {
-        lastLeftDebounce = now;
-    }
-    if ((now - lastLeftDebounce) > DEBOUNCE_DELAY) {
-        // If state stabilized low (pressed)
-        // Wait, for click usually we detect on RELEASE or PRESS. 
-        // Let's detect on PRESS (Low) but ensure we don't spam.
-        // Actually standard debounce logic often maintains a "stable state" variable.
-        // Simplified: Detect falling edge with debounce.
-        static int leftStable = HIGH;
-        if (leftState != leftStable) {
-            leftStable = leftState;
-            if (leftStable == LOW) {
-                e = BTN_LEFT_CLICK;
-            }
-        }
-    }
-    lastLeftState = leftState;
-
-    // --- RIGHT BUTTON ---
-    int rightState = digitalRead(KEY_RIGHT);
-    if (rightState != lastRightState) {
-        lastRightDebounce = now;
-    }
-    if ((now - lastRightDebounce) > DEBOUNCE_DELAY) {
-        static int rightStable = HIGH;
-        if (rightState != rightStable) {
-            rightStable = rightState;
-            if (rightStable == LOW) {
-                 e = BTN_RIGHT_CLICK;
-            }
-        }
-    }
-    lastRightState = rightState;
-
-    // --- ENTER BUTTON (Long Press Logic) ---
-    int enterState = digitalRead(KEY_ENTER);
     
-    // Press started
-    if (lastEnterState == HIGH && enterState == LOW) {
-        enterPressTime = now;
-        enterLongHandled = false;
-    }
-    
-    // Holding
-    if (enterState == LOW) {
-        Serial.println("ENTER holding...");
-        if (!enterLongHandled && (now - enterPressTime > LONG_PRESS_DELAY)) {
-            e = BTN_ENTER_LONG;
-            enterLongHandled = true; // Prevent re-triggering
-        }
-    }
+    ButtonEvent ev = enterButton.update();
+    if (ev != BTN_NONE) e = ev;
 
-    // Released
-    if (lastEnterState == LOW && enterState == HIGH) {
-        if (!enterLongHandled) {
-             // Short press released
-             // Maybe add a minimum short press time to debounce noise? > 50ms
-             if (now - enterPressTime > DEBOUNCE_DELAY) {
-                 e = BTN_ENTER_SHORT;
-             }
-        }
-    }
-    lastEnterState = enterState;
+    ev = leftButton.update();
+    if (ev != BTN_NONE) e = ev;
+    // todo: right button is float
+    // ev = rightButton.update();
+    // if (ev != BTN_NONE) e = ev;
 
     return e;
 }

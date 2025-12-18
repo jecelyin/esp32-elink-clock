@@ -37,7 +37,6 @@ UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
 void setup() {
   Serial.begin(115200);
   Serial.println("System Starting...");
-
   // Initialize NVS
   // esp_err_t ret = nvs_flash_init();
   // if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -57,9 +56,11 @@ void setup() {
   digitalWrite(SD_EN, SD_PWD_OFF);
   // Init Drivers
   inputDriver.begin();
+
   sdCardDriver.begin();
   displayDriver.init();
   displayDriver.showMessage("Initializing...");
+
   // i2c 需要拉高CODEC_EN
   pinMode(CODEC_EN, OUTPUT);
   digitalWrite(CODEC_EN, HIGH);
@@ -78,20 +79,27 @@ void setup() {
     Serial.println("RTC Init Failed");
     return;
   }
+
   Serial.println("RTC Init Success");
   if (!sensorDriver.init())
     Serial.println("Sensor Init Failed");
   Serial.println("Sensor Init Success");
+
   radioDriver.init();
   Serial.println("Radio Init Success");
+
   audioDriver.init();
   Serial.println("Audio Init Success");
+
   configManager.begin();
   Serial.println("Config Manager Init Success");
+
   connectionManager.begin(&configManager, &rtcDriver);
   Serial.println("Connection Manager Init Success");
+
   weatherManager.begin(&configManager);
   Serial.println("Weather Manager Init Success");
+
   uiManager.init();
   Serial.println("UI Manager Init Success");
   // Check WiFi
@@ -101,16 +109,28 @@ void setup() {
 }
 
 void loop() {
+  uint32_t t_start = millis();
   connectionManager.loop();
+  // Serial.printf("Connection loop: %ums\n", millis() - t_start);
   
+  t_start = millis();
   // Only update weather on Home or Weather screens
   if (uiManager.getCurrentState() == SCREEN_HOME || uiManager.getCurrentState() == SCREEN_WEATHER) {
       weatherManager.update();
   }
+  // Serial.printf("Weather update: %ums\n", millis() - t_start);
 
+  t_start = millis();
   alarmManager.check(rtcDriver.getTime());
+  // Serial.printf("Alarm check: %ums\n", millis() - t_start);
+
+  t_start = millis();
   uiManager.update();
+  // Serial.printf("UI update: %ums\n", millis() - t_start);
+
+  t_start = millis();
   audioDriver.loop(); // For audio processing
+  // Serial.printf("Audio loop: %ums\n", millis() - t_start);
 
   if (alarmManager.isRinging()) {
     if (!audioDriver.isPlaying()) {
@@ -121,7 +141,10 @@ void loop() {
   }
 
   // Handle Input
+  t_start = millis();
   ButtonEvent btn = inputDriver.loop();
+  // Serial.printf("Input loop: %ums\n", millis() - t_start);
+
   if (btn != BTN_NONE) {
     Serial.print("Button Event: ");
     Serial.println((int)btn);
@@ -137,17 +160,10 @@ void loop() {
         if (btn == BTN_ENTER_SHORT) key = UI_KEY_ENTER;
         if (btn == BTN_LEFT_CLICK) key = UI_KEY_LEFT;
         if (btn == BTN_RIGHT_CLICK) key = UI_KEY_RIGHT;
-        
+
         if (key != UI_KEY_NONE) uiManager.handleInput(key);
     }
   }
-
-  // Simple Serial Input for testing
-  // if (Serial.available()) {
-  //   char c = Serial.read();
-  //   if (c == 'm')
-  //     uiManager.handleInput(1); // Menu
-  // }
 
   // delay(10);
 }
