@@ -14,7 +14,7 @@ void DisplayDriver::init() {
   display.epd2.selectSPI(SPI, spisettings);
   // explicitly, GxEPD2 usually handles it if standard pins
   // display.init(115200);
-  display.init(0, true, 10, false);
+  display.init(0, true, 10, true);
   display.setRotation(0); // Adjust as needed
 
   u8g2Fonts.begin(display);

@@ -11,6 +11,7 @@
 // Library: https://github.com/ZinggJM/GxEPD2
 
 #include "GxEPD2_420_SSD1619A.h"
+#include <esp_debug_helpers.h>
 
 GxEPD2_420_SSD1619A::GxEPD2_420_SSD1619A(int16_t cs, int16_t dc, int16_t rst, int16_t busy) :
   GxEPD2_EPD(cs, dc, rst, busy, HIGH, 10000000, WIDTH, HEIGHT, panel, hasColor, hasPartialUpdate, hasFastPartialUpdate)
@@ -328,7 +329,8 @@ void GxEPD2_420_SSD1619A::_PowerOff()
 
 void GxEPD2_420_SSD1619A::_InitDisplay()
 {
-  if (_hibernating) _reset();
+  // if (_hibernating) _reset();
+  _reset();
   _writeCommand(0x74);
   _writeData(0x54);
   _writeCommand(0x7E);
@@ -452,6 +454,7 @@ static const uint8_t LUTDefault_part_16gray[] = {
 void GxEPD2_420_SSD1619A::_Init_Full()
 {
   Serial.println("Full Init");
+  // esp_backtrace_print(100);
   _InitDisplay();
   _writeCommandDataPGM(LUTDefault_full, sizeof(LUTDefault_full));
   _PowerOn();
@@ -462,6 +465,8 @@ void GxEPD2_420_SSD1619A::_Init_Part()
 {
   Serial.println("Partial Init");
   _InitDisplay();
+  _writeCommand(0x21);
+  _writeData(0x00);
   if (_grayScaleLevel == 4)
     _writeCommandDataPGM(LUTDefault_part_4gray, sizeof(LUTDefault_part_4gray));
   else if (_grayScaleLevel == 16)
@@ -481,6 +486,7 @@ void GxEPD2_420_SSD1619A::setGrayscale(uint8_t gray)
 void GxEPD2_420_SSD1619A::_Update_Full()
 {
   Serial.println("Full Update");
+  // esp_backtrace_print(100);
   _writeCommand(0x22);
   _writeData(0xc4);
   _writeCommand(0x20);

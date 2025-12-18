@@ -1,109 +1,183 @@
 #pragma once
 
+#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
-#include "../../managers/BusManager.h"
 #include "../components/StatusBar.h"
 
 class MenuScreen : public Screen {
 public:
-  MenuScreen(StatusBar *statusBar) : statusBar(statusBar) { 
+  MenuScreen(StatusBar *statusBar) : statusBar(statusBar) {
     menuIndex = 0;
+    lastMenuIndex = 0;
     items[0] = {SCREEN_HOME, "Home", u8g2_font_open_iconic_embedded_4x_t, 'D'};
-    items[1] = {SCREEN_ALARM, "Alarm", u8g2_font_open_iconic_embedded_4x_t, 'A'};
+    items[1] = {SCREEN_ALARM, "Alarm", u8g2_font_open_iconic_embedded_4x_t,
+                'A'};
     items[2] = {SCREEN_MUSIC, "Music", u8g2_font_open_iconic_play_4x_t, 'C'};
-    items[3] = {SCREEN_RADIO, "Radio", u8g2_font_open_iconic_embedded_4x_t, 'F'};
-    items[4] = {SCREEN_WEATHER, "Weather", u8g2_font_open_iconic_weather_4x_t, '@'};
-    items[5] = {SCREEN_SETTINGS, "Settings", u8g2_font_open_iconic_embedded_4x_t, 'B'};
+    items[3] = {SCREEN_RADIO, "Radio", u8g2_font_open_iconic_embedded_4x_t,
+                'F'};
+    items[4] = {SCREEN_WEATHER, "Weather", u8g2_font_open_iconic_weather_4x_t,
+                '@'};
+    items[5] = {SCREEN_SETTINGS, "Settings",
+                u8g2_font_open_iconic_embedded_4x_t, 'B'};
+    firstDraw = true;
+  }
+
+  void enter() override {
+    firstDraw = true;
+    lastMenuIndex = menuIndex;
   }
 
   void draw(DisplayDriver *display) override {
-    Serial.println("Drawing Menu Screen");
-    display->display.setFullWindow();
-    display->display.firstPage();
-    do {
-      display->display.fillScreen(GxEPD_WHITE);
+    Serial.printf(
+        "MenuScreen::draw firstDraw=%d menuIndex=%d lastMenuIndex=%d\n",
+        firstDraw, menuIndex, lastMenuIndex);
+    if (firstDraw) {
+      display->display.setFullWindow();
 
-      statusBar->draw(display, true);
-
-
-      int x_start = 40;
-      int y_start = 100;
-      int x_gap = 120;
-      int y_gap = 100;
-
-      for (int i = 0; i < 6; i++) {
-        int col = i % 3;
-        int row = i / 3;
-        int x = x_start + col * x_gap;
-        int y = y_start + row * y_gap;
-
-        // Draw Selection Box
-        if (i == menuIndex) {
-          display->display.fillRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
-          display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
-          display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
-        } else {
-          display->display.drawRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
-          display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
-          display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+      display->display.firstPage();
+      do {
+        display->display.fillScreen(GxEPD_WHITE);
+        statusBar->draw(display, true);
+        for (int i = 0; i < 6; i++) {
+          drawMenuItem(display, i);
         }
+        BusManager::getInstance().requestDisplay();
+      } while (display->display.nextPage());
 
-        // Draw Icon
-        // Box Specs: x start: x-10, width: 100.
-        // Center X = (x-10) + (100/2) = x + 40.
-        int boxCenterX = x + 40;
+      firstDraw = false;
+    } else {
+      Serial.println("Partial update start");
+      // Partial update for the item that WAS selected (now unselected)
+      updateItem(display, lastMenuIndex);
 
-        // Draw Icon
-        display->u8g2Fonts.setFont(items[i].font);
-        int iconWidth = u8g2_GetGlyphWidth(&(display->u8g2Fonts.u8g2), items[i].icon);
-        display->u8g2Fonts.drawGlyph(boxCenterX - (iconWidth / 2), y, items[i].icon);
+      // Partial update for the item that IS selected (now selected)
+      updateItem(display, menuIndex);
+      Serial.println("Partial update end");
+    }
 
-        // Draw Label
-        display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-        int labelWidth = display->u8g2Fonts.getUTF8Width(items[i].label);
-        display->u8g2Fonts.setCursor(boxCenterX - (labelWidth / 2), y + 22);
-        display->u8g2Fonts.print(items[i].label);
-
-        // Reset Colors
-        display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
-        display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
-      }
-
-      BusManager::getInstance().requestDisplay();
-    } while (display->display.nextPage());
+    // Update lastMenuIndex for next time
+    lastMenuIndex = menuIndex;
   }
 
+  void onLongPress() override { uiManager->switchScreen(SCREEN_HOME); }
 
-  void onLongPress() override {
-      uiManager->switchScreen(SCREEN_HOME);
-  }
   void handleInput(UIKey key) override {
-    bool updateNeeded = false;
+
     if (key == UI_KEY_LEFT) { // Left (KEY_LEFT)
+      lastMenuIndex = menuIndex;
       menuIndex--;
       if (menuIndex < 0)
         menuIndex = 5;
-      updateNeeded = true;
+      Serial.printf("Input LEFT: new index=%d\n", menuIndex);
     } else if (key == UI_KEY_RIGHT) { // Right (KEY_RIGHT)
+      lastMenuIndex = menuIndex;
       menuIndex++;
       if (menuIndex > 5)
         menuIndex = 0;
-      updateNeeded = true;
+      Serial.printf("Input RIGHT: new index=%d\n", menuIndex);
     } else if (key == UI_KEY_ENTER) { // Select (KEY_ENTER Short)
+      Serial.printf("Input ENTER: switch to screen id=%d\n",
+                    items[menuIndex].id);
       uiManager->switchScreen(items[menuIndex].id);
-      return; // Switch screen handles draw
-    }
-    
-    // Only redraw if selection changed
-    if (updateNeeded) {
-        // We could implement partial refresh for selection box moving?
-        // For simplicity, full refresh or just let UIManager call draw() which does full page loop.
-        // UIManager calls draw() after handleInput returns.
+      return;
     }
   }
 
 private:
+  void updateItem(DisplayDriver *display, int index) {
+    int x, y, w, h;
+    getMenuItemRect(index, x, y, w, h);
+
+    // Align to byte boundaries (8 pixels) for x and w
+    // This is often required for correct partial updates on E-Ink
+    int x_start_aligned = (x / 8) * 8;
+    int x_end = x + w;
+    int x_end_aligned = ((x_end + 7) / 8) * 8;
+    int w_aligned = x_end_aligned - x_start_aligned;
+
+    Serial.printf("updateItem index=%d raw: %d,%d %dx%d aligned: %d,%d %dx%d\n",
+                  index, x, y, w, h, x_start_aligned, y, w_aligned, h);
+
+    display->display.setPartialWindow(x_start_aligned, y, w_aligned, h);
+
+    display->display.firstPage();
+    do {
+      display->display.fillScreen(GxEPD_WHITE);
+      drawMenuItem(display, index);
+      BusManager::getInstance().requestDisplay();
+    } while (display->display.nextPage());
+  }
+
+  void drawMenuItem(DisplayDriver *display, int i) {
+    int x_start = 40;
+    int y_start = 100;
+    int x_gap = 120;
+    int y_gap = 100;
+
+    int col = i % 3;
+    int row = i / 3;
+    int x = x_start + col * x_gap;
+    int y = y_start + row * y_gap;
+
+    // Debug info
+    bool isSelected = (i == menuIndex);
+    Serial.printf("drawMenuItem i=%d menuIndex=%d isSelected=%d x=%d y=%d\n", i,
+                  menuIndex, isSelected, x, y);
+
+    // Draw Selection Box
+    if (isSelected) {
+      display->display.fillRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
+      display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
+      display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
+      // Serial.println("Draw Box: FILLED BLACK, Text: WHITE");
+    } else {
+      display->display.drawRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
+      display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+      display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+      // Serial.println("Draw Box: RECT BLACK, Text: BLACK");
+    }
+
+    // Draw Icon
+    // Box Specs: x start: x-10, width: 100.
+    // Center X = (x-10) + (100/2) = x + 40.
+    int boxCenterX = x + 40;
+
+    // Draw Icon
+    display->u8g2Fonts.setFont(items[i].font);
+    int iconWidth =
+        u8g2_GetGlyphWidth(&(display->u8g2Fonts.u8g2), items[i].icon);
+    Serial.printf("Icon: code=%d width=%d\n", items[i].icon, iconWidth);
+
+    display->u8g2Fonts.drawGlyph(boxCenterX - (iconWidth / 2), y,
+                                 items[i].icon);
+
+    // Draw Label
+    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
+    int labelWidth = display->u8g2Fonts.getUTF8Width(items[i].label);
+    Serial.printf("Label: %s width=%d\n", items[i].label, labelWidth);
+
+    display->u8g2Fonts.setCursor(boxCenterX - (labelWidth / 2), y + 22);
+    display->u8g2Fonts.print(items[i].label);
+
+    // Reset Colors
+    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+  }
+
+  void getMenuItemRect(int index, int &x, int &y, int &w, int &h) {
+    int col = index % 3;
+    int row = index / 3;
+
+    int center_x = 40 + col * 120;
+    int center_y = 100 + row * 100;
+
+    x = center_x - 10;
+    y = center_y - 50;
+    w = 100;
+    h = 90;
+  }
+
   struct MenuItem {
     ScreenState id;
     const char *label;
@@ -112,5 +186,7 @@ private:
   };
   MenuItem items[6];
   int menuIndex;
+  int lastMenuIndex;
   StatusBar *statusBar;
+  bool firstDraw;
 };
