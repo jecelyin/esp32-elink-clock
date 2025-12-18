@@ -13,6 +13,15 @@ public:
   void seekUp();
   void seekDown();
   uint16_t getFrequency();
+  char* getFormattedFrequency();
+  uint16_t getMinFrequency();
+  uint16_t getMaxFrequency();
+  uint8_t getSignalStrength();
+  uint8_t getRSSI();
+  bool hasRdsInfo();
+  String getRdsStationName();
+  String getRdsProgramInformation();
+  void clearRds();
 
 private:
   RDA5807 radio;

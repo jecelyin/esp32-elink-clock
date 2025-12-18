@@ -1,287 +1,371 @@
 #include "RadioScreen.h"
 
+namespace Layout {
+  const int SCREEN_W = 400;
+  const int SCREEN_H = 300;
+  const uint16_t COLOR_BG = GxEPD_WHITE;
+  const uint16_t COLOR_FG = GxEPD_BLACK;
+  const int SYSTEM_BAR_H = 24;
+  const int MAIN_SECTION_Y = 24;
+  const int MAIN_SECTION_H = 176;
+  const int VOL_BAR_W = 40;
+  const int DISPLAY_AREA_W = SCREEN_W - VOL_BAR_W;
+  const int DIAL_Y = 160;
+  const int DIAL_H = 40;
+  const int CONTROLS_Y = 200;
+  const int CONTROLS_H = 100;
+}
+
 RadioScreen::RadioScreen(RadioDriver *radio, StatusBar *statusBar, ConfigManager *config)
     : radio(radio), statusBar(statusBar), config(config) {
   focusedControl = 0;
-  showVolumePopup = false;
-  tempVolume = 10;
 }
 
 void RadioScreen::init() {
-    // Ensure volume is synced with config on start? 
-    // RadioDriver might already be init, but we can set volume again to be sure if needed.
-    // tempVolume = config->config.volume; 
 }
 
 void RadioScreen::draw(DisplayDriver *display) {
+  uint16_t freq = radio->getFrequency();
+  if (freq < radio->getMinFrequency() || freq > radio->getMaxFrequency()) {
+    freq = radio->getMinFrequency();
+    radio->setFrequency(freq);
+  }
+  float freqVal = freq / 100.0;
+  int vol = config->config.volume;
+
+  String rds = "";
+  if (radio->hasRdsInfo()) {
+    rds = radio->getRdsStationName();
+    rds.trim();
+    if (rds.length() == 0) {
+      rds = radio->getRdsProgramInformation();
+      rds.trim();
+    }
+  }
+  int signal = radio->getSignalStrength();
+  int rssi = radio->getRSSI();
+
+  // Periodic Maintenance
+  static unsigned long lastClear = 0;
+  if (millis() - lastClear > 60000) {
+    radio->clearRds();
+    lastClear = millis();
+  }
+
   display->display.setFullWindow();
   display->display.firstPage();
   do {
     display->display.fillScreen(GxEPD_WHITE);
     statusBar->draw(display, true);
-
-    // Header
-    display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
-    const char *title = "FM RADIO";
-    int titleWidth = display->u8g2Fonts.getUTF8Width(title);
-    display->u8g2Fonts.setCursor((400 - titleWidth) / 2, 50); // Centered
-    display->u8g2Fonts.print(title);
-
-    // Current Frequency Large Display
-    uint16_t freq = radio->getFrequency();
-    char freqStr[10];
-    sprintf(freqStr, "%.1f", freq / 100.0);
-    
-    display->u8g2Fonts.setFont(u8g2_font_logisoso42_tn);
-    int freqWidth = display->u8g2Fonts.getUTF8Width(freqStr);
-    display->u8g2Fonts.setCursor((400 - freqWidth) / 2 - 20, 110);
-    display->u8g2Fonts.print(freqStr);
-
-    display->u8g2Fonts.setFont(u8g2_font_helvB14_tf);
-    display->u8g2Fonts.print(" MHz");
-
-    drawScale(display);
-    drawControls(display);
-
-    if (showVolumePopup) {
-      drawVolumePopup(display);
-    }
+    drawStaticGrid(display);
+    drawHeaderInfo(display, rds.c_str(), signal, rssi, false);
+    drawFrequency(display, false);
+    drawDial(display, freqVal, false);
+    drawVolume(display, vol, false);
+    drawRDS(display, rds.c_str(), false);
+    drawButtons(display, false);
 
     BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 }
 
-void RadioScreen::drawScale(DisplayDriver *display) {
-  // Simple scale simulation
-  // Center is current freq. Range +/- 2MHz?
-  int centerX = 200;
-  int startY = 130;
-  int scaleWidth = 300;
-  
-  display->display.drawFastHLine(centerX - scaleWidth/2, startY, scaleWidth, GxEPD_BLACK);
-  
-  // Draw ticks - this is a static representation for now as a real moving scale needs more math
-  // Let's just draw a static scale with a pointer for now as requested "scale below title"
-  // Actually, user said: "frequency scale dial and indicator below title"
-  // Let's draw a dial arc or linear scale. Linear is easier for e-ink.
-  
-  // Let's make it a linear scale representing 87-108 MHz
-  int xStart = 50;
-  int xEnd = 350;
-  int yLine = 140;
-  
-  display->display.drawFastHLine(xStart, yLine, xEnd - xStart, GxEPD_BLACK);
-  
-  // Ticks every 5MHz? 88, 93, 98, 103, 108
-  // 87.5 to 108.
-  // Range = 20.5 MHz. Width = 300px. ~14.6 px per MHz.
-  
-  uint16_t currentFreq = radio->getFrequency(); // e.g. 10110
-  float freqVal = currentFreq / 100.0;
+void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w, int h, bool partial) {
+  if (partial) {
+    display->display.setPartialWindow(x, y, w, h);
+  }
+  display->display.fillRect(x, y, w, h, Layout::COLOR_BG);
+}
 
-  for (int f = 88; f <= 108; f += 2) {
-      float pos = (f - 87.0) / (108.0 - 87.0);
-      int x = xStart + pos * (xEnd - xStart);
-      display->display.drawFastVLine(x, yLine, 10, GxEPD_BLACK);
-      
-      display->u8g2Fonts.setFont(u8g2_font_wqy16_t_gb2312); // Tiny font
-      // display->u8g2Fonts.setCursor(x - 5, yLine + 20);
-      // display->u8g2Fonts.print(f);
+void RadioScreen::drawStaticGrid(DisplayDriver *display) {
+  using namespace Layout;
+
+  display->display.drawRect(0, SYSTEM_BAR_H, SCREEN_W, SCREEN_H - SYSTEM_BAR_H, COLOR_FG);
+  display->display.drawRect(1, SYSTEM_BAR_H+1, SCREEN_W-2, SCREEN_H - SYSTEM_BAR_H - 2, COLOR_FG);
+
+  display->display.drawLine(0, SYSTEM_BAR_H, SCREEN_W, SYSTEM_BAR_H, COLOR_FG);
+  display->display.drawLine(0, SYSTEM_BAR_H+1, SCREEN_W, SYSTEM_BAR_H+1, COLOR_FG);
+
+  display->display.drawLine(0, CONTROLS_Y, SCREEN_W, CONTROLS_Y, COLOR_FG);
+  display->display.drawLine(0, CONTROLS_Y+1, SCREEN_W, CONTROLS_Y+1, COLOR_FG);
+
+  display->display.drawLine(DISPLAY_AREA_W, MAIN_SECTION_Y, DISPLAY_AREA_W, CONTROLS_Y, COLOR_FG);
+  display->display.drawLine(DISPLAY_AREA_W+1, MAIN_SECTION_Y, DISPLAY_AREA_W+1, CONTROLS_Y, COLOR_FG);
+
+  display->display.drawLine(SCREEN_W/2, CONTROLS_Y, SCREEN_W/2, SCREEN_H, COLOR_FG);
+  display->display.drawLine(0, CONTROLS_Y + CONTROLS_H/2, SCREEN_W, CONTROLS_Y + CONTROLS_H/2, COLOR_FG);
+  display->display.drawLine(SCREEN_W/2 + (SCREEN_W/4), CONTROLS_Y, SCREEN_W/2 + (SCREEN_W/4), SCREEN_H, COLOR_FG);
+  display->display.drawLine(SCREEN_W/4, CONTROLS_Y, SCREEN_W/4, SCREEN_H, COLOR_FG);
+}
+
+void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
+  using namespace Layout;
+  int x = 1;
+  int y = 54;
+  int w = DISPLAY_AREA_W;
+  int h = 70;
+
+  setupWindow(display, x, y, w, h, partial);
+
+  display->u8g2Fonts.setFont(u8g2_font_logisoso78_tn);
+  char* freqStr = radio->getFormattedFrequency();
+
+  int16_t tw = display->u8g2Fonts.getUTF8Width(freqStr);
+  int cursorX = (w - tw) / 2;
+  int cursorY = y + 60; // Adjusted for 70px window
+
+  display->u8g2Fonts.setCursor(cursorX, cursorY);
+  display->u8g2Fonts.print(freqStr);
+
+  // If the library doesn't include MHz, we might need it, but user's snippet just prints it.
+  // Actually, logisoso78_tn is numbers only. We might need to switch font or split.
+  // Let's check logisoso78_tn coverage. It's usually "tn" for transparent numbers.
+  // If it's numbers only, it won't show the dot or MHz.
+  // But the previous implementation used it for "101.1".
+  // Let's assume the library returns something like "101.10" or "88.0".
+}
+
+void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partial) {
+  using namespace Layout;
+  int x = 0;
+  int y = DIAL_Y;
+  int w = DISPLAY_AREA_W;
+  int h = DIAL_H;
+
+  setupWindow(display, x, y, w, h, partial);
+  Serial.print("Center frequency: ");
+  Serial.println(centerFreq);
+
+  display->display.drawLine(0, DIAL_Y, DISPLAY_AREA_W, DIAL_Y, COLOR_FG);
+  display->display.drawLine(0, DIAL_Y + 1, DISPLAY_AREA_W, DIAL_Y + 1, COLOR_FG);
+
+  float minBandFreq = radio->getMinFrequency() / 100.0;
+  float maxBandFreq = radio->getMaxFrequency() / 100.0;
+  if (minBandFreq <= 0 || maxBandFreq <= 0 || maxBandFreq <= minBandFreq) {
+    minBandFreq = 87.5;
+    maxBandFreq = 108.0;
   }
 
-  // Indicator
-  float currentPos = (freqVal - 87.0) / (108.0 - 87.0);
-  if(currentPos < 0) currentPos = 0;
-  if(currentPos > 1) currentPos = 1;
+  // Dial Configuration
+  const int margin = 20;      // Padding on left/right to prevent labels being cut off
+  const int visibleW = w - 2 * margin;
+  const int tickSpacing = 8;  // Pixels per 0.1MHz step
+  const int tickH01 = 6;      // Height for 0.1MHz tick
+  const int tickH05 = 10;     // Height for 0.5MHz tick
+  const int tickH10 = 16;     // Height for 1.0MHz tick
+
+  int totalTicks = (int)round((maxBandFreq - minBandFreq) * 10);
+  int totalW = totalTicks * tickSpacing;
   
-  int indicatorX = xStart + currentPos * (xEnd - xStart);
-  display->display.fillTriangle(indicatorX, yLine - 2, indicatorX - 5, yLine - 8, indicatorX + 5, yLine - 8, GxEPD_BLACK);
-}
+  // Calculate potential pointer position in the full dial width
+  int idealPx = (int)round((centerFreq - minBandFreq) * 10 * tickSpacing);
+  
+  // Calculate view offset to keep pointer centered if possible
+  int viewOffset = idealPx - (visibleW / 2);
+  viewOffset = constrain(viewOffset, 0, max(0, totalW - visibleW));
+  
+  // Final positions relative to the window, shifted by margin
+  int pointerX = idealPx - viewOffset + margin;
+  
+  // Draw Ticks
+  int tickY = y + 2;
+  display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
 
-void RadioScreen::drawControls(DisplayDriver *display) {
-    int startY = 180;
-    
-    // Seek Down | Seek Up | Volume
-    // 0: Seek-
-    // 1: Seek+
-    // 2: Volume
-    
-    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-    
-    // Seek Down
-    display->display.drawRect(30, startY, 80, 30, GxEPD_BLACK);
-    if(focusedControl == 0) display->display.fillRect(30, startY, 80, 30, GxEPD_BLACK);
-    
-    display->u8g2Fonts.setForegroundColor(focusedControl == 0 ? GxEPD_WHITE : GxEPD_BLACK);
-    display->u8g2Fonts.setBackgroundColor(focusedControl == 0 ? GxEPD_BLACK : GxEPD_WHITE);
-    display->u8g2Fonts.setCursor(45, startY + 20);
-    display->u8g2Fonts.print("<<");
-    
-    // Seek Up
-    display->display.drawRect(120, startY, 80, 30, GxEPD_BLACK);
-    if(focusedControl == 1) display->display.fillRect(120, startY, 80, 30, GxEPD_BLACK);
-    
-    display->u8g2Fonts.setForegroundColor(focusedControl == 1 ? GxEPD_WHITE : GxEPD_BLACK);
-    display->u8g2Fonts.setBackgroundColor(focusedControl == 1 ? GxEPD_BLACK : GxEPD_WHITE);
-    display->u8g2Fonts.setCursor(135, startY + 20);
-    display->u8g2Fonts.print(">>");
+  for (int i = 0; i <= totalTicks; i++) {
+    float f = minBandFreq + (i * 0.1f);
+    int tickX = (i * tickSpacing) - viewOffset + margin;
 
-    // Volume
-    display->display.drawRect(210, startY, 80, 30, GxEPD_BLACK);
-    if(focusedControl == 2) display->display.fillRect(210, startY, 80, 30, GxEPD_BLACK);
-    
-    display->u8g2Fonts.setForegroundColor(focusedControl == 2 ? GxEPD_WHITE : GxEPD_BLACK);
-    display->u8g2Fonts.setBackgroundColor(focusedControl == 2 ? GxEPD_BLACK : GxEPD_WHITE);
-    display->u8g2Fonts.setCursor(225, startY + 20);
-    display->u8g2Fonts.print("Vol");
-    
-    // Reset colors
-    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
-    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+    if (tickX >= margin - 20 && tickX < w - margin + 20) {
+      bool is1MHz = (abs(f - round(f)) < 0.01f);
+      bool is05MHz = !is1MHz && (abs(f - (floor(f) + 0.5f)) < 0.01f);
+      
+      int tickH = is1MHz ? tickH10 : (is05MHz ? tickH05 : tickH01);
+      int tickWidth = 1;
+      
+      if (tickX >= 0 && tickX < w) {
+        display->display.fillRect(tickX - (tickWidth / 2), tickY, tickWidth, tickH, COLOR_FG);
+      }
 
-    // Presets Grid
-    int presetStartY = 230;
-    int presetW = 85; // slightly wider to fit freq
-    int presetH = 25;
-    int gapX = 5;
-    int gapY = 5;
-    
-    for(int i=0; i<8; i++) {
-        int r = i / 4;
-        int c = i % 4;
-        int x = 25 + c * (presetW + gapX);
-        int y = presetStartY + r * (presetH + gapY);
+      // Draw 1MHz Label
+      if (is1MHz) {
+        char numStr[8];
+        sprintf(numStr, "%d", (int)round(f));
+        int nw = display->u8g2Fonts.getUTF8Width(numStr);
+        int labelX = tickX - nw / 2;
         
-        // Control index for presets: 3 + i
-        bool focused = (focusedControl == 3 + i);
-        
-        display->display.drawRect(x, y, presetW, presetH, GxEPD_BLACK);
-        if(focused) display->display.fillRect(x, y, presetW, presetH, GxEPD_BLACK);
-        
-        display->u8g2Fonts.setForegroundColor(focused ? GxEPD_WHITE : GxEPD_BLACK);
-        display->u8g2Fonts.setBackgroundColor(focused ? GxEPD_BLACK : GxEPD_WHITE);
-        
-        display->u8g2Fonts.setFont(u8g2_font_helvB08_tf);
-        display->u8g2Fonts.setCursor(x + 5, y + 17);
-        
-        uint16_t pFreq = config->config.radio_presets[i];
-        if(pFreq == 0) {
-             display->u8g2Fonts.print(String(i+1) + " ----");
-        } else {
-             display->u8g2Fonts.print(String(i+1) + " " + String(pFreq/100.0, 1));
+        if (labelX + nw > 0 && labelX < w) {
+           display->u8g2Fonts.setCursor(labelX, y + 30); // Moved up to make room for triangle
+           display->u8g2Fonts.print(numStr);
         }
+      }
     }
-    
-    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
-    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+  }
+
+  // Pointer: 竖线 (Vertical Line) + 三角形 (Triangle at bottom)
+  int triBaseY = y + h - 2; 
+  display->display.drawLine(pointerX, y, pointerX, triBaseY - 6, COLOR_FG);
+  display->display.fillTriangle(pointerX, triBaseY - 6, pointerX - 5, triBaseY, pointerX + 5, triBaseY, COLOR_FG);
 }
 
-void RadioScreen::drawVolumePopup(DisplayDriver *display) {
-    // Popup Window
-    display->display.fillRect(50, 80, 300, 140, GxEPD_WHITE);
-    display->display.drawRect(50, 80, 300, 140, GxEPD_BLACK);
-    display->display.drawRect(52, 82, 296, 136, GxEPD_BLACK); // Thicker border
-    
-    display->u8g2Fonts.setFont(u8g2_font_helvB14_tf);
-    display->u8g2Fonts.setCursor(110, 120);
-    display->u8g2Fonts.print("Volume: " + String(tempVolume));
-    
-    // Bar
-    int barW = 200;
-    int barH = 20;
-    int barX = 100;
-    int barY = 140;
-    
-    display->display.drawRect(barX, barY, barW, barH, GxEPD_BLACK);
-    int fillW = (tempVolume * barW) / 15; // Max vol usually 15 or 30? assumed 15 for RDA5807 usually, let's check driver later.
-    // Driver setVolume takes uint8_t.
-    // For now assume 0-15 scale.
-    if (fillW > barW) fillW = barW;
-    display->display.fillRect(barX, barY, fillW, barH, GxEPD_BLACK);
+void RadioScreen::drawVolume(DisplayDriver *display, int vol, bool partial) {
+  using namespace Layout;
+  int x = DISPLAY_AREA_W + 2;
+  int y = MAIN_SECTION_Y;
+  int w = VOL_BAR_W - 4;
+  int h = MAIN_SECTION_H;
 
-    display->u8g2Fonts.setFont(u8g2_font_helvR10_tf);
-    display->u8g2Fonts.setCursor(80, 200);
-    display->u8g2Fonts.print("Use Left/Right to adjust, Enter to confirm");
+  setupWindow(display, x, y, w, h, partial);
+
+  display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
+  display->u8g2Fonts.setCursor(x + 4, y + 15);
+  display->u8g2Fonts.print("VOL");
+
+  int segH = (h - 25) / 16;
+  int startY = y + h - 5;
+
+  for (int i = 0; i < 15; i++) {
+    int boxY = startY - ((i + 1) * segH);
+    display->display.drawRect(x + 5, boxY, w - 10, segH - 2, COLOR_FG);
+    if (i < vol) {
+      display->display.fillRect(x + 5, boxY, w - 10, segH - 2, COLOR_FG);
+    }
+  }
+}
+
+void RadioScreen::drawHeaderInfo(DisplayDriver *display, const char* rds, int signal, int rssi, bool partial) {
+  using namespace Layout;
+  int x = 0;
+  int y = 24;
+  int w = DISPLAY_AREA_W;
+  int h = 30;
+
+  setupWindow(display, x, y, w, h, partial);
+
+  display->u8g2Fonts.setFont(u8g2_font_helvB08_tf);
+  display->u8g2Fonts.setCursor(x + 5, y + 20);
+  display->u8g2Fonts.print("FM RADIO");
+
+  // Show RSSI in dB
+  char rssiStr[12];
+  sprintf(rssiStr, "%ddB", rssi);
+  int rw = display->u8g2Fonts.getUTF8Width(rssiStr);
+  display->u8g2Fonts.setCursor(w - 70 - rw, y + 20); 
+  display->u8g2Fonts.print(rssiStr);
+
+  int sigX = w - 30;
+  for (int i = 0; i < 4; i++) {
+    int barH = 4 + (i * 3);
+    int barX = sigX + (i * 5);
+    int barY = y + 20 - barH; 
+    if (i < signal) {
+      display->display.fillRect(barX, barY, 3, barH, COLOR_FG);
+    } else {
+      display->display.drawRect(barX, barY, 3, barH, COLOR_FG);
+    }
+  }
+}
+
+void RadioScreen::drawRDS(DisplayDriver *display, const char* text, bool partial) {
+  using namespace Layout;
+  int x = 0;
+  int y = 124;
+  int w = DISPLAY_AREA_W;
+  int h = 20;
+
+  setupWindow(display, x, y, w, h, partial);
+  display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
+  int tw = display->u8g2Fonts.getUTF8Width(text);
+  display->u8g2Fonts.setCursor((w - tw) / 2, y + 15);
+  display->u8g2Fonts.print(text);
+}
+
+void RadioScreen::drawButtons(DisplayDriver *display, bool partial) {
+  using namespace Layout;
+  int cellW = 100;
+  int cellH = 50;
+
+  auto drawBtn = [&](int idx, int bx, int by, int bw, int bh, const char* t) {
+    bool focused = (focusedControl == idx);
+    if (focused) display->display.fillRect(bx, by, bw, bh, COLOR_FG);
+    display->display.drawRect(bx, by, bw, bh, COLOR_FG);
+    display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
+    display->u8g2Fonts.setBackgroundColor(focused ? COLOR_FG : COLOR_BG);
+    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
+    int tw = display->u8g2Fonts.getUTF8Width(t);
+    display->u8g2Fonts.setCursor(bx + (bw - tw)/2, by + bh/2 + 5);
+    display->u8g2Fonts.print(t);
+  };
+
+  drawBtn(0, 0, CONTROLS_Y, cellW, cellH, "<< SEEK");
+  drawBtn(1, cellW, CONTROLS_Y, cellW, cellH, "SEEK >>");
+  drawBtn(2, 0, CONTROLS_Y + cellH, cellW, cellH, "VOL -");
+  drawBtn(3, cellW, CONTROLS_Y + cellH, cellW, cellH, "VOL +");
+
+  int pW = 50;
+  int pH = 50;
+  int startX = 200;
+  for(int i=0; i<8; i++) {
+    int r = i / 4;
+    int c = i % 4;
+    int bx = startX + (c * pW);
+    int by = CONTROLS_Y + (r * pH);
+    bool focused = (focusedControl == 4 + i);
+    if (focused) display->display.fillRect(bx, by, pW, pH, COLOR_FG);
+    display->display.drawRect(bx, by, pW, pH, COLOR_FG);
+    display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
+    display->u8g2Fonts.setBackgroundColor(focused ? COLOR_FG : COLOR_BG);
+    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
+    String pStr = String(i + 1);
+    int tw = display->u8g2Fonts.getUTF8Width(pStr.c_str());
+    display->u8g2Fonts.setCursor(bx + (pW - tw)/2, by + pH/2 + 5);
+    display->u8g2Fonts.print(pStr);
+  }
+  display->u8g2Fonts.setForegroundColor(COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(COLOR_BG);
 }
 
 void RadioScreen::handleInput(UIKey key) {
-    if (showVolumePopup) {
-        if (key == UI_KEY_LEFT) {
-            if(tempVolume > 0) tempVolume--;
-            config->config.volume = tempVolume;
-            radio->setVolume(tempVolume);
-        } else if (key == UI_KEY_RIGHT) {
-            if(tempVolume < 15) tempVolume++;
-            config->config.volume = tempVolume;
-            radio->setVolume(tempVolume);
-        } else if (key == UI_KEY_ENTER) {
-            config->save();
-            showVolumePopup = false;
-        }
-    } else {
-        if (key == UI_KEY_LEFT) {
-            focusedControl--;
-            if(focusedControl < 0) focusedControl = 10; // Wrap around
-        } else if (key == UI_KEY_RIGHT) {
-            focusedControl++;
-            if(focusedControl > 10) focusedControl = 0; // Wrap around
-        } else if (key == UI_KEY_ENTER) {
-            if (focusedControl == 0) { // Seek Down
-                radio->seekDown();
-            } else if (focusedControl == 1) { // Seek Up
-                radio->seekUp();
-            } else if (focusedControl == 2) { // Volume
-                tempVolume = config->config.volume;
-                showVolumePopup = true;
-            } else if (focusedControl >= 3 && focusedControl <= 10) { // Presets
-                int pIndex = focusedControl - 3;
-                loadPreset(pIndex);
-            }
-        }
+  if (key == UI_KEY_LEFT) {
+    focusedControl = (focusedControl - 1 + 12) % 12;
+  } else if (key == UI_KEY_RIGHT) {
+    focusedControl = (focusedControl + 1) % 12;
+  } else if (key == UI_KEY_ENTER) {
+    if (focusedControl == 0) radio->seekDown();
+    else if (focusedControl == 1) radio->seekUp();
+    else if (focusedControl == 2) {
+      if (config->config.volume > 0) {
+        config->config.volume--;
+        radio->setVolume(config->config.volume);
+        config->save();
+      }
+    } else if (focusedControl == 3) {
+      if (config->config.volume < 15) {
+        config->config.volume++;
+        radio->setVolume(config->config.volume);
+        config->save();
+      }
+    } else if (focusedControl >= 4 && focusedControl <= 11) {
+      loadPreset(focusedControl - 4);
     }
+  }
 }
 
 void RadioScreen::onLongPress() {
-    if (focusedControl >= 3 && focusedControl <= 10) {
-        int pIndex = focusedControl - 3;
-        savePreset(pIndex);
-    } else {
-        // Fallback for other controls? Return to menu?
-        // User said: "In volume confirm... In saved freq button click enter switch... Long press enter save current freq".
-        // It implies long press save only works on preset buttons.
-        // If long press on other buttons, maybe default to Menu?
-        // But UIManager logic is generic. 
-        // Let's explicitly go to menu if not on preset.
-        if (uiManager) uiManager->switchScreen(SCREEN_MENU);
-    }
+  if (focusedControl >= 4 && focusedControl <= 11) {
+    savePreset(focusedControl - 4);
+  } else {
+    if (uiManager) uiManager->switchScreen(SCREEN_MENU);
+  }
 }
 
 void RadioScreen::savePreset(int index) {
-    uint16_t freq = radio->getFrequency();
-    config->config.radio_presets[index] = freq;
-    config->save();
-    // Force redraw to update preset label
-    // UIManager calls draw() after handleInput, but onLongPress is separate.
-    // We should ensure draw triggers.
-    // UIManager::onLongPressEnter calls currentScreenObj->onLongPress()
-    // It doesn't explicitly call draw() after onLongPress!
-    // We should probably request display or just rely on loop update?
-    // UIManager::handleInput calls draw(). UIManager::onLongPressEnter does NOT.
-    // So we need to trigger it.
-    // But Screen::draw is called by UIManager::update() periodically or we can invoke it?
-    // UIManager.cpp:73 calls draw() after handleInput.
-    // We should probably add a draw() call in UIManager::onLongPressEnter or return true/false to trigger it.
-    // Alternatively, just mark update needed.
-    // Since we are inside RadioScreen, we can just requestDisplay() but that only sets flag for loop?
-    // Usually UIManager handles the main loop.
-    // If I look at UIManager::update(), it calls currentScreenObj->update().
-    // RadioScreen::update() is default empty.
-    // Let's just modify UIManager::onLongPressEnter to also draw.
+  uint16_t freq = radio->getFrequency();
+  config->config.radio_presets[index] = freq;
+  config->save();
 }
 
 void RadioScreen::loadPreset(int index) {
-    uint16_t freq = config->config.radio_presets[index];
-    if(freq > 0) {
-        radio->setFrequency(freq);
-    }
+  uint16_t freq = config->config.radio_presets[index];
+  if(freq > 0) radio->setFrequency(freq);
 }
+
+
