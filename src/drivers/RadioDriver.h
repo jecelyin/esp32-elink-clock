@@ -21,6 +21,7 @@ public:
   bool hasRdsInfo();
   String getRdsStationName();
   String getRdsProgramInformation();
+  bool isStereo();
   void clearRds();
 
 private:

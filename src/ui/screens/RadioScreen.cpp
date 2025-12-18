@@ -19,12 +19,93 @@ namespace Layout {
 RadioScreen::RadioScreen(RadioDriver *radio, StatusBar *statusBar, ConfigManager *config)
     : radio(radio), statusBar(statusBar), config(config) {
   focusedControl = 0;
+  lastFocusedControl = -1;
+  lastFreq = 0;
+  lastVol = -1;
+  lastRDS = "";
+  lastRSSI = -1;
+  lastStereo = false;
+  smoothedRSSI = 0;
+  isFirstDraw = true;
+  initButtons();
+}
+
+void RadioScreen::initButtons() {
+  using namespace Layout;
+  int cellW = 100;
+  int cellH = 50;
+  int startY = CONTROLS_Y + 1;
+
+  for (int i = 0; i < BUTTON_COUNT; i++) {
+    if (i < 4) {
+      buttons[i].x = (i % 2) * cellW;
+      buttons[i].y = startY + (i / 2) * cellH;
+      buttons[i].w = cellW;
+      buttons[i].h = cellH;
+      if (i == 0) strcpy(buttons[i].label, "<< SEEK");
+      else if (i == 1) strcpy(buttons[i].label, "SEEK >>");
+      else if (i == 2) strcpy(buttons[i].label, "VOL -");
+      else if (i == 3) strcpy(buttons[i].label, "VOL +");
+    } else {
+      int pIdx = i - 4;
+      int pW = 50;
+      int pH = 50;
+      int startX = 200;
+      buttons[i].x = startX + (pIdx % 4) * pW;
+      buttons[i].y = startY + (pIdx / 4) * pH;
+      buttons[i].w = pW;
+      buttons[i].h = pH;
+      sprintf(buttons[i].label, "%d", pIdx + 1);
+    }
+  }
+}
+
+void RadioScreen::drawSingleButton(DisplayDriver *display, int idx, bool isFocused, bool partial) {
+  using namespace Layout;
+  UIButton &btn = buttons[idx];
+
+  if (partial) {
+    setupWindow(display, btn.x, btn.y, btn.w, btn.h, true);
+  }
+
+  if (isFocused) display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
+  display->display.drawRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
+  display->u8g2Fonts.setForegroundColor(isFocused ? COLOR_BG : COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(isFocused ? COLOR_FG : COLOR_BG);
+  display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
+  int tw = display->u8g2Fonts.getUTF8Width(btn.label);
+  display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2, btn.y + btn.h / 2 + 5);
+  display->u8g2Fonts.print(btn.label);
+  
+  display->u8g2Fonts.setForegroundColor(COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(COLOR_BG);
+}
+
+void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx, int newIdx) {
+  // Update old focus
+  if (oldIdx != -1 && oldIdx != newIdx) {
+    display->display.setPartialWindow(buttons[oldIdx].x, buttons[oldIdx].y, buttons[oldIdx].w, buttons[oldIdx].h);
+    display->display.firstPage();
+    do {
+      drawSingleButton(display, oldIdx, false, true);
+      BusManager::getInstance().requestDisplay();
+    } while (display->display.nextPage());
+  }
+
+  // Update new focus
+  display->display.setPartialWindow(buttons[newIdx].x, buttons[newIdx].y, buttons[newIdx].w, buttons[newIdx].h);
+  display->display.firstPage();
+  do {
+    drawSingleButton(display, newIdx, true, true);
+    BusManager::getInstance().requestDisplay();
+  } while (display->display.nextPage());
 }
 
 void RadioScreen::init() {
 }
 
 void RadioScreen::draw(DisplayDriver *display) {
+  using namespace Layout;
   uint16_t freq = radio->getFrequency();
   if (freq < radio->getMinFrequency() || freq > radio->getMaxFrequency()) {
     freq = radio->getMinFrequency();
@@ -44,6 +125,10 @@ void RadioScreen::draw(DisplayDriver *display) {
   }
   int signal = radio->getSignalStrength();
   int rssi = radio->getRSSI();
+  if (smoothedRSSI == 0) smoothedRSSI = rssi;
+  else smoothedRSSI = (smoothedRSSI * 7 + rssi) / 8;
+
+  bool isStereo = radio->isStereo();
 
   // Periodic Maintenance
   static unsigned long lastClear = 0;
@@ -52,16 +137,40 @@ void RadioScreen::draw(DisplayDriver *display) {
     lastClear = millis();
   }
 
+  // Check if only focusedControl changed
+  bool onlyFocusChanged = !isFirstDraw &&
+                          (freq == lastFreq) &&
+                          (vol == lastVol) &&
+                          (rds == lastRDS) &&
+                          (isStereo == lastStereo) &&
+                          (abs(smoothedRSSI - lastRSSI) < 5) && // Allow small RSSI variation
+                          (focusedControl != lastFocusedControl);
+
+  if (onlyFocusChanged) {
+    updateButtonFocus(display, lastFocusedControl, focusedControl);
+    lastFocusedControl = focusedControl;
+    return;
+  }
+
+  // Full redraw if anything else changed or is first draw
+  isFirstDraw = false;
+  lastFreq = freq;
+  lastVol = vol;
+  lastRDS = rds;
+  lastRSSI = smoothedRSSI;
+  lastStereo = isStereo;
+  lastFocusedControl = focusedControl;
+
   display->display.setFullWindow();
   display->display.firstPage();
   do {
     display->display.fillScreen(GxEPD_WHITE);
     statusBar->draw(display, true);
     drawStaticGrid(display);
-    drawHeaderInfo(display, rds.c_str(), signal, rssi, false);
+    drawHeaderInfo(display, vol, isStereo, signal, rssi, false);
     drawFrequency(display, false);
     drawDial(display, freqVal, false);
-    drawVolume(display, vol, false);
+    drawSignal(display, smoothedRSSI, false);
     drawRDS(display, rds.c_str(), false);
     drawButtons(display, false);
 
@@ -88,52 +197,57 @@ void RadioScreen::drawStaticGrid(DisplayDriver *display) {
   display->display.drawLine(0, CONTROLS_Y, SCREEN_W, CONTROLS_Y, COLOR_FG);
   display->display.drawLine(0, CONTROLS_Y+1, SCREEN_W, CONTROLS_Y+1, COLOR_FG);
 
-  display->display.drawLine(DISPLAY_AREA_W, MAIN_SECTION_Y, DISPLAY_AREA_W, CONTROLS_Y, COLOR_FG);
-  display->display.drawLine(DISPLAY_AREA_W+1, MAIN_SECTION_Y, DISPLAY_AREA_W+1, CONTROLS_Y, COLOR_FG);
+  // 信号左边的分割线
+  // display->display.drawLine(DISPLAY_AREA_W, MAIN_SECTION_Y, DISPLAY_AREA_W, CONTROLS_Y, COLOR_FG);
+  // display->display.drawLine(DISPLAY_AREA_W+1, MAIN_SECTION_Y, DISPLAY_AREA_W+1, CONTROLS_Y, COLOR_FG);
 
   display->display.drawLine(SCREEN_W/2, CONTROLS_Y, SCREEN_W/2, SCREEN_H, COLOR_FG);
-  display->display.drawLine(0, CONTROLS_Y + CONTROLS_H/2, SCREEN_W, CONTROLS_Y + CONTROLS_H/2, COLOR_FG);
+  // display->display.drawLine(0, CONTROLS_Y + CONTROLS_H/2, SCREEN_W, CONTROLS_Y + CONTROLS_H/2, COLOR_FG);
+
   display->display.drawLine(SCREEN_W/2 + (SCREEN_W/4), CONTROLS_Y, SCREEN_W/2 + (SCREEN_W/4), SCREEN_H, COLOR_FG);
   display->display.drawLine(SCREEN_W/4, CONTROLS_Y, SCREEN_W/4, SCREEN_H, COLOR_FG);
 }
 
 void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
   using namespace Layout;
-  int x = 1;
+  int x = 2; // Stay inside grid lines at 0, 1
   int y = 54;
-  int w = DISPLAY_AREA_W;
-  int h = 70;
-
-  setupWindow(display, x, y, w, h, partial);
+  int w = DISPLAY_AREA_W - 4; // Stay inside divider line at 360, 361
+  int h = MAIN_SECTION_H - DIAL_H;
 
   display->u8g2Fonts.setFont(u8g2_font_logisoso78_tn);
   char* freqStr = radio->getFormattedFrequency();
-
   int16_t tw = display->u8g2Fonts.getUTF8Width(freqStr);
-  int cursorX = (w - tw) / 2;
-  int cursorY = y + 60; // Adjusted for 70px window
+  int cursorX = x + (w - tw) / 2;
+  int cursorY = y + 66;
+  // Only refresh the necessary text area (with some padding)
+  int px = cursorX - 10;
+  int pw = tw + 20;
+  // Ensure we don't exceed the safe bounds
+  if (px < x) px = x;
+  if (px + pw > x + w) pw = (x + w) - px;
+  setupWindow(display, px, y, pw, h, partial);
 
   display->u8g2Fonts.setCursor(cursorX, cursorY);
   display->u8g2Fonts.print(freqStr);
-
-  // If the library doesn't include MHz, we might need it, but user's snippet just prints it.
-  // Actually, logisoso78_tn is numbers only. We might need to switch font or split.
-  // Let's check logisoso78_tn coverage. It's usually "tn" for transparent numbers.
-  // If it's numbers only, it won't show the dot or MHz.
-  // But the previous implementation used it for "101.1".
-  // Let's assume the library returns something like "101.10" or "88.0".
 }
 
 void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partial) {
   using namespace Layout;
-  int x = 0;
+
+  // Dial Configuration
+  const int margin = 20;      // Padding on left/right to prevent labels being cut off
+  int x = margin / 2;
   int y = DIAL_Y;
-  int w = DISPLAY_AREA_W;
+  int w = DISPLAY_AREA_W - 4;
   int h = DIAL_H;
+  const int visibleW = w - 2 * margin;
+  const int tickSpacing = 8;  // Pixels per 0.1MHz step
+  const int tickH01 = 6;      // Height for 0.1MHz tick
+  const int tickH05 = 10;     // Height for 0.5MHz tick
+  const int tickH10 = 16;     // Height for 1.0MHz tick
 
   setupWindow(display, x, y, w, h, partial);
-  Serial.print("Center frequency: ");
-  Serial.println(centerFreq);
 
   display->display.drawLine(0, DIAL_Y, DISPLAY_AREA_W, DIAL_Y, COLOR_FG);
   display->display.drawLine(0, DIAL_Y + 1, DISPLAY_AREA_W, DIAL_Y + 1, COLOR_FG);
@@ -145,27 +259,19 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
     maxBandFreq = 108.0;
   }
 
-  // Dial Configuration
-  const int margin = 20;      // Padding on left/right to prevent labels being cut off
-  const int visibleW = w - 2 * margin;
-  const int tickSpacing = 8;  // Pixels per 0.1MHz step
-  const int tickH01 = 6;      // Height for 0.1MHz tick
-  const int tickH05 = 10;     // Height for 0.5MHz tick
-  const int tickH10 = 16;     // Height for 1.0MHz tick
-
   int totalTicks = (int)round((maxBandFreq - minBandFreq) * 10);
   int totalW = totalTicks * tickSpacing;
-  
+
   // Calculate potential pointer position in the full dial width
   int idealPx = (int)round((centerFreq - minBandFreq) * 10 * tickSpacing);
-  
+
   // Calculate view offset to keep pointer centered if possible
   int viewOffset = idealPx - (visibleW / 2);
   viewOffset = constrain(viewOffset, 0, max(0, totalW - visibleW));
-  
+
   // Final positions relative to the window, shifted by margin
   int pointerX = idealPx - viewOffset + margin;
-  
+
   // Draw Ticks
   int tickY = y + 2;
   display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
@@ -177,10 +283,10 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
     if (tickX >= margin - 20 && tickX < w - margin + 20) {
       bool is1MHz = (abs(f - round(f)) < 0.01f);
       bool is05MHz = !is1MHz && (abs(f - (floor(f) + 0.5f)) < 0.01f);
-      
+
       int tickH = is1MHz ? tickH10 : (is05MHz ? tickH05 : tickH01);
       int tickWidth = 1;
-      
+
       if (tickX >= 0 && tickX < w) {
         display->display.fillRect(tickX - (tickWidth / 2), tickY, tickWidth, tickH, COLOR_FG);
       }
@@ -191,7 +297,7 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
         sprintf(numStr, "%d", (int)round(f));
         int nw = display->u8g2Fonts.getUTF8Width(numStr);
         int labelX = tickX - nw / 2;
-        
+
         if (labelX + nw > 0 && labelX < w) {
            display->u8g2Fonts.setCursor(labelX, y + 30); // Moved up to make room for triangle
            display->u8g2Fonts.print(numStr);
@@ -201,126 +307,113 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
   }
 
   // Pointer: 竖线 (Vertical Line) + 三角形 (Triangle at bottom)
-  int triBaseY = y + h - 2; 
+  int triBaseY = y + h - 2;
   display->display.drawLine(pointerX, y, pointerX, triBaseY - 6, COLOR_FG);
   display->display.fillTriangle(pointerX, triBaseY - 6, pointerX - 5, triBaseY, pointerX + 5, triBaseY, COLOR_FG);
 }
 
-void RadioScreen::drawVolume(DisplayDriver *display, int vol, bool partial) {
+void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
   using namespace Layout;
   int x = DISPLAY_AREA_W + 2;
-  int y = MAIN_SECTION_Y;
+  int y = MAIN_SECTION_Y + 2;
   int w = VOL_BAR_W - 4;
   int h = MAIN_SECTION_H;
 
   setupWindow(display, x, y, w, h, partial);
 
   display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
-  display->u8g2Fonts.setCursor(x + 4, y + 15);
-  display->u8g2Fonts.print("VOL");
 
-  int segH = (h - 25) / 16;
+  // Display specific signal strength (RSSI) value and unit
+  char valStr[16];
+  sprintf(valStr, "%d", rssi);
+  int tw = display->u8g2Fonts.getUTF8Width(valStr);
+  display->u8g2Fonts.setCursor(x + (w - tw) / 2, y + 30);
+  display->u8g2Fonts.print(valStr);
+
+  const char* unit = "dB";
+  int uw = display->u8g2Fonts.getUTF8Width(unit);
+  display->u8g2Fonts.setCursor(x + (w - uw) / 2, y + 43);
+  display->u8g2Fonts.print(unit);
+
+  int topMargin = 40;
+  int segH = (h - topMargin - 10) / 20;
   int startY = y + h - 5;
 
-  for (int i = 0; i < 15; i++) {
+  static const uint8_t rssi_thresholds[20] = {
+    10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 45, 48, 51
+  };
+
+  int bars = 0;
+  for (int i = 19; i >= 0; i--) {
+    if (rssi >= rssi_thresholds[i]) {
+      bars = i + 1;
+      break;
+    }
+  }
+
+  for (int i = 0; i < 20; i++) {
     int boxY = startY - ((i + 1) * segH);
     display->display.drawRect(x + 5, boxY, w - 10, segH - 2, COLOR_FG);
-    if (i < vol) {
+    if (i < bars) {
       display->display.fillRect(x + 5, boxY, w - 10, segH - 2, COLOR_FG);
     }
   }
 }
 
-void RadioScreen::drawHeaderInfo(DisplayDriver *display, const char* rds, int signal, int rssi, bool partial) {
+void RadioScreen::drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo, int signal, int rssi, bool partial) {
   using namespace Layout;
-  int x = 0;
+  int x = 5;
   int y = 24;
-  int w = DISPLAY_AREA_W;
+  int w = DISPLAY_AREA_W - 4;
   int h = 30;
 
-  setupWindow(display, x, y, w, h, partial);
+  // Calculate area to refresh for ST/MO and Volume
+  // Offset a bit from left (e.g. 10px)
+  int infoX = x + 8;
+  int infoY = y + 5;
+  int infoW = 80; // Enough for ST icon + VOL: xx
+  int infoH = 20;
 
-  display->u8g2Fonts.setFont(u8g2_font_helvB08_tf);
-  display->u8g2Fonts.setCursor(x + 5, y + 20);
-  display->u8g2Fonts.print("FM RADIO");
+  setupWindow(display, infoX, infoY, infoW, infoH, partial);
 
-  // Show RSSI in dB
-  char rssiStr[12];
-  sprintf(rssiStr, "%ddB", rssi);
-  int rw = display->u8g2Fonts.getUTF8Width(rssiStr);
-  display->u8g2Fonts.setCursor(w - 70 - rw, y + 20); 
-  display->u8g2Fonts.print(rssiStr);
-
-  int sigX = w - 30;
-  for (int i = 0; i < 4; i++) {
-    int barH = 4 + (i * 3);
-    int barX = sigX + (i * 5);
-    int barY = y + 20 - barH; 
-    if (i < signal) {
-      display->display.fillRect(barX, barY, 3, barH, COLOR_FG);
-    } else {
-      display->display.drawRect(barX, barY, 3, barH, COLOR_FG);
-    }
+  // Draw Stereo/Mono icon
+  int iconX = infoX + 10;
+  int iconY = infoY + 10;
+  if (isStereo) {
+    display->display.drawCircle(iconX - 3, iconY, 6, COLOR_FG);
+    display->display.drawCircle(iconX + 3, iconY, 6, COLOR_FG);
+  } else {
+    display->display.drawCircle(iconX, iconY, 6, COLOR_FG);
   }
+
+  // Draw Volume value
+  display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
+  char volStr[5];
+  sprintf(volStr, "%d", vol);
+  display->u8g2Fonts.setCursor(iconX + 15, infoY + 15);
+  display->u8g2Fonts.print(volStr);
 }
 
 void RadioScreen::drawRDS(DisplayDriver *display, const char* text, bool partial) {
   using namespace Layout;
-  int x = 0;
-  int y = 124;
+
+  int y = MAIN_SECTION_Y + MAIN_SECTION_H;
   int w = DISPLAY_AREA_W;
   int h = 20;
 
-  setupWindow(display, x, y, w, h, partial);
   display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
   int tw = display->u8g2Fonts.getUTF8Width(text);
-  display->u8g2Fonts.setCursor((w - tw) / 2, y + 15);
+  int x = (w - tw) / 2;
+  setupWindow(display, x, y, w, h, partial);
+
+  display->u8g2Fonts.setCursor(x, y + 15);
   display->u8g2Fonts.print(text);
 }
 
 void RadioScreen::drawButtons(DisplayDriver *display, bool partial) {
-  using namespace Layout;
-  int cellW = 100;
-  int cellH = 50;
-
-  auto drawBtn = [&](int idx, int bx, int by, int bw, int bh, const char* t) {
-    bool focused = (focusedControl == idx);
-    if (focused) display->display.fillRect(bx, by, bw, bh, COLOR_FG);
-    display->display.drawRect(bx, by, bw, bh, COLOR_FG);
-    display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
-    display->u8g2Fonts.setBackgroundColor(focused ? COLOR_FG : COLOR_BG);
-    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-    int tw = display->u8g2Fonts.getUTF8Width(t);
-    display->u8g2Fonts.setCursor(bx + (bw - tw)/2, by + bh/2 + 5);
-    display->u8g2Fonts.print(t);
-  };
-
-  drawBtn(0, 0, CONTROLS_Y, cellW, cellH, "<< SEEK");
-  drawBtn(1, cellW, CONTROLS_Y, cellW, cellH, "SEEK >>");
-  drawBtn(2, 0, CONTROLS_Y + cellH, cellW, cellH, "VOL -");
-  drawBtn(3, cellW, CONTROLS_Y + cellH, cellW, cellH, "VOL +");
-
-  int pW = 50;
-  int pH = 50;
-  int startX = 200;
-  for(int i=0; i<8; i++) {
-    int r = i / 4;
-    int c = i % 4;
-    int bx = startX + (c * pW);
-    int by = CONTROLS_Y + (r * pH);
-    bool focused = (focusedControl == 4 + i);
-    if (focused) display->display.fillRect(bx, by, pW, pH, COLOR_FG);
-    display->display.drawRect(bx, by, pW, pH, COLOR_FG);
-    display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
-    display->u8g2Fonts.setBackgroundColor(focused ? COLOR_FG : COLOR_BG);
-    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-    String pStr = String(i + 1);
-    int tw = display->u8g2Fonts.getUTF8Width(pStr.c_str());
-    display->u8g2Fonts.setCursor(bx + (pW - tw)/2, by + pH/2 + 5);
-    display->u8g2Fonts.print(pStr);
+  for (int i = 0; i < BUTTON_COUNT; i++) {
+    drawSingleButton(display, i, (focusedControl == i), partial);
   }
-  display->u8g2Fonts.setForegroundColor(COLOR_FG);
-  display->u8g2Fonts.setBackgroundColor(COLOR_BG);
 }
 
 void RadioScreen::handleInput(UIKey key) {

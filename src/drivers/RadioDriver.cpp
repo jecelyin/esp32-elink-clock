@@ -96,3 +96,9 @@ void RadioDriver::clearRds() {
   radio.clearRdsFifo();
   radio.clearRdsBuffer();
 }
+
+bool RadioDriver::isStereo() {
+  BusManager::getInstance().requestI2C();
+  return radio.isStereo();
+}
+
