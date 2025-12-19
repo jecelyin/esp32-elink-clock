@@ -42,22 +42,26 @@ void RadioDriver::seekDown() {
 
 uint16_t RadioDriver::getFrequency() {
   BusManager::getInstance().requestI2C();
-  return radio.getFrequency();
+  uint16_t freq = radio.getFrequency();
+  return freq;
 }
 
 char *RadioDriver::getFormattedFrequency() {
   BusManager::getInstance().requestI2C();
-  return radio.formatCurrentFrequency('.');
+  char *f = radio.formatCurrentFrequency('.');
+  return f;
 }
 
 uint16_t RadioDriver::getMinFrequency() {
   BusManager::getInstance().requestI2C();
-  return radio.getMinimumFrequencyOfTheBand();
+  uint16_t f = radio.getMinimumFrequencyOfTheBand();
+  return f;
 }
 
 uint16_t RadioDriver::getMaxFrequency() {
   BusManager::getInstance().requestI2C();
-  return radio.getMaximunFrequencyOfTheBand();
+  uint16_t f = radio.getMaximunFrequencyOfTheBand();
+  return f;
 }
 
 uint8_t RadioDriver::getSignalStrength() {
@@ -78,24 +82,28 @@ uint8_t RadioDriver::getSignalStrength() {
 
 uint8_t RadioDriver::getRSSI() {
   BusManager::getInstance().requestI2C();
-  return radio.getRssi();
+  uint8_t rssi = radio.getRssi();
+  return rssi;
 }
 
 bool RadioDriver::hasRdsInfo() {
   BusManager::getInstance().requestI2C();
-  return radio.hasRdsInfo();
+  bool has = radio.hasRdsInfo();
+  return has;
 }
 
 String RadioDriver::getRdsStationName() {
   BusManager::getInstance().requestI2C();
   char *s = radio.getRdsStationName();
-  return s ? String(s) : String("");
+  String res = s ? String(s) : String("");
+  return res;
 }
 
 String RadioDriver::getRdsProgramInformation() {
   BusManager::getInstance().requestI2C();
   char *s = radio.getRdsProgramInformation();
-  return s ? String(s) : String("");
+  String res = s ? String(s) : String("");
+  return res;
 }
 
 void RadioDriver::clearRds() {
@@ -106,7 +114,8 @@ void RadioDriver::clearRds() {
 
 bool RadioDriver::isStereo() {
   BusManager::getInstance().requestI2C();
-  return radio.isStereo();
+  bool s = radio.isStereo();
+  return s;
 }
 
 void RadioDriver::setBias(bool on) {

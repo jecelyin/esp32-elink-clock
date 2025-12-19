@@ -242,7 +242,8 @@ uint8_t RtcDriver::readRegister(uint8_t reg) {
   Wire.write(reg);
   Wire.endTransmission();
   Wire.requestFrom(RX8010_I2C_ADDR, 1);
-  return Wire.read();
+  uint8_t val = Wire.read();
+  return val;
 }
 
 void RtcDriver::writeRegister(uint8_t reg, uint8_t val) {

@@ -15,10 +15,16 @@ public:
   void syncTime();
   void enableNetwork(bool enable);
 
+  bool hasPendingSync() const { return pendingSync; }
+  DateTime getNtpTime() const { return ntpTime; }
+  void clearPendingSync() { pendingSync = false; }
+
 private:
   ConfigManager *configMgr;
   RtcDriver *rtcDriver;
   unsigned long lastSyncTime = 0;
   bool networkEnabled = false;
   bool firstConnectAttempted = false;
+  bool pendingSync = false;
+  DateTime ntpTime;
 };

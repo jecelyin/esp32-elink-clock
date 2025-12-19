@@ -71,7 +71,7 @@ void UIManager::handleInput(UIKey key) {
   if (currentScreenObj) {
     currentScreenObj->handleInput(key);
     // Redraw after input?
-    currentScreenObj->draw(display);
+    // currentScreenObj->draw(display);
   }
 }
 
@@ -79,7 +79,7 @@ void UIManager::onLongPressEnter() {
   if (currentScreenObj) {
       currentScreenObj->onLongPress();
       // Ensure UI is updated after long press action (e.g. saving preset)
-      currentScreenObj->draw(display);
+      // currentScreenObj->draw(display);
   }
 }
 

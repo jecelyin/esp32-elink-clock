@@ -109,8 +109,20 @@ void setup() {
 
 void loop() {
   uint32_t t_start = millis();
-  alarmManager.check(rtcDriver.getTime());
-  // Serial.printf("Alarm check: %ums\n", millis() - t_start);
+
+  // Handle pending time sync from ConnectionManager
+  if (connectionManager.hasPendingSync()) {
+    rtcDriver.setTime(connectionManager.getNtpTime());
+    connectionManager.clearPendingSync();
+  }
+
+  // System checks (Alarms, RTC) - Throttle to every 5 seconds to reduce I2C
+  // flood
+  static uint32_t lastSystemCheck = 0;
+  if (millis() - lastSystemCheck >= 5000) {
+    lastSystemCheck = millis();
+    alarmManager.check(rtcDriver.getTime());
+  }
 
   t_start = millis();
   uiManager.update();

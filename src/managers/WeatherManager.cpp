@@ -1,6 +1,6 @@
 #include "WeatherManager.h"
-#include <WiFi.h>
 #include <ArduinoUZlib.h>
+#include <WiFi.h>
 
 #define WEATHER_API_KEY "ba7d575ae307406f9455efd0b11abe18"
 #define WEATHER_CITY_ID "101280112" // Nansha, Guangzhou
@@ -17,12 +17,31 @@ const char *forecast_weather_url =
     "https://ne4ewr7vn6.re.qweatherapi.com/v7/weather/"
     "3d?location=" WEATHER_CITY_ID "&lang=zh&unit=m";
 
+// Hourly: https://ne4ewr7vn6.re.qweatherapi.com/v7/weather/24h
+const char *hourly_weather_url =
+    "https://ne4ewr7vn6.re.qweatherapi.com/v7/weather/"
+    "24h?location=" WEATHER_CITY_ID "&lang=zh&unit=m";
+
+// Daily 7d: https://ne4ewr7vn6.re.qweatherapi.com/v7/weather/7d
+const char *daily_weather_url =
+    "https://ne4ewr7vn6.re.qweatherapi.com/v7/weather/"
+    "7d?location=" WEATHER_CITY_ID "&lang=zh&unit=m";
+
+// Warning: https://ne4ewr7vn6.re.qweatherapi.com/v7/warning/now
+const char *warning_weather_url =
+    "https://ne4ewr7vn6.re.qweatherapi.com/v7/warning/"
+    "now?location=" WEATHER_CITY_ID "&lang=zh&unit=m";
+
 WeatherManager::WeatherManager() {
   data.city = "南沙"; // Default city name
   data.weather = "--";
   data.temp = 0;
   data.humidity = 0;
   data.icon_str = "\uf146"; // Default/Unknown
+  data.icon_code = 999;
+
+  data.warning_title = "";
+  data.warning_text = "Loading...";
 
   data.forecast_weather = "--";
   data.forecast_temp_high = 0;
@@ -38,24 +57,44 @@ void WeatherManager::update() {
       lastUpdate == 0) { // Update every 30 mins
     if (WiFi.status() == WL_CONNECTED) {
       fetchCurrentWeather();
-      // Small delay to be nice to the network stack
-      delay(500);
+      delay(200);
       fetchForecastWeather();
+      delay(200);
+      fetchHourlyWeather();
+      delay(200);
+      fetchDailyWeather();
+      delay(200);
+      fetchWarning();
       lastUpdate = millis();
     }
   }
 }
 
 void WeatherManager::fetchCurrentWeather() {
-  requestAPI(current_weather_url, [this](JsonDocument& doc) {
+  requestAPI(current_weather_url, [this](JsonDocument &doc) {
     JsonObject now = doc["now"];
     String code = doc["code"];
     if (code == "200") {
       data.temp = now["temp"].as<int>();
       data.weather = now["text"].as<String>();
       data.humidity = now["humidity"].as<int>();
-      int iconCode = now["icon"].as<int>();
-      data.icon_str = getIcon(iconCode);
+      data.icon_code = now["icon"].as<int>();
+      data.icon_str = getIcon(data.icon_code);
+
+      // Parse obsTime: 2021-11-15T16:35+08:00 -> 11月15日 16:35
+      String obsTime = now["obsTime"].as<String>();
+      int tIndex = obsTime.indexOf('T');
+      if (tIndex != -1) {
+        String datePart = obsTime.substring(5, tIndex);              // 11-15
+        String timePart = obsTime.substring(tIndex + 1, tIndex + 6); // 16:35
+        int dashIndex = datePart.indexOf('-');
+        if (dashIndex != -1) {
+          data.obs_time = datePart.substring(0, dashIndex) + "月" +
+                          datePart.substring(dashIndex + 1) + "日 " + timePart;
+        } else {
+          data.obs_time = obsTime;
+        }
+      }
     } else {
       Serial.print("API Error Code: ");
       Serial.println(code);
@@ -64,7 +103,7 @@ void WeatherManager::fetchCurrentWeather() {
 }
 
 void WeatherManager::fetchForecastWeather() {
-  requestAPI(forecast_weather_url, [this](JsonDocument& doc) {
+  requestAPI(forecast_weather_url, [this](JsonDocument &doc) {
     String code = doc["code"];
     if (code == "200") {
       JsonArray daily = doc["daily"];
@@ -84,7 +123,90 @@ void WeatherManager::fetchForecastWeather() {
   });
 }
 
-bool WeatherManager::requestAPI(const char* url, std::function<void(JsonDocument&)> callback) {
+void WeatherManager::fetchHourlyWeather() {
+  requestAPI(hourly_weather_url, [this](JsonDocument &doc) {
+    String code = doc["code"];
+    if (code == "200") {
+      JsonArray hourlyItems = doc["hourly"];
+      data.hourly.clear();
+      // We only take the first 12 hours for the UI
+      for (int i = 0; i < hourlyItems.size() && i < 12; i++) {
+        JsonObject item = hourlyItems[i];
+        HourlyData hData;
+        String fxTime = item["fxTime"].as<String>();
+        // Extract HH:00 from ISO time
+        int tIndex = fxTime.indexOf('T');
+        if (tIndex != -1) {
+          hData.time = fxTime.substring(tIndex + 1, tIndex + 6);
+        } else {
+          hData.time = fxTime;
+        }
+        hData.temp = item["temp"].as<int>();
+        hData.icon_code = item["icon"].as<int>();
+        hData.icon_str = getIcon(hData.icon_code);
+        data.hourly.push_back(hData);
+      }
+    }
+  });
+}
+
+void WeatherManager::fetchDailyWeather() {
+  requestAPI(daily_weather_url, [this](JsonDocument &doc) {
+    String code = doc["code"];
+    if (code == "200") {
+      JsonArray dailyItems = doc["daily"];
+      data.daily.clear();
+      for (int i = 0; i < dailyItems.size() && i < 7; i++) {
+        JsonObject item = dailyItems[i];
+        DailyData dData;
+        dData.date = item["fxDate"].as<String>();
+
+        // Simple day extraction or mapping if possible,
+        // for now we'll just use the date or a placeholder
+        dData.day = dData.date.substring(5); // MM-DD
+
+        dData.temp_max = item["tempMax"].as<int>();
+        dData.temp_min = item["tempMin"].as<int>();
+        dData.icon_code = item["iconDay"].as<int>();
+        dData.icon_str = getIcon(dData.icon_code);
+        data.daily.push_back(dData);
+      }
+    }
+  });
+}
+
+void WeatherManager::fetchWarning() {
+  requestAPI(warning_weather_url, [this](JsonDocument &doc) {
+    // Note: The warning API response contains an "alerts" array, not "warning".
+    // It also has a metadata.zeroResult flag.
+    String code = doc["code"];
+    if (code == "200") {
+      JsonArray alerts = doc["alerts"];
+      if (alerts.size() > 0) {
+        JsonObject w = alerts[0];
+        data.warning_title = w["title"].as<String>();
+        data.warning_text = w["text"].as<String>();
+      } else {
+        // Check for metadata.zeroResult if available, otherwise assume no
+        // warnings
+        if (doc["metadata"].is<JsonObject>() &&
+            doc["metadata"]["zeroResult"].as<bool>()) {
+          data.warning_title = "";
+          data.warning_text = "";
+        } else {
+          data.warning_title = "";
+          data.warning_text = "";
+        }
+      }
+    } else {
+      data.warning_title = "";
+      data.warning_text = "Warning info unavailable.";
+    }
+  });
+}
+
+bool WeatherManager::requestAPI(const char *url,
+                                std::function<void(JsonDocument &)> callback) {
   HTTPClient http;
   http.begin(url);
   http.addHeader("X-QW-Api-Key", WEATHER_API_KEY);
@@ -97,45 +219,47 @@ bool WeatherManager::requestAPI(const char* url, std::function<void(JsonDocument
 
   if (httpCode > 0) {
     if (http.header("Content-Encoding").indexOf("gzip") > -1) {
-        int len = http.getSize();
-        if (len > 0) {
-            uint8_t *response = (uint8_t*) malloc(len);
-            http.getStream().readBytes(response, len);
-            
-            uint8_t *buffer = nullptr;
-            uint32_t size = 0;
-            // Decompress
-            ArduinoUZlib::decompress(response, len, buffer, size);
-            free(response);
+      int len = http.getSize();
+      if (len > 0) {
+        uint8_t *response = (uint8_t *)malloc(len);
+        http.getStream().readBytes(response, len);
 
-            if (buffer) {
-                JsonDocument doc;
-                DeserializationError error = deserializeJson(doc, buffer, size);
-                free(buffer);
+        uint8_t *buffer = nullptr;
+        uint32_t size = 0;
+        // Decompress
+        ArduinoUZlib::decompress(response, len, buffer, size);
+        free(response);
 
-                if (!error) {
-                    if (callback) callback(doc);
-                    success = true;
-                } else {
-                    Serial.print(F("deserializeJson() failed: "));
-                    Serial.println(error.f_str());
-                }
-            } else {
-                 Serial.println("Decompression failed (buffer null)");
-            }
-        }
-    } else {
-        String payload = http.getString();
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, payload);
+        if (buffer) {
+          JsonDocument doc;
+          DeserializationError error = deserializeJson(doc, buffer, size);
+          free(buffer);
 
-        if (!error) {
-            if (callback) callback(doc);
+          if (!error) {
+            if (callback)
+              callback(doc);
             success = true;
-        } else {
+          } else {
             Serial.print(F("deserializeJson() failed: "));
             Serial.println(error.f_str());
+          }
+        } else {
+          Serial.println("Decompression failed (buffer null)");
         }
+      }
+    } else {
+      String payload = http.getString();
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, payload);
+
+      if (!error) {
+        if (callback)
+          callback(doc);
+        success = true;
+      } else {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+      }
     }
   } else {
     Serial.printf("HTTP GET failed, error: %s\n",

@@ -42,17 +42,16 @@ void ConnectionManager::syncTime() {
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
-    DateTime dt;
-    dt.second = timeinfo.tm_sec;
-    dt.minute = timeinfo.tm_min;
-    dt.hour = timeinfo.tm_hour;
-    dt.day = timeinfo.tm_mday;
-    dt.month = timeinfo.tm_mon + 1;
-    dt.year = timeinfo.tm_year % 100;
-    dt.week = timeinfo.tm_wday;
+    ntpTime.second = timeinfo.tm_sec;
+    ntpTime.minute = timeinfo.tm_min;
+    ntpTime.hour = timeinfo.tm_hour;
+    ntpTime.day = timeinfo.tm_mday;
+    ntpTime.month = timeinfo.tm_mon + 1;
+    ntpTime.year = timeinfo.tm_year % 100;
+    ntpTime.week = timeinfo.tm_wday;
 
-    rtcDriver->setTime(dt);
+    pendingSync = true;
     lastSyncTime = millis();
-    Serial.println("Time synced with NTP");
+    Serial.println("Time fetched from NTP, pending RTC update");
   }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Arduino.h>
+
 #include "../../drivers/RtcDriver.h"
 #include "../../managers/BusManager.h"
 #include "../../managers/ConnectionManager.h"
@@ -35,12 +37,16 @@ public:
     fullRefreshNeeded = true;
     lastMinute = -1;
     lastTasksMinute = -1;
+    lastTimeCheck = 0;
+    lastSensorCheck = 0;
   }
 
   void enter() override {
     fullRefreshNeeded = true;
     lastMinute = -1;
     lastTasksMinute = -1;
+    lastTimeCheck = 0;
+    lastSensorCheck = 0;
   }
 
   void draw(DisplayDriver *displayDrv) override {
@@ -59,7 +65,7 @@ public:
     if (!displayDrv)
       return;
 
-    DateTime now = rtc->getTime();
+    uint32_t nowMs = millis();
 
     // Ensure full refresh if requested (e.g. at startup)
     if (fullRefreshNeeded) {
@@ -67,50 +73,49 @@ public:
       return;
     }
 
-    bool needsUpdate = false;
+    // Check Time, Weather, and Tasks (every 5 seconds)
+    if (nowMs - lastTimeCheck >= 5000) {
+      lastTimeCheck = nowMs;
+      DateTime now = rtc->getTime();
 
-    // Check Time (every minute)
-    if (now.minute != lastMinute) {
-      renderTimePartial(displayDrv);
-      lastMinute = now.minute;
+      // 1. Time
+      if (now.minute != lastMinute) {
+        renderTimePartial(displayDrv);
+        lastMinute = now.minute;
+      }
+
+      // 2. Weather
+      if (weather->data.temp != lastWeatherTemp ||
+          weather->data.weather != lastWeatherStr ||
+          String(weather->data.icon_str) != lastWeatherIcon) {
+        renderWeatherPartial(displayDrv);
+        lastWeatherTemp = weather->data.temp;
+        lastWeatherStr = weather->data.weather;
+        lastWeatherIcon = weather->data.icon_str;
+      }
+
+      // 3. Tasks (Check if minute changed OR task list changed)
+      std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
+      bool tasksNeedUpdate =
+          (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount);
+
+      if (tasksNeedUpdate) {
+        renderTasksPartial(displayDrv);
+        lastTaskCount = tasks.size();
+        lastTasksMinute = now.minute;
+      }
     }
 
-    // Check Sensor (threshold based)
-    float temp, hum;
-    sensor->readData(temp, hum);
-    if (abs(temp - lastTemp) > 0.4 || abs(hum - lastHum) > 1.0) {
-      renderSensorPartial(displayDrv);
-      lastTemp = temp;
-      lastHum = hum;
-    }
-
-    // Check Weather
-    if (weather->data.temp != lastWeatherTemp ||
-        weather->data.weather != lastWeatherStr ||
-        String(weather->data.icon_str) != lastWeatherIcon) {
-      renderWeatherPartial(displayDrv);
-      lastWeatherTemp = weather->data.temp;
-      lastWeatherStr = weather->data.weather;
-      lastWeatherIcon = weather->data.icon_str;
-    }
-
-    // Check Tasks (Count change or minute change which affects countdown)
-    std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
-    // Note: Minute change (handled above) might affect countdowns, but we need
-    // to redraw tasks if minute changed. Ideally we checked minute above. If
-    // minute changed, we ALSO need to redraw tasks if they have countdowns.
-    // Logic: If minute changed OR tasks content changed.
-    // Tasks content change is hard to check deeply, checking size for now.
-    // For countdowns, we should update tasks every minute.
-
-    // Simplification: Update tasks if minute changed OR size changed.
-    bool tasksNeedUpdate =
-        (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount);
-
-    if (tasksNeedUpdate) {
-      renderTasksPartial(displayDrv);
-      lastTaskCount = tasks.size();
-      lastTasksMinute = now.minute;
+    // Check Sensor (every 60 seconds)
+    if (nowMs - lastSensorCheck >= 60000) {
+      lastSensorCheck = nowMs;
+      float temp, hum;
+      sensor->readData(temp, hum);
+      if (abs(temp - lastTemp) > 0.4 || abs(hum - lastHum) > 1.0) {
+        renderSensorPartial(displayDrv);
+        lastTemp = temp;
+        lastHum = hum;
+      }
     }
   }
 
@@ -138,6 +143,8 @@ private:
   int lastTasksMinute = -1;
   float lastTemp = -999;
   float lastHum = -999;
+  uint32_t lastTimeCheck = 0;
+  uint32_t lastSensorCheck = 0;
   int lastWeatherTemp = -999;
   String lastWeatherStr = "";
   String lastWeatherIcon = "";
@@ -147,6 +154,8 @@ private:
     DateTime now = rtc->getTime();
     lastMinute = now.minute;
     lastTasksMinute = now.minute;
+    lastTimeCheck = millis();
+    lastSensorCheck = millis();
 
     float t, h;
     sensor->readData(t, h);
@@ -165,7 +174,6 @@ private:
     auto &display = displayDrv->display;
     auto &u8g2 = displayDrv->u8g2Fonts;
 
-    BusManager::getInstance().lock();
     BusManager::getInstance().requestDisplay();
     display.setFullWindow();
     display.firstPage();
@@ -182,13 +190,11 @@ private:
       drawContent(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
-    BusManager::getInstance().unlock();
   }
 
   void renderTimePartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Time");
     auto &display = displayDrv->display;
-    BusManager::getInstance().lock();
     BusManager::getInstance().requestDisplay(); // Request before setup
     // Time Area: Left side, top part.
     // Static Lines: y=199/200, x=280.
@@ -201,14 +207,12 @@ private:
       BusManager::getInstance()
           .requestDisplay(); // Must be called before nextPage
     } while (display.nextPage());
-    BusManager::getInstance().unlock();
   }
 
   void renderSensorPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Sensor");
     auto &display = displayDrv->display;
-    BusManager::getInstance().lock();
-    BusManager::getInstance().requestDisplay();
+    BusManager::getInstance().requestI2C();
     // Sensor Area:
     // Static vertical line at x=280. Partial must start > 280. 281 safe.
     // Static horizontal line at y=82. Partial must end < 82.
@@ -220,13 +224,11 @@ private:
       drawSensorSection(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
-    BusManager::getInstance().unlock();
   }
 
   void renderWeatherPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Weather");
     auto &display = displayDrv->display;
-    BusManager::getInstance().lock();
     BusManager::getInstance().requestDisplay();
     // Weather Area:
     // Static vertical line x=280 -> start 281.
@@ -242,13 +244,11 @@ private:
       drawWeatherSection(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
-    BusManager::getInstance().unlock();
   }
 
   void renderTasksPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Tasks");
     auto &display = displayDrv->display;
-    BusManager::getInstance().lock();
     BusManager::getInstance().requestDisplay();
     // Tasks Area:
     // Static lines y=199, 200.
@@ -263,7 +263,6 @@ private:
       drawTasksSection(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
-    BusManager::getInstance().unlock();
   }
 
   void drawContent(DisplayDriver *displayDrv) {

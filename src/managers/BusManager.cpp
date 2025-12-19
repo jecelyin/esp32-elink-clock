@@ -1,24 +1,10 @@
 #include "BusManager.h"
+#include <esp_debug_helpers.h>
 
-void BusManager::begin() {
-  currentMode = MODE_NONE;
-  busMutex = xSemaphoreCreateRecursiveMutex();
-}
-
-void BusManager::lock() {
-  if (busMutex)
-    xSemaphoreTakeRecursive(busMutex, portMAX_DELAY);
-}
-
-void BusManager::unlock() {
-  if (busMutex)
-    xSemaphoreGiveRecursive(busMutex);
-}
+void BusManager::begin() { currentMode = MODE_NONE; }
 
 void BusManager::requestDisplay() {
-  lock(); // This ensures no other task is using the bus
   if (currentMode == MODE_DISPLAY) {
-    unlock();
     return;
   }
   digitalWrite(CODEC_EN, LOW);
@@ -31,13 +17,11 @@ void BusManager::requestDisplay() {
 
   currentMode = MODE_DISPLAY;
   Serial.println("BusManager: Switched to Display (SPI)");
-  unlock();
+  // esp_backtrace_print(100);
 }
 
 void BusManager::requestI2C() {
-  lock();
   if (currentMode == MODE_I2C) {
-    unlock();
     return;
   }
   digitalWrite(CODEC_EN, HIGH);
@@ -49,5 +33,5 @@ void BusManager::requestI2C() {
 
   currentMode = MODE_I2C;
   Serial.println("BusManager: Switched to I2C");
-  unlock();
+  // esp_backtrace_print(100);
 }

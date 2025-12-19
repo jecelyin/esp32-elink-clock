@@ -18,15 +18,10 @@ public:
   void requestDisplay();
   void requestI2C();
 
-  void lock();
-  void unlock();
-
 private:
   BusManager() {}
   BusManager(const BusManager &) = delete;
   BusManager &operator=(const BusManager &) = delete;
-
-  SemaphoreHandle_t busMutex;
 
   enum BusMode { MODE_NONE, MODE_DISPLAY, MODE_I2C };
 

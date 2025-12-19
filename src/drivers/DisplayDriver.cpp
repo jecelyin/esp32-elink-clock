@@ -8,7 +8,7 @@ DisplayDriver::DisplayDriver()
 
 void DisplayDriver::init() {
   BusManager::getInstance().requestDisplay();
-  
+
   SPISettings spisettings(4000000, MSBFIRST, SPI_MODE0);
   // SPI.begin is handled by BusManager
   display.epd2.selectSPI(SPI, spisettings);

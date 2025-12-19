@@ -34,7 +34,6 @@ public:
         firstDraw, menuIndex, lastMenuIndex);
     if (firstDraw) {
       display->display.setFullWindow();
-      BusManager::getInstance().lock();
       display->display.firstPage();
       do {
         display->display.fillScreen(GxEPD_WHITE);
@@ -44,7 +43,6 @@ public:
         }
         BusManager::getInstance().requestDisplay();
       } while (display->display.nextPage());
-      BusManager::getInstance().unlock();
 
       firstDraw = false;
     } else {
@@ -102,14 +100,12 @@ private:
 
     display->display.setPartialWindow(x_start_aligned, y, w_aligned, h);
 
-    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
       drawMenuItem(display, index);
       BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
-    BusManager::getInstance().unlock();
   }
 
   void drawMenuItem(DisplayDriver *display, int i) {

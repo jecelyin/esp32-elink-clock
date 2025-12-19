@@ -13,7 +13,6 @@ public:
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
-    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
