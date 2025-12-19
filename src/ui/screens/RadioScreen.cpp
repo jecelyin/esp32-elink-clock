@@ -42,30 +42,29 @@ void RadioScreen::initButtons() {
       // Row 1: SEEK
       buttons[i].x = i * cellW;
       buttons[i].y = startY;
-      buttons[i].w = cellW;
-      buttons[i].h = cellH;
+      buttons[i].w = cellW + 1; // +1 for overlap
+      buttons[i].h = cellH + 1; // +1 for overlap
       if (i == 0)
         strcpy(buttons[i].label, "<< SEEK");
       else
         strcpy(buttons[i].label, "SEEK >>");
     } else if (i < 5) {
       // Row 2: VOL and BIAS
-      // Total width is 200. Divide by 3: 66, 67, 67
       int w1 = 66;
       int w2 = 67;
       int w3 = 67;
       if (i == 2) {
         buttons[i].x = 0;
-        buttons[i].w = w1;
+        buttons[i].w = w1 + 1;
       } else if (i == 3) {
         buttons[i].x = w1;
-        buttons[i].w = w2;
+        buttons[i].w = w2 + 1;
       } else if (i == 4) {
         buttons[i].x = w1 + w2;
-        buttons[i].w = w3;
+        buttons[i].w = w3 + 1;
       }
       buttons[i].y = startY + cellH;
-      buttons[i].h = cellH;
+      buttons[i].h = cellH + 1;
       if (i == 2)
         strcpy(buttons[i].label, "VOL -");
       else if (i == 3)
@@ -80,8 +79,8 @@ void RadioScreen::initButtons() {
       int startX = 200;
       buttons[i].x = startX + (pIdx % 4) * pW;
       buttons[i].y = startY + (pIdx / 4) * pH;
-      buttons[i].w = pW;
-      buttons[i].h = pH;
+      buttons[i].w = pW + 1;
+      buttons[i].h = pH + 1;
       sprintf(buttons[i].label, "%d", pIdx + 1);
     }
   }
@@ -92,9 +91,9 @@ void RadioScreen::drawSingleButton(DisplayDriver *display, int idx,
   using namespace Layout;
   UIButton &btn = buttons[idx];
 
-  if (partial) {
-    setupWindow(display, btn.x, btn.y, btn.w, btn.h, true);
-  }
+  // if (partial) {
+  //   setupWindow(display, btn.x, btn.y, btn.w, btn.h, true);
+  // }
 
   if (isFocused)
     display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
@@ -141,8 +140,12 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
                                     int newIdx) {
   // Update old focus
   if (oldIdx != -1 && oldIdx != newIdx) {
-    display->display.setPartialWindow(buttons[oldIdx].x, buttons[oldIdx].y,
-                                      buttons[oldIdx].w, buttons[oldIdx].h);
+    UIButton &btn = buttons[oldIdx];
+    display->display.setPartialWindow(
+        btn.x + 1,
+        btn.y + 1,
+        btn.w - 2,
+        btn.h - 2);
     display->display.firstPage();
     do {
       drawSingleButton(display, oldIdx, false, true);
@@ -151,8 +154,12 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
   }
 
   // Update new focus
-  display->display.setPartialWindow(buttons[newIdx].x, buttons[newIdx].y,
-                                    buttons[newIdx].w, buttons[newIdx].h);
+  UIButton &btn = buttons[newIdx];
+  display->display.setPartialWindow(
+      btn.x + 1,
+      btn.y + 1,
+      btn.w - 2,
+      btn.h - 2);
   display->display.firstPage();
   do {
     drawSingleButton(display, newIdx, true, true);
@@ -247,17 +254,20 @@ void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w,
 void RadioScreen::drawStaticGrid(DisplayDriver *display) {
   using namespace Layout;
 
-  // display->display.drawRect(0, SYSTEM_BAR_H, SCREEN_W, SCREEN_H - SYSTEM_BAR_H,
+  // display->display.drawRect(0, SYSTEM_BAR_H, SCREEN_W, SCREEN_H -
+  // SYSTEM_BAR_H,
   //                           COLOR_FG);
 
-  // display->display.drawLine(0, SYSTEM_BAR_H, SCREEN_W, SYSTEM_BAR_H, COLOR_FG);
+  // display->display.drawLine(0, SYSTEM_BAR_H, SCREEN_W, SYSTEM_BAR_H,
+  // COLOR_FG);
 
   // display->display.drawLine(0, CONTROLS_Y, SCREEN_W, CONTROLS_Y, COLOR_FG);
 
   // display->display.drawLine(SCREEN_W / 2, CONTROLS_Y, SCREEN_W / 2, SCREEN_H,
   //                           COLOR_FG);
   // display->display.drawLine(SCREEN_W / 2 + (SCREEN_W / 4), CONTROLS_Y,
-  //                           SCREEN_W / 2 + (SCREEN_W / 4), SCREEN_H, COLOR_FG);
+  //                           SCREEN_W / 2 + (SCREEN_W / 4), SCREEN_H,
+  //                           COLOR_FG);
   // display->display.drawLine(SCREEN_W / 4, CONTROLS_Y, SCREEN_W / 4, SCREEN_H,
   //                           COLOR_FG);
 }
