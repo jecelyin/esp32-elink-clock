@@ -2,16 +2,18 @@
 
 #include "../../drivers/AudioDriver.h"
 #include "../../managers/BusManager.h"
-#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
+#include "../components/StatusBar.h"
 
 class MusicScreen : public Screen {
 public:
-  MusicScreen(AudioDriver *audio, StatusBar *statusBar) : audio(audio), statusBar(statusBar) {}
+  MusicScreen(AudioDriver *audio, StatusBar *statusBar)
+      : audio(audio), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
+    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);

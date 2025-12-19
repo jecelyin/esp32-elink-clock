@@ -141,30 +141,27 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
   // Update old focus
   if (oldIdx != -1 && oldIdx != newIdx) {
     UIButton &btn = buttons[oldIdx];
-    display->display.setPartialWindow(
-        btn.x + 1,
-        btn.y + 1,
-        btn.w - 2,
-        btn.h - 2);
+    display->display.setPartialWindow(btn.x + 1, btn.y + 1, btn.w - 2,
+                                      btn.h - 2);
+    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       drawSingleButton(display, oldIdx, false, true);
       BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
+    BusManager::getInstance().unlock();
   }
 
   // Update new focus
   UIButton &btn = buttons[newIdx];
-  display->display.setPartialWindow(
-      btn.x + 1,
-      btn.y + 1,
-      btn.w - 2,
-      btn.h - 2);
+  display->display.setPartialWindow(btn.x + 1, btn.y + 1, btn.w - 2, btn.h - 2);
+  BusManager::getInstance().lock();
   display->display.firstPage();
   do {
     drawSingleButton(display, newIdx, true, true);
     BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
+  BusManager::getInstance().unlock();
 }
 
 void RadioScreen::init() {}
@@ -227,6 +224,7 @@ void RadioScreen::draw(DisplayDriver *display) {
   lastFocusedControl = focusedControl;
 
   display->display.setFullWindow();
+  BusManager::getInstance().lock();
   display->display.firstPage();
   do {
     display->display.fillScreen(GxEPD_WHITE);
@@ -241,6 +239,7 @@ void RadioScreen::draw(DisplayDriver *display) {
 
     BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
+  BusManager::getInstance().unlock();
 }
 
 void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w,

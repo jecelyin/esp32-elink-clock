@@ -1,17 +1,19 @@
 #pragma once
 
-#include "../../managers/ConfigManager.h"
 #include "../../managers/BusManager.h"
-#include "../components/StatusBar.h"
+#include "../../managers/ConfigManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
+#include "../components/StatusBar.h"
 
 class SettingsScreen : public Screen {
 public:
-  SettingsScreen(ConfigManager *config, StatusBar *statusBar) : config(config), statusBar(statusBar) {}
+  SettingsScreen(ConfigManager *config, StatusBar *statusBar)
+      : config(config), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
+    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);

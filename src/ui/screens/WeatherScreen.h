@@ -1,18 +1,20 @@
 #pragma once
 
-#include "../../managers/WeatherManager.h"
 #include "../../managers/BusManager.h"
+#include "../../managers/WeatherManager.h"
 #include "../../utils/qweather_fonts.h"
-#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
+#include "../components/StatusBar.h"
 
 class WeatherScreen : public Screen {
 public:
-  WeatherScreen(WeatherManager *weather, StatusBar *statusBar) : weather(weather), statusBar(statusBar) {}
+  WeatherScreen(WeatherManager *weather, StatusBar *statusBar)
+      : weather(weather), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
+    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
@@ -28,9 +30,14 @@ public:
       display->u8g2Fonts.setFont(u8g2_font_qweather_icon_16);
       display->u8g2Fonts.setCursor(20, 60);
       // char iconStr[2] = {weather->data.icon_char, '\0'};
-      display->u8g2Fonts.drawUTF8(20, 90, weather->data.icon_str); // Adjusted Y for UTF8 baseline if needed, but drawUTF8 usually takes x,y. setCursor + print is also fine but print(String) works for UTF8? u8g2.print supports UTF8 if enableUTF8Print is on?
+      display->u8g2Fonts.drawUTF8(
+          20, 90,
+          weather->data
+              .icon_str); // Adjusted Y for UTF8 baseline if needed, but
+                          // drawUTF8 usually takes x,y. setCursor + print is
+                          // also fine but print(String) works for UTF8?
+                          // u8g2.print supports UTF8 if enableUTF8Print is on?
       // SAFE: drawUTF8(x, y, str)
-
 
       // Details
       display->u8g2Fonts.setFont(u8g2_font_helvB14_tf);

@@ -11,18 +11,19 @@ ConnectionManager::ConnectionManager() {}
 void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
   configMgr = config;
   rtcDriver = rtc;
-
-  // WiFi.mode(WIFI_STA);
-  // if (configMgr->config.wifi_ssid.length() > 0) {
-  //   wifiManager.autoConnect(configMgr->config.wifi_ssid.c_str(),
-  //                           configMgr->config.wifi_pass.c_str());
-  // } else {
-  //   startAP();
-  // }
-  wifiManager.autoConnect();
 }
 
+void ConnectionManager::enableNetwork(bool enable) { networkEnabled = enable; }
+
 void ConnectionManager::loop() {
+  if (!networkEnabled)
+    return;
+
+  if (!firstConnectAttempted) {
+    firstConnectAttempted = true;
+    wifiManager.autoConnect();
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     // Sync time every hour
     if (millis() - lastSyncTime > 3600000 || lastSyncTime == 0) {

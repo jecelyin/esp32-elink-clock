@@ -13,9 +13,12 @@ public:
   bool isConnected();
   void startAP();
   void syncTime();
+  void enableNetwork(bool enable);
 
 private:
   ConfigManager *configMgr;
   RtcDriver *rtcDriver;
   unsigned long lastSyncTime = 0;
+  bool networkEnabled = false;
+  bool firstConnectAttempted = false;
 };

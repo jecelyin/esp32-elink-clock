@@ -2,16 +2,18 @@
 
 #include "../../managers/AlarmManager.h"
 #include "../../managers/BusManager.h"
-#include "../components/StatusBar.h"
 #include "../Screen.h"
 #include "../UIManager.h"
+#include "../components/StatusBar.h"
 
 class AlarmScreen : public Screen {
 public:
-  AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar) : alarmMgr(alarmMgr), statusBar(statusBar) {}
+  AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar)
+      : alarmMgr(alarmMgr), statusBar(statusBar) {}
 
   void draw(DisplayDriver *display) override {
     display->display.setFullWindow();
+    BusManager::getInstance().lock();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
