@@ -13,7 +13,7 @@ public:
   void seekUp();
   void seekDown();
   uint16_t getFrequency();
-  char* getFormattedFrequency();
+  char *getFormattedFrequency();
   uint16_t getMinFrequency();
   uint16_t getMaxFrequency();
   uint8_t getSignalStrength();
@@ -23,7 +23,10 @@ public:
   String getRdsProgramInformation();
   bool isStereo();
   void clearRds();
+  void setBias(bool on);
+  bool getBias();
 
 private:
   RDA5807 radio;
+  bool biasState;
 };

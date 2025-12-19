@@ -1,22 +1,23 @@
 #include "RadioScreen.h"
 
 namespace Layout {
-  const int SCREEN_W = 400;
-  const int SCREEN_H = 300;
-  const uint16_t COLOR_BG = GxEPD_WHITE;
-  const uint16_t COLOR_FG = GxEPD_BLACK;
-  const int SYSTEM_BAR_H = 24;
-  const int MAIN_SECTION_Y = 24;
-  const int MAIN_SECTION_H = 176;
-  const int VOL_BAR_W = 40;
-  const int DISPLAY_AREA_W = SCREEN_W - VOL_BAR_W;
-  const int DIAL_Y = 160;
-  const int DIAL_H = 40;
-  const int CONTROLS_Y = 200;
-  const int CONTROLS_H = 100;
-}
+const int SCREEN_W = 400;
+const int SCREEN_H = 300;
+const uint16_t COLOR_BG = GxEPD_WHITE;
+const uint16_t COLOR_FG = GxEPD_BLACK;
+const int SYSTEM_BAR_H = 24;
+const int MAIN_SECTION_Y = 24;
+const int MAIN_SECTION_H = 176;
+const int VOL_BAR_W = 40;
+const int DISPLAY_AREA_W = SCREEN_W - VOL_BAR_W;
+const int DIAL_Y = 160;
+const int DIAL_H = 40;
+const int CONTROLS_Y = 200;
+const int CONTROLS_H = 100;
+} // namespace Layout
 
-RadioScreen::RadioScreen(RadioDriver *radio, StatusBar *statusBar, ConfigManager *config)
+RadioScreen::RadioScreen(RadioDriver *radio, StatusBar *statusBar,
+                         ConfigManager *config)
     : radio(radio), statusBar(statusBar), config(config) {
   focusedControl = 0;
   lastFocusedControl = -1;
@@ -37,17 +38,43 @@ void RadioScreen::initButtons() {
   int startY = CONTROLS_Y + 1;
 
   for (int i = 0; i < BUTTON_COUNT; i++) {
-    if (i < 4) {
-      buttons[i].x = (i % 2) * cellW;
-      buttons[i].y = startY + (i / 2) * cellH;
+    if (i < 2) {
+      // Row 1: SEEK
+      buttons[i].x = i * cellW;
+      buttons[i].y = startY;
       buttons[i].w = cellW;
       buttons[i].h = cellH;
-      if (i == 0) strcpy(buttons[i].label, "<< SEEK");
-      else if (i == 1) strcpy(buttons[i].label, "SEEK >>");
-      else if (i == 2) strcpy(buttons[i].label, "VOL -");
-      else if (i == 3) strcpy(buttons[i].label, "VOL +");
+      if (i == 0)
+        strcpy(buttons[i].label, "<< SEEK");
+      else
+        strcpy(buttons[i].label, "SEEK >>");
+    } else if (i < 5) {
+      // Row 2: VOL and BIAS
+      // Total width is 200. Divide by 3: 66, 67, 67
+      int w1 = 66;
+      int w2 = 67;
+      int w3 = 67;
+      if (i == 2) {
+        buttons[i].x = 0;
+        buttons[i].w = w1;
+      } else if (i == 3) {
+        buttons[i].x = w1;
+        buttons[i].w = w2;
+      } else if (i == 4) {
+        buttons[i].x = w1 + w2;
+        buttons[i].w = w3;
+      }
+      buttons[i].y = startY + cellH;
+      buttons[i].h = cellH;
+      if (i == 2)
+        strcpy(buttons[i].label, "VOL -");
+      else if (i == 3)
+        strcpy(buttons[i].label, "VOL +");
+      else if (i == 4)
+        strcpy(buttons[i].label, radio->getBias() ? "BIAS\nON" : "BIAS\nOFF");
     } else {
-      int pIdx = i - 4;
+      // Presets
+      int pIdx = i - 5;
       int pW = 50;
       int pH = 50;
       int startX = 200;
@@ -60,7 +87,8 @@ void RadioScreen::initButtons() {
   }
 }
 
-void RadioScreen::drawSingleButton(DisplayDriver *display, int idx, bool isFocused, bool partial) {
+void RadioScreen::drawSingleButton(DisplayDriver *display, int idx,
+                                   bool isFocused, bool partial) {
   using namespace Layout;
   UIButton &btn = buttons[idx];
 
@@ -68,23 +96,53 @@ void RadioScreen::drawSingleButton(DisplayDriver *display, int idx, bool isFocus
     setupWindow(display, btn.x, btn.y, btn.w, btn.h, true);
   }
 
-  if (isFocused) display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
+  if (isFocused)
+    display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
   display->display.drawRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
+  Serial.printf("Draw button %d at (%d,%d) size (%d,%d) %s\n", idx, btn.x,
+                btn.y, btn.w, btn.h, isFocused ? "FOCUSED" : "normal");
   display->u8g2Fonts.setForegroundColor(isFocused ? COLOR_BG : COLOR_FG);
   display->u8g2Fonts.setBackgroundColor(isFocused ? COLOR_FG : COLOR_BG);
   display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-  int tw = display->u8g2Fonts.getUTF8Width(btn.label);
-  display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2, btn.y + btn.h / 2 + 5);
-  display->u8g2Fonts.print(btn.label);
-  
+
+  // Handle multiline labels
+  char labelCopy[16];
+  strncpy(labelCopy, btn.label, 16);
+  char *line = strtok(labelCopy, "\n");
+  int lineCount = 0;
+  char *lines[2]; // Support max 2 lines for now
+  while (line != NULL && lineCount < 2) {
+    lines[lineCount++] = line;
+    line = strtok(NULL, "\n");
+  }
+
+  if (lineCount == 1) {
+    int tw = display->u8g2Fonts.getUTF8Width(btn.label);
+    display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2,
+                                 btn.y + btn.h / 2 + 5);
+    display->u8g2Fonts.print(btn.label);
+  } else if (lineCount == 2) {
+    for (int i = 0; i < 2; i++) {
+      int tw = display->u8g2Fonts.getUTF8Width(lines[i]);
+      // Centering logic for 2 lines:
+      // Line 1: y = center - offset, Line 2: y = center + offset
+      int yOffset = (i == 0) ? -4 : 12;
+      display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2,
+                                   btn.y + btn.h / 2 + yOffset);
+      display->u8g2Fonts.print(lines[i]);
+    }
+  }
+
   display->u8g2Fonts.setForegroundColor(COLOR_FG);
   display->u8g2Fonts.setBackgroundColor(COLOR_BG);
 }
 
-void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx, int newIdx) {
+void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
+                                    int newIdx) {
   // Update old focus
   if (oldIdx != -1 && oldIdx != newIdx) {
-    display->display.setPartialWindow(buttons[oldIdx].x, buttons[oldIdx].y, buttons[oldIdx].w, buttons[oldIdx].h);
+    display->display.setPartialWindow(buttons[oldIdx].x, buttons[oldIdx].y,
+                                      buttons[oldIdx].w, buttons[oldIdx].h);
     display->display.firstPage();
     do {
       drawSingleButton(display, oldIdx, false, true);
@@ -93,7 +151,8 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx, int newI
   }
 
   // Update new focus
-  display->display.setPartialWindow(buttons[newIdx].x, buttons[newIdx].y, buttons[newIdx].w, buttons[newIdx].h);
+  display->display.setPartialWindow(buttons[newIdx].x, buttons[newIdx].y,
+                                    buttons[newIdx].w, buttons[newIdx].h);
   display->display.firstPage();
   do {
     drawSingleButton(display, newIdx, true, true);
@@ -101,8 +160,7 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx, int newI
   } while (display->display.nextPage());
 }
 
-void RadioScreen::init() {
-}
+void RadioScreen::init() {}
 
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;
@@ -125,8 +183,10 @@ void RadioScreen::draw(DisplayDriver *display) {
   }
   int signal = radio->getSignalStrength();
   int rssi = radio->getRSSI();
-  if (smoothedRSSI == 0) smoothedRSSI = rssi;
-  else smoothedRSSI = (smoothedRSSI * 7 + rssi) / 8;
+  if (smoothedRSSI == 0)
+    smoothedRSSI = rssi;
+  else
+    smoothedRSSI = (smoothedRSSI * 7 + rssi) / 8;
 
   bool isStereo = radio->isStereo();
 
@@ -138,13 +198,11 @@ void RadioScreen::draw(DisplayDriver *display) {
   }
 
   // Check if only focusedControl changed
-  bool onlyFocusChanged = !isFirstDraw &&
-                          (freq == lastFreq) &&
-                          (vol == lastVol) &&
-                          (rds == lastRDS) &&
-                          (isStereo == lastStereo) &&
-                          (abs(smoothedRSSI - lastRSSI) < 5) && // Allow small RSSI variation
-                          (focusedControl != lastFocusedControl);
+  bool onlyFocusChanged =
+      !isFirstDraw && (freq == lastFreq) && (vol == lastVol) &&
+      (rds == lastRDS) && (isStereo == lastStereo) &&
+      (abs(smoothedRSSI - lastRSSI) < 5) && // Allow small RSSI variation
+      (focusedControl != lastFocusedControl);
 
   if (onlyFocusChanged) {
     updateButtonFocus(display, lastFocusedControl, focusedControl);
@@ -178,7 +236,8 @@ void RadioScreen::draw(DisplayDriver *display) {
   } while (display->display.nextPage());
 }
 
-void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w, int h, bool partial) {
+void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w,
+                              int h, bool partial) {
   if (partial) {
     display->display.setPartialWindow(x, y, w, h);
   }
@@ -188,24 +247,19 @@ void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w, int h
 void RadioScreen::drawStaticGrid(DisplayDriver *display) {
   using namespace Layout;
 
-  display->display.drawRect(0, SYSTEM_BAR_H, SCREEN_W, SCREEN_H - SYSTEM_BAR_H, COLOR_FG);
-  display->display.drawRect(1, SYSTEM_BAR_H+1, SCREEN_W-2, SCREEN_H - SYSTEM_BAR_H - 2, COLOR_FG);
+  // display->display.drawRect(0, SYSTEM_BAR_H, SCREEN_W, SCREEN_H - SYSTEM_BAR_H,
+  //                           COLOR_FG);
 
-  display->display.drawLine(0, SYSTEM_BAR_H, SCREEN_W, SYSTEM_BAR_H, COLOR_FG);
-  display->display.drawLine(0, SYSTEM_BAR_H+1, SCREEN_W, SYSTEM_BAR_H+1, COLOR_FG);
+  // display->display.drawLine(0, SYSTEM_BAR_H, SCREEN_W, SYSTEM_BAR_H, COLOR_FG);
 
-  display->display.drawLine(0, CONTROLS_Y, SCREEN_W, CONTROLS_Y, COLOR_FG);
-  display->display.drawLine(0, CONTROLS_Y+1, SCREEN_W, CONTROLS_Y+1, COLOR_FG);
+  // display->display.drawLine(0, CONTROLS_Y, SCREEN_W, CONTROLS_Y, COLOR_FG);
 
-  // 信号左边的分割线
-  // display->display.drawLine(DISPLAY_AREA_W, MAIN_SECTION_Y, DISPLAY_AREA_W, CONTROLS_Y, COLOR_FG);
-  // display->display.drawLine(DISPLAY_AREA_W+1, MAIN_SECTION_Y, DISPLAY_AREA_W+1, CONTROLS_Y, COLOR_FG);
-
-  display->display.drawLine(SCREEN_W/2, CONTROLS_Y, SCREEN_W/2, SCREEN_H, COLOR_FG);
-  // display->display.drawLine(0, CONTROLS_Y + CONTROLS_H/2, SCREEN_W, CONTROLS_Y + CONTROLS_H/2, COLOR_FG);
-
-  display->display.drawLine(SCREEN_W/2 + (SCREEN_W/4), CONTROLS_Y, SCREEN_W/2 + (SCREEN_W/4), SCREEN_H, COLOR_FG);
-  display->display.drawLine(SCREEN_W/4, CONTROLS_Y, SCREEN_W/4, SCREEN_H, COLOR_FG);
+  // display->display.drawLine(SCREEN_W / 2, CONTROLS_Y, SCREEN_W / 2, SCREEN_H,
+  //                           COLOR_FG);
+  // display->display.drawLine(SCREEN_W / 2 + (SCREEN_W / 4), CONTROLS_Y,
+  //                           SCREEN_W / 2 + (SCREEN_W / 4), SCREEN_H, COLOR_FG);
+  // display->display.drawLine(SCREEN_W / 4, CONTROLS_Y, SCREEN_W / 4, SCREEN_H,
+  //                           COLOR_FG);
 }
 
 void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
@@ -216,7 +270,7 @@ void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
   int h = MAIN_SECTION_H - DIAL_H;
 
   display->u8g2Fonts.setFont(u8g2_font_logisoso78_tn);
-  char* freqStr = radio->getFormattedFrequency();
+  char *freqStr = radio->getFormattedFrequency();
   int16_t tw = display->u8g2Fonts.getUTF8Width(freqStr);
   int cursorX = x + (w - tw) / 2;
   int cursorY = y + 66;
@@ -224,33 +278,36 @@ void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
   int px = cursorX - 10;
   int pw = tw + 20;
   // Ensure we don't exceed the safe bounds
-  if (px < x) px = x;
-  if (px + pw > x + w) pw = (x + w) - px;
+  if (px < x)
+    px = x;
+  if (px + pw > x + w)
+    pw = (x + w) - px;
   setupWindow(display, px, y, pw, h, partial);
 
   display->u8g2Fonts.setCursor(cursorX, cursorY);
   display->u8g2Fonts.print(freqStr);
 }
 
-void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partial) {
+void RadioScreen::drawDial(DisplayDriver *display, float centerFreq,
+                           bool partial) {
   using namespace Layout;
 
   // Dial Configuration
-  const int margin = 20;      // Padding on left/right to prevent labels being cut off
+  const int margin =
+      20; // Padding on left/right to prevent labels being cut off
   int x = margin / 2;
   int y = DIAL_Y;
   int w = DISPLAY_AREA_W - 4;
   int h = DIAL_H;
   const int visibleW = w - 2 * margin;
-  const int tickSpacing = 8;  // Pixels per 0.1MHz step
-  const int tickH01 = 6;      // Height for 0.1MHz tick
-  const int tickH05 = 10;     // Height for 0.5MHz tick
-  const int tickH10 = 16;     // Height for 1.0MHz tick
+  const int tickSpacing = 8; // Pixels per 0.1MHz step
+  const int tickH01 = 6;     // Height for 0.1MHz tick
+  const int tickH05 = 10;    // Height for 0.5MHz tick
+  const int tickH10 = 16;    // Height for 1.0MHz tick
 
   setupWindow(display, x, y, w, h, partial);
 
   display->display.drawLine(0, DIAL_Y, DISPLAY_AREA_W, DIAL_Y, COLOR_FG);
-  display->display.drawLine(0, DIAL_Y + 1, DISPLAY_AREA_W, DIAL_Y + 1, COLOR_FG);
 
   float minBandFreq = radio->getMinFrequency() / 100.0;
   float maxBandFreq = radio->getMaxFrequency() / 100.0;
@@ -288,7 +345,8 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
       int tickWidth = 1;
 
       if (tickX >= 0 && tickX < w) {
-        display->display.fillRect(tickX - (tickWidth / 2), tickY, tickWidth, tickH, COLOR_FG);
+        display->display.fillRect(tickX - (tickWidth / 2), tickY, tickWidth,
+                                  tickH, COLOR_FG);
       }
 
       // Draw 1MHz Label
@@ -299,8 +357,9 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
         int labelX = tickX - nw / 2;
 
         if (labelX + nw > 0 && labelX < w) {
-           display->u8g2Fonts.setCursor(labelX, y + 30); // Moved up to make room for triangle
-           display->u8g2Fonts.print(numStr);
+          display->u8g2Fonts.setCursor(
+              labelX, y + 30); // Moved up to make room for triangle
+          display->u8g2Fonts.print(numStr);
         }
       }
     }
@@ -309,7 +368,8 @@ void RadioScreen::drawDial(DisplayDriver *display, float centerFreq, bool partia
   // Pointer: 竖线 (Vertical Line) + 三角形 (Triangle at bottom)
   int triBaseY = y + h - 2;
   display->display.drawLine(pointerX, y, pointerX, triBaseY - 6, COLOR_FG);
-  display->display.fillTriangle(pointerX, triBaseY - 6, pointerX - 5, triBaseY, pointerX + 5, triBaseY, COLOR_FG);
+  display->display.fillTriangle(pointerX, triBaseY - 6, pointerX - 5, triBaseY,
+                                pointerX + 5, triBaseY, COLOR_FG);
 }
 
 void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
@@ -330,7 +390,7 @@ void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
   display->u8g2Fonts.setCursor(x + (w - tw) / 2, y + 30);
   display->u8g2Fonts.print(valStr);
 
-  const char* unit = "dB";
+  const char *unit = "dB";
   int uw = display->u8g2Fonts.getUTF8Width(unit);
   display->u8g2Fonts.setCursor(x + (w - uw) / 2, y + 43);
   display->u8g2Fonts.print(unit);
@@ -339,9 +399,9 @@ void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
   int segH = (h - topMargin - 10) / 20;
   int startY = y + h - 5;
 
-  static const uint8_t rssi_thresholds[20] = {
-    10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 45, 48, 51
-  };
+  static const uint8_t rssi_thresholds[20] = {10, 12, 14, 16, 18, 20, 22,
+                                              24, 26, 28, 30, 32, 34, 36,
+                                              38, 40, 42, 45, 48, 51};
 
   int bars = 0;
   for (int i = 19; i >= 0; i--) {
@@ -360,7 +420,8 @@ void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
   }
 }
 
-void RadioScreen::drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo, int signal, int rssi, bool partial) {
+void RadioScreen::drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo,
+                                 int signal, int rssi, bool partial) {
   using namespace Layout;
   int x = 5;
   int y = 24;
@@ -394,7 +455,8 @@ void RadioScreen::drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo,
   display->u8g2Fonts.print(volStr);
 }
 
-void RadioScreen::drawRDS(DisplayDriver *display, const char* text, bool partial) {
+void RadioScreen::drawRDS(DisplayDriver *display, const char *text,
+                          bool partial) {
   using namespace Layout;
 
   int y = MAIN_SECTION_Y + MAIN_SECTION_H;
@@ -418,12 +480,14 @@ void RadioScreen::drawButtons(DisplayDriver *display, bool partial) {
 
 void RadioScreen::handleInput(UIKey key) {
   if (key == UI_KEY_LEFT) {
-    focusedControl = (focusedControl - 1 + 12) % 12;
+    focusedControl = (focusedControl - 1 + BUTTON_COUNT) % BUTTON_COUNT;
   } else if (key == UI_KEY_RIGHT) {
-    focusedControl = (focusedControl + 1) % 12;
+    focusedControl = (focusedControl + 1) % BUTTON_COUNT;
   } else if (key == UI_KEY_ENTER) {
-    if (focusedControl == 0) radio->seekDown();
-    else if (focusedControl == 1) radio->seekUp();
+    if (focusedControl == 0)
+      radio->seekDown();
+    else if (focusedControl == 1)
+      radio->seekUp();
     else if (focusedControl == 2) {
       if (config->config.volume > 0) {
         config->config.volume--;
@@ -436,17 +500,25 @@ void RadioScreen::handleInput(UIKey key) {
         radio->setVolume(config->config.volume);
         config->save();
       }
-    } else if (focusedControl >= 4 && focusedControl <= 11) {
-      loadPreset(focusedControl - 4);
+    } else if (focusedControl == 4) {
+      bool currentBias = radio->getBias();
+      radio->setBias(!currentBias);
+      strcpy(buttons[4].label, !currentBias ? "BIAS\nON" : "BIAS\nOFF");
+      // Trigger a redraw of this button
+      isFirstDraw = false; // Ensure we do a partial if possible, though
+                           // RadioScreen::draw handles it
+    } else if (focusedControl >= 5 && focusedControl <= 12) {
+      loadPreset(focusedControl - 5);
     }
   }
 }
 
 void RadioScreen::onLongPress() {
-  if (focusedControl >= 4 && focusedControl <= 11) {
-    savePreset(focusedControl - 4);
+  if (focusedControl >= 5 && focusedControl <= 12) {
+    savePreset(focusedControl - 5);
   } else {
-    if (uiManager) uiManager->switchScreen(SCREEN_MENU);
+    if (uiManager)
+      uiManager->switchScreen(SCREEN_MENU);
   }
 }
 
@@ -458,7 +530,6 @@ void RadioScreen::savePreset(int index) {
 
 void RadioScreen::loadPreset(int index) {
   uint16_t freq = config->config.radio_presets[index];
-  if(freq > 0) radio->setFrequency(freq);
+  if (freq > 0)
+    radio->setFrequency(freq);
 }
-
-
