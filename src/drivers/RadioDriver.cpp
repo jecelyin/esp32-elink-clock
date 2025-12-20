@@ -11,12 +11,15 @@ bool RadioDriver::init() {
 
 void RadioDriver::setup() {
   BusManager::getInstance().requestI2C();
-  radio.setup(CLOCK_32K, OSCILLATOR_TYPE_ACTIVE);
+  radio.softReset();
+  radio.setup();
   radio.setLnaPortSel(3); // Improve sensitivity
   radio.setAFC(true);     // Automatic Frequency Control
   radio.setMute(false);
   radio.setVolume(15);
   radio.setMono(false);
+  radio.setBand(0);
+  radio.setFrequency(10520); // 105.2 MHz
 }
 
 void RadioDriver::powerDown() {
@@ -41,12 +44,14 @@ void RadioDriver::mute(bool m) {
 
 void RadioDriver::seekUp() {
   BusManager::getInstance().requestI2C();
-  radio.seek(RDA_SEEK_WRAP, RDA_SEEK_UP);
+  radio.setFrequencyUp();
+  // radio.seek(RDA_SEEK_WRAP,RDA_SEEK_UP);
 }
 
 void RadioDriver::seekDown() {
   BusManager::getInstance().requestI2C();
-  radio.seek(RDA_SEEK_WRAP, RDA_SEEK_DOWN);
+  radio.setFrequencyDown();
+  // radio.seek(RDA_SEEK_WRAP,RDA_SEEK_DOWN);
 }
 
 uint16_t RadioDriver::getFrequency() {
