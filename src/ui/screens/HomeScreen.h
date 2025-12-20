@@ -216,13 +216,12 @@ private:
     auto &display = displayDrv->display;
     BusManager::getInstance().requestI2C();
     // Sensor Area:
-    // Static vertical line at x=280. Partial must start > 280. 281 safe.
-    // Static horizontal line at y=82. Partial must end < 82.
-    // y=24, h=57 -> ends 80. Safe.
-    display.setPartialWindow(281, 24, 119, 57);
+    // x=288 to 400 (w=112) is 8-pixel aligned and avoids the line at 280
+    // y=25 to 81 (h=56) avoids lines at 24 and 82
+    display.setPartialWindow(288, 25, 112, 56);
     display.firstPage();
     do {
-      display.fillRect(281, 24, 119, 57, GxEPD_WHITE);
+      display.fillRect(288, 25, 112, 56, GxEPD_WHITE);
       drawSensorSection(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
@@ -232,18 +231,24 @@ private:
     Serial.println("Partial Update: Weather");
     auto &display = displayDrv->display;
     BusManager::getInstance().requestDisplay();
-    // Weather Area:
-    // Static vertical line x=280 -> start 281.
-    // Static horiz line y=82 -> start 83.
-    // Static horiz line y=199 -> end 198.
-    // y=83, h=115 -> ends 197. Safe.
-    display.setPartialWindow(281, 83, 119, 115);
+
+    // Split into Today and Tomorrow to avoid byte alignment issues clearing
+    // lines Today Area: y=83 to 139 (avoids lines at 82 and 140) x=288 to 400
+    // (w=112) is 8-pixel aligned and avoids the line at 280
+    display.setPartialWindow(288, 83, 112, 56);
     display.firstPage();
     do {
-      display.fillRect(281, 83, 119, 115, GxEPD_WHITE);
-      display.drawLine(281, 140, 400, 140,
-                       GxEPD_BLACK); // internal line, start 281
-      drawWeatherSection(displayDrv);
+      display.fillRect(288, 83, 112, 56, GxEPD_WHITE);
+      drawTodayWeather(displayDrv);
+      BusManager::getInstance().requestDisplay();
+    } while (display.nextPage());
+
+    // Tomorrow Area: y=141 to 198 (avoids lines at 140 and 199)
+    display.setPartialWindow(288, 141, 112, 57);
+    display.firstPage();
+    do {
+      display.fillRect(288, 141, 112, 57, GxEPD_WHITE);
+      drawTomorrowWeather(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
   }
@@ -271,7 +276,8 @@ private:
     statusBar->draw(displayDrv, false);
     drawTimeSection(displayDrv);
     drawSensorSection(displayDrv);
-    drawWeatherSection(displayDrv);
+    drawTodayWeather(displayDrv);
+    drawTomorrowWeather(displayDrv);
     drawTasksSection(displayDrv);
   }
 
@@ -290,7 +296,7 @@ private:
     char timeStr[6];
     sprintf(timeStr, "%02d:%02d", now.hour, now.minute);
     int timeWidth = u8g2.getUTF8Width(timeStr);
-    u8g2.setCursor((280 - timeWidth) / 2, 150);
+    u8g2.setCursor((280 - timeWidth) / 2 - 4, 150);
     u8g2.print(timeStr);
 
     // Date
@@ -321,17 +327,18 @@ private:
     sensor->readData(indoorTemp, indoorHum);
 
     int iconY = 45;
-    display.drawInvertedBitmap(285, iconY, Bitmap_tempSHT30, 16, 16,
+    // Shifted from 285 to 290 (+5)
+    display.drawInvertedBitmap(290, iconY, Bitmap_tempSHT30, 16, 16,
                                GxEPD_BLACK);
 
     u8g2.setFont(u8g2_font_helvB14_tr);
-    u8g2.setCursor(303, iconY + 14);
+    u8g2.setCursor(308, iconY + 14); // 303 -> 308
     u8g2.print(indoorTemp, 1);
 
     int tWidth = u8g2.getUTF8Width(String(indoorTemp, 1).c_str());
-    u8g2.drawGlyph(303 + tWidth + 2, iconY + 12, 176); // Degree
+    u8g2.drawGlyph(308 + tWidth + 2, iconY + 12, 176); // Degree
 
-    int humX = 340;
+    int humX = 345; // 340 -> 345
     display.drawInvertedBitmap(humX, iconY, Bitmap_humiditySHT30, 16, 16,
                                GxEPD_BLACK);
     u8g2.setCursor(humX + 18, iconY + 14);
@@ -339,11 +346,8 @@ private:
     u8g2.print("%");
   }
 
-  void drawWeatherSection(DisplayDriver *displayDrv) {
+  void drawTodayWeather(DisplayDriver *displayDrv) {
     auto &u8g2 = displayDrv->u8g2Fonts;
-    auto &display = displayDrv->display; // needed?
-
-    // Today
     u8g2.setFont(u8g2_font_helvB08_tr);
     u8g2.setCursor(305, 100);
     u8g2.print("TODAY");
@@ -357,8 +361,10 @@ private:
     u8g2.print(" ");
     u8g2.print(weather->data.temp);
     u8g2.print("°");
+  }
 
-    // Tomorrow
+  void drawTomorrowWeather(DisplayDriver *displayDrv) {
+    auto &u8g2 = displayDrv->u8g2Fonts;
     u8g2.setFont(u8g2_font_helvB08_tr);
     u8g2.setCursor(300, 160);
     u8g2.print("TOMORROW");
