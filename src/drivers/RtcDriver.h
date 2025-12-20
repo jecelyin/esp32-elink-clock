@@ -83,4 +83,7 @@ private:
   // Datasheet Section 13.1.2, Page 15
   uint8_t weekBinToBitmask(uint8_t week0to6);
   uint8_t weekBitmaskToBin(uint8_t bitmask);
+
+  DateTime _cachedTime;
+  uint32_t _lastReadTime = 0;
 };

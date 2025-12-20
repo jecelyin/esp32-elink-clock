@@ -30,6 +30,10 @@ bool RtcDriver::init() {
 }
 
 DateTime RtcDriver::getTime() {
+  if (millis() - _lastReadTime < 1000 && _lastReadTime != 0) {
+    return _cachedTime;
+  }
+
   DateTime dt;
 
   // Burst read from 0x10 to 0x16 [cite: 507]
@@ -53,6 +57,9 @@ DateTime RtcDriver::getTime() {
     dt.day = bcdToDec(Wire.read() & 0x3F);
     dt.month = bcdToDec(Wire.read() & 0x1F);
     dt.year = bcdToDec(Wire.read()); // 0-99
+
+    _cachedTime = dt;
+    _lastReadTime = millis();
   }
 
   return dt;
@@ -82,69 +89,64 @@ void RtcDriver::setTime(DateTime dt) {
 
   // 3. Clear STOP bit to "0" to restart clock [cite: 1390]
   writeRegister(RX8010_REG_CTRL, ctrl & ~RX8010_CTRL_STOP);
+
+  // Invalidate cache after setTime
+  _lastReadTime = 0;
 }
 
 // --- Individual Getters/Setters ---
-// Note: While convenient, these are slower than burst reads/writes due to I2C
-// overhead.
+// Optimized: All getters use getTime() which is burst-read and cached.
 
 void RtcDriver::setSecond(uint8_t seconds) {
   writeRegister(RX8010_REG_SEC, decToBcd(seconds));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint8_t RtcDriver::getSecond() {
-  return bcdToDec(readRegister(RX8010_REG_SEC) & 0x7F);
-}
+uint8_t RtcDriver::getSecond() { return getTime().second; }
 
 void RtcDriver::setMinute(uint8_t minutes) {
   writeRegister(RX8010_REG_MIN, decToBcd(minutes));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint8_t RtcDriver::getMinute() {
-  return bcdToDec(readRegister(RX8010_REG_MIN) & 0x7F);
-}
+uint8_t RtcDriver::getMinute() { return getTime().minute; }
 
 void RtcDriver::setHour(uint8_t hours) {
   writeRegister(RX8010_REG_HOUR, decToBcd(hours));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint8_t RtcDriver::getHour() {
-  return bcdToDec(readRegister(RX8010_REG_HOUR) & 0x3F);
-}
+uint8_t RtcDriver::getHour() { return getTime().hour; }
 
 void RtcDriver::setDay(uint8_t day) {
   writeRegister(RX8010_REG_DAY, decToBcd(day));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint8_t RtcDriver::getDay() {
-  return bcdToDec(readRegister(RX8010_REG_DAY) & 0x3F);
-}
+uint8_t RtcDriver::getDay() { return getTime().day; }
 
 void RtcDriver::setWeek(uint8_t week) {
   writeRegister(RX8010_REG_WEEK, weekBinToBitmask(week));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint8_t RtcDriver::getWeek() {
-  return weekBitmaskToBin(readRegister(RX8010_REG_WEEK));
-}
+uint8_t RtcDriver::getWeek() { return getTime().week; }
 
 void RtcDriver::setMonth(uint8_t month) {
   writeRegister(RX8010_REG_MONTH, decToBcd(month));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint8_t RtcDriver::getMonth() {
-  return bcdToDec(readRegister(RX8010_REG_MONTH) & 0x1F);
-}
+uint8_t RtcDriver::getMonth() { return getTime().month; }
 
 void RtcDriver::setYear(uint16_t year) {
   // Stores last two digits. Expects year > 2000.
   uint8_t y = (year >= 2000) ? (year - 2000) : year;
   writeRegister(RX8010_REG_YEAR, decToBcd(y));
+  _lastReadTime = 0; // Invalidate cache
 }
 
-uint16_t RtcDriver::getYear() {
-  return bcdToDec(readRegister(RX8010_REG_YEAR)) + 2000;
-}
+uint16_t RtcDriver::getYear() { return getTime().year + 2000; }
 
 // --- Utilities ---
 
@@ -175,9 +177,6 @@ void RtcDriver::setDate(uint8_t day, uint8_t month, uint16_t year) {
   dt.month = month;
   dt.year = (year >= 2000) ? (year - 2000) : year;
 
-  // Basic calculation for day of week (0=Sunday)
-  // Zeller's algorithm or similar is recommended for full accuracy,
-  // simplified here or could be calculated by mktime.
   struct tm t = {0};
   t.tm_mday = day;
   t.tm_mon = month - 1;
@@ -254,7 +253,6 @@ void RtcDriver::writeRegister(uint8_t reg, uint8_t val) {
   Wire.endTransmission();
 }
 
-// Datasheet Section 13.1.2 [cite: 908]
 // RX8010 uses a bitmask: Sun=0x01, Mon=0x02, Tue=0x04 ... Sat=0x40
 uint8_t RtcDriver::weekBinToBitmask(uint8_t week0to6) {
   return (1 << week0to6);
