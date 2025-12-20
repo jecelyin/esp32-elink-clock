@@ -1,4 +1,6 @@
 #include "RadioScreen.h"
+#include "../../config.h"
+#include <Arduino.h>
 
 namespace Layout {
 const int SCREEN_W = 400;
@@ -161,6 +163,20 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
 }
 
 void RadioScreen::init() {}
+
+void RadioScreen::enter() {
+  radio->setup();
+  // digitalWrite(CODEC_EN, 0);
+  digitalWrite(AMP_EN, 1);
+  digitalWrite(RADIO_EN, 1);
+  isFirstDraw = true;
+}
+
+void RadioScreen::exit() {
+  radio->powerDown();
+  digitalWrite(AMP_EN, 0);
+  digitalWrite(RADIO_EN, 0);
+}
 
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;

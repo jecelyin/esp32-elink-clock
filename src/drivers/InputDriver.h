@@ -28,7 +28,7 @@ private:
     bool longPressed = false;
     
     static const unsigned long DEBOUNCE_DELAY = 50;
-    static const unsigned long LONG_PRESS_DELAY = 1000;
+    static const unsigned long LONG_PRESS_DELAY = 500;
 };
 
 class InputDriver {

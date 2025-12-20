@@ -4,15 +4,24 @@
 RadioDriver::RadioDriver() {}
 
 bool RadioDriver::init() {
-  pinMode(BIAS_CTR, OUTPUT);
   digitalWrite(BIAS_CTR, LOW);
   biasState = false;
-  BusManager::getInstance().requestI2C();
-  radio.setup();
-  radio.setVolume(5);
-  radio.setMono(false);
-  radio.setMute(false);
   return true;
+}
+
+void RadioDriver::setup() {
+  BusManager::getInstance().requestI2C();
+  radio.setup(CLOCK_32K, OSCILLATOR_TYPE_ACTIVE);
+  radio.setLnaPortSel(3); // Improve sensitivity
+  radio.setAFC(true);     // Automatic Frequency Control
+  radio.setMute(false);
+  radio.setVolume(15);
+  radio.setMono(false);
+}
+
+void RadioDriver::powerDown() {
+  BusManager::getInstance().requestI2C();
+  radio.powerDown();
 }
 
 void RadioDriver::setFrequency(uint16_t freq) {

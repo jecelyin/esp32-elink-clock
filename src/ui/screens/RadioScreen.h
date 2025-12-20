@@ -12,6 +12,8 @@ public:
   RadioScreen(RadioDriver *radio, StatusBar *statusBar, ConfigManager *config);
 
   void init() override;
+  void enter() override;
+  void exit() override;
   void draw(DisplayDriver *display) override;
   bool handleInput(UIKey key) override;
   bool onLongPress() override;

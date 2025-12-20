@@ -7,6 +7,8 @@ class RadioDriver {
 public:
   RadioDriver();
   bool init();
+  void setup();
+  void powerDown();
   void setFrequency(uint16_t freq); // freq in 10kHz (e.g. 10110 for 101.1 MHz)
   void setVolume(uint8_t vol);
   void mute(bool m);

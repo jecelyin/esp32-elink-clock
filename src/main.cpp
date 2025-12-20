@@ -64,6 +64,22 @@ void setup() {
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_OFF);
 
+  // Audio & Power
+  pinMode(CODEC_EN, OUTPUT);
+  pinMode(AMP_EN, OUTPUT);
+  pinMode(RADIO_EN, OUTPUT);
+  pinMode(BIAS_CTR, OUTPUT);
+
+  digitalWrite(CODEC_EN, HIGH); // Enable Codec for I2C
+  digitalWrite(AMP_EN, LOW);    // Keep Amp off initially
+  digitalWrite(RADIO_EN, LOW);
+  digitalWrite(BIAS_CTR, LOW);
+
+  // Input Keys
+  pinMode(KEY_LEFT, INPUT_PULLUP);
+  pinMode(KEY_RIGHT, INPUT_PULLUP);
+  pinMode(KEY_ENTER, INPUT_PULLUP);
+
   // Init Drivers
   inputDriver.begin();
 
@@ -71,9 +87,9 @@ void setup() {
   displayDriver.init();
   displayDriver.showMessage("Initializing...");
 
-  // i2c 需要拉高CODEC_EN
-  pinMode(CODEC_EN, OUTPUT);
-  digitalWrite(CODEC_EN, HIGH);
+  sdCardDriver.begin();
+  displayDriver.init();
+  displayDriver.showMessage("Initializing...");
 
   if (!rtcDriver.init()) {
     Serial.println("RTC Init Failed");
