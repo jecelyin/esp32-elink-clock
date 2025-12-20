@@ -50,11 +50,12 @@ public:
     } while (display->display.nextPage());
   }
 
-  void handleInput(UIKey key) override {
+  bool handleInput(UIKey key) override {
     if (key == UI_KEY_ENTER) { // Menu/Back
       uiManager->switchScreen(SCREEN_MENU);
     }
     // Add playback controls
+    return false;
   }
 
 private:

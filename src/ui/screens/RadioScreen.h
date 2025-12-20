@@ -13,8 +13,8 @@ public:
 
   void init() override;
   void draw(DisplayDriver *display) override;
-  void handleInput(UIKey key) override;
-  void onLongPress() override;
+  bool handleInput(UIKey key) override;
+  bool onLongPress() override;
 
 private:
   RadioDriver *radio;

@@ -7,7 +7,6 @@
 #include "screens/SettingsScreen.h"
 #include "screens/WeatherScreen.h"
 
-
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
                      WeatherManager *weather, SensorDriver *sensor,
                      ConnectionManager *conn, AlarmManager *alarm,
@@ -18,7 +17,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
 
   statusBar = new StatusBar(conn, rtc, sensor);
   todoMgr = new TodoManager();
-  
+
   webMgr = new WebManager(todoMgr);
 
   // Create Screens
@@ -63,23 +62,24 @@ void UIManager::update() {
 
   if (currentScreenObj)
     currentScreenObj->update();
-    
-  if (webMgr) webMgr->loop();
+
+  if (webMgr)
+    webMgr->loop();
 }
 
 void UIManager::handleInput(UIKey key) {
   if (currentScreenObj) {
-    currentScreenObj->handleInput(key);
-    // Redraw after input?
-    // currentScreenObj->draw(display);
+    if (currentScreenObj->handleInput(key)) {
+      currentScreenObj->draw(display);
+    }
   }
 }
 
 void UIManager::onLongPressEnter() {
   if (currentScreenObj) {
-      currentScreenObj->onLongPress();
-      // Ensure UI is updated after long press action (e.g. saving preset)
-      // currentScreenObj->draw(display);
+    if (currentScreenObj->onLongPress()) {
+      currentScreenObj->draw(display);
+    }
   }
 }
 
@@ -110,7 +110,7 @@ void UIManager::switchScreen(ScreenState state) {
     currentScreenObj = settingsScreen;
     break;
   }
-  
+
   currentScreenState = state;
 
   if (currentScreenObj) {

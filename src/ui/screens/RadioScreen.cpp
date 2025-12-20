@@ -481,27 +481,34 @@ void RadioScreen::drawButtons(DisplayDriver *display, bool partial) {
   }
 }
 
-void RadioScreen::handleInput(UIKey key) {
+bool RadioScreen::handleInput(UIKey key) {
+  bool needsRedraw = false;
   if (key == UI_KEY_LEFT) {
     focusedControl = (focusedControl - 1 + BUTTON_COUNT) % BUTTON_COUNT;
+    needsRedraw = true;
   } else if (key == UI_KEY_RIGHT) {
     focusedControl = (focusedControl + 1) % BUTTON_COUNT;
+    needsRedraw = true;
   } else if (key == UI_KEY_ENTER) {
-    if (focusedControl == 0)
+    if (focusedControl == 0) {
       radio->seekDown();
-    else if (focusedControl == 1)
+      needsRedraw = true;
+    } else if (focusedControl == 1) {
       radio->seekUp();
-    else if (focusedControl == 2) {
+      needsRedraw = true;
+    } else if (focusedControl == 2) {
       if (config->config.volume > 0) {
         config->config.volume--;
         radio->setVolume(config->config.volume);
         config->save();
+        needsRedraw = true;
       }
     } else if (focusedControl == 3) {
       if (config->config.volume < 15) {
         config->config.volume++;
         radio->setVolume(config->config.volume);
         config->save();
+        needsRedraw = true;
       }
     } else if (focusedControl == 4) {
       bool currentBias = radio->getBias();
@@ -510,18 +517,23 @@ void RadioScreen::handleInput(UIKey key) {
       // Trigger a redraw of this button
       isFirstDraw = false; // Ensure we do a partial if possible, though
                            // RadioScreen::draw handles it
+      needsRedraw = true;
     } else if (focusedControl >= 5 && focusedControl <= 12) {
       loadPreset(focusedControl - 5);
+      needsRedraw = true;
     }
   }
+  return needsRedraw;
 }
 
-void RadioScreen::onLongPress() {
+bool RadioScreen::onLongPress() {
   if (focusedControl >= 5 && focusedControl <= 12) {
     savePreset(focusedControl - 5);
+    return true; // Update UI to show saved state or just refresh
   } else {
     if (uiManager)
       uiManager->switchScreen(SCREEN_MENU);
+    return false; // Switch screen handles draw
   }
 }
 

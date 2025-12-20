@@ -59,9 +59,12 @@ public:
     lastMenuIndex = menuIndex;
   }
 
-  void onLongPress() override { uiManager->switchScreen(SCREEN_HOME); }
+  bool onLongPress() override {
+    uiManager->switchScreen(SCREEN_HOME);
+    return false;
+  }
 
-  void handleInput(UIKey key) override {
+  bool handleInput(UIKey key) override {
 
     if (key == UI_KEY_LEFT) { // Left (KEY_LEFT)
       lastMenuIndex = menuIndex;
@@ -69,18 +72,21 @@ public:
       if (menuIndex < 0)
         menuIndex = 5;
       Serial.printf("Input LEFT: new index=%d\n", menuIndex);
+      return true;
     } else if (key == UI_KEY_RIGHT) { // Right (KEY_RIGHT)
       lastMenuIndex = menuIndex;
       menuIndex++;
       if (menuIndex > 5)
         menuIndex = 0;
       Serial.printf("Input RIGHT: new index=%d\n", menuIndex);
+      return true;
     } else if (key == UI_KEY_ENTER) { // Select (KEY_ENTER Short)
       Serial.printf("Input ENTER: switch to screen id=%d\n",
                     items[menuIndex].id);
       uiManager->switchScreen(items[menuIndex].id);
-      return;
+      return false;
     }
+    return false;
   }
 
 private:

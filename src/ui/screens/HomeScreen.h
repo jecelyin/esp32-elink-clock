@@ -119,15 +119,17 @@ public:
     }
   }
 
-  void handleInput(UIKey key) override {
+  bool handleInput(UIKey key) override {
     if (key == UI_KEY_ENTER) {
       if (uiManager)
         uiManager->switchScreen(SCREEN_MENU);
     }
+    return false;
   }
-  void onLongPress() override {
+  bool onLongPress() override {
     if (uiManager)
       uiManager->switchScreen(SCREEN_MENU);
+    return false;
   }
 
 private:
