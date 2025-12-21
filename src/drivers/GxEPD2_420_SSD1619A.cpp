@@ -307,6 +307,7 @@ void GxEPD2_420_SSD1619A::_setPartialRamArea(uint16_t x, uint16_t y, uint16_t w,
 
 void GxEPD2_420_SSD1619A::_PowerOn()
 {
+  Serial.println("GxEPD2_420_SSD1619A::_PowerOn");
   if (!_power_is_on)
   {
     _writeCommand(0x22);
@@ -319,6 +320,7 @@ void GxEPD2_420_SSD1619A::_PowerOn()
 
 void GxEPD2_420_SSD1619A::_PowerOff()
 {
+  Serial.println("GxEPD2_420_SSD1619A::_PowerOff");
   _writeCommand(0x22);
   _writeData(0xc3);
   _writeCommand(0x20);

@@ -7,7 +7,6 @@ void BusManager::requestDisplay() {
   if (currentMode == MODE_DISPLAY) {
     return;
   }
-  digitalWrite(CODEC_EN, LOW);
 
   if (currentMode == MODE_I2C) {
     Wire.end();
@@ -24,7 +23,6 @@ void BusManager::requestI2C() {
   if (currentMode == MODE_I2C) {
     return;
   }
-  digitalWrite(CODEC_EN, HIGH);
   if (currentMode == MODE_DISPLAY) {
     SPI.end();
   }

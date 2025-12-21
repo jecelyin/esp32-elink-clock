@@ -40,15 +40,49 @@ void DisplayDriver::update() {
 }
 
 void DisplayDriver::showMessage(const char *msg) {
-  BusManager::getInstance().requestDisplay();
+  Serial.print("Display Message: ");
+  Serial.println(msg);
   display.setFullWindow();
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
-    u8g2Fonts.setFont(u8g2_font_helvB18_tf);
+    u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+    u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
     int16_t x = (display.width() - u8g2Fonts.getUTF8Width(msg)) / 2;
     int16_t y = display.height() / 2;
     u8g2Fonts.setCursor(x, y);
     u8g2Fonts.print(msg);
+    BusManager::getInstance().requestDisplay();
   } while (display.nextPage());
+  display.display();
+}
+
+void DisplayDriver::showStatus(const char *msg, int line) {
+  // Line height 24px, start at y=40 to leave room for title if any, or just
+  // start from top Let's assume line 0 is at y=20
+  int16_t lineHeight = 24;
+  int16_t y = 30 + (line * lineHeight);
+  int16_t h = lineHeight;
+
+  // Set partial window for this line
+  // We wipe the full width of the screen at this line height
+  display.setPartialWindow(0, y - lineHeight + 4, display.width(),
+                           h); // adjusting y to be baseline
+
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+    u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
+    u8g2Fonts.setCursor(10, y);
+    u8g2Fonts.print(msg);
+    BusManager::getInstance().requestDisplay();
+  } while (display.nextPage());
+  // display.display() is automatic with GxEPD2 loops usually, but for partial
+  // we might need to be careful GxEPD2 example uses distinct loop. We don't
+  // need explicit display.display() call after the loop for GxEPD2 helper
+  // methods if they handle it. Actually, standard GxEPD2 paged loop handles
+  // transmission.
 }

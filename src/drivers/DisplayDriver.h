@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "config.h"
 #include <GxEPD2_BW.h>
 #include <U8g2_for_Adafruit_GFX.h>
@@ -30,6 +29,7 @@ public:
   void clear();
   void update();
   void showMessage(const char *msg);
+  void showStatus(const char *msg, int line);
 
   // Expose the display object for drawing
   GxEPD2_BW<EPD2_DRV, EPD2_DRV::HEIGHT> display;

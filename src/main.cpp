@@ -4,6 +4,7 @@
 #include "drivers/InputDriver.h"
 #include "drivers/RadioDriver.h"
 #include "drivers/RtcDriver.h"
+#include <Wire.h>
 // #include "drivers/SDCardDriver.h"
 #include "drivers/SensorDriver.h"
 #include "managers/AlarmManager.h"
@@ -52,6 +53,7 @@ void networkTask(void *pvParameters) {
 
 void setup() {
   Serial.begin(115200);
+  delay(3000);
   Serial.println("System Starting...");
 
   // Init Bus Manager (Arbitration for SPI/I2C on 18/23)
@@ -60,6 +62,7 @@ void setup() {
   pinMode(EPD_BUSY, OUTPUT);
   pinMode(EPD_RST, OUTPUT);
   pinMode(EPD_CS, OUTPUT);
+  pinMode(EPD_DC, OUTPUT);
   pinMode(SD_EN, OUTPUT);
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_OFF);
@@ -72,7 +75,7 @@ void setup() {
 
   digitalWrite(CODEC_EN, HIGH); // Enable Codec for I2C
   digitalWrite(AMP_EN, LOW);    // Keep Amp off initially
-  digitalWrite(RADIO_EN, LOW);
+  digitalWrite(RADIO_EN, HIGH);
   digitalWrite(BIAS_CTR, LOW);
 
   // Input Keys
@@ -84,15 +87,61 @@ void setup() {
   inputDriver.begin();
 
   // sdCardDriver.begin();
+  // sdCardDriver.begin();
   displayDriver.init();
-  displayDriver.showMessage("Initializing...");
+  displayDriver.clear(); // Ensure screen is white before partial updates
+  displayDriver.showStatus("Checking Hardware...", 0);
+
+  // I2C Device List
+  struct I2CDevice {
+    const char *name;
+    uint8_t address;
+  };
+  I2CDevice devices[] = {
+      {"RTC (RX8010SJ)", RX8010_I2C_ADDR},
+      {"Sensor (SHT30)", SHT30_I2C_ADDR},
+      {"Audio (ES8311)", ES8311_ADDRESS},         // Or 0x60
+      {"Radio (RDA5807)", M5807_ADDR_FULL_ACCESS} // Direct Access
+  };
+
+  char buffer[64];
+  bool allOk = true;
+  for (int i = 0; i < 4; i++) {
+    sprintf(buffer, "Checking %s...", devices[i].name);
+    displayDriver.showStatus(buffer, i + 1);
+    BusManager::getInstance().requestI2C();
+    Wire.beginTransmission(devices[i].address);
+    uint8_t error = Wire.endTransmission();
+
+    if (error == 0) {
+      sprintf(buffer, "%s: OK", devices[i].name);
+    } else {
+      sprintf(buffer, "%s: FAIL (%d)", devices[i].name, error);
+      allOk = false;
+    }
+    displayDriver.showStatus(buffer, i + 1);
+    delay(200); // Give user time to see it
+  }
+
+  delay(1000); // Pause before standard init
+  if (!allOk) {
+    displayDriver.showStatus("I2C Device Check Failed!", 0);
+    Serial.println("I2C Device Check Failed!");
+    while (1){
+      delay(10);
+    }
+  } else {
+    displayDriver.showStatus("I2C Device Check OK", 0);
+    Serial.println("I2C Device Check OK");
+  }
+  digitalWrite(RADIO_EN, LOW);
 
   if (!rtcDriver.init()) {
     Serial.println("RTC Init Failed");
-    return;
+    // return; // Don't return, try to proceed
   }
-
   Serial.println("RTC Init Success");
+
   if (!sensorDriver.init())
     Serial.println("Sensor Init Failed");
   Serial.println("Sensor Init Success");
@@ -115,7 +164,9 @@ void setup() {
   uiManager.init();
   Serial.println("UI Manager Init Success");
 
-  // Create background network task
+  // Create background network task on Core 1 with lower priority than main loop
+  // This ensures it only runs when the main loop is idle (e.g. in delay(1)),
+  // preventing bus contention without requiring explicit locks everywhere.
   xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1, NULL, 0);
 }
 

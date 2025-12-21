@@ -50,13 +50,13 @@ void RadioDriver::mute(bool m) {
 void RadioDriver::seekUp() {
   BusManager::getInstance().requestI2C();
   // radio.setFrequencyUp();
-  radio.seek(RDA_SEEK_WRAP,RDA_SEEK_UP);
+  radio.seek(RDA_SEEK_WRAP, RDA_SEEK_UP);
 }
 
 void RadioDriver::seekDown() {
   BusManager::getInstance().requestI2C();
   // radio.setFrequencyDown();
-  radio.seek(RDA_SEEK_WRAP,RDA_SEEK_DOWN);
+  radio.seek(RDA_SEEK_WRAP, RDA_SEEK_DOWN);
 }
 
 uint16_t RadioDriver::getFrequency() {
