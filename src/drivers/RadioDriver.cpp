@@ -37,6 +37,11 @@ void RadioDriver::setVolume(uint8_t vol) {
   radio.setVolume(vol);
 }
 
+uint8_t RadioDriver::getVolume() {
+  BusManager::getInstance().requestI2C();
+  return radio.getVolume();
+}
+
 void RadioDriver::mute(bool m) {
   BusManager::getInstance().requestI2C();
   radio.setMute(m);
@@ -44,14 +49,14 @@ void RadioDriver::mute(bool m) {
 
 void RadioDriver::seekUp() {
   BusManager::getInstance().requestI2C();
-  radio.setFrequencyUp();
-  // radio.seek(RDA_SEEK_WRAP,RDA_SEEK_UP);
+  // radio.setFrequencyUp();
+  radio.seek(RDA_SEEK_WRAP,RDA_SEEK_UP);
 }
 
 void RadioDriver::seekDown() {
   BusManager::getInstance().requestI2C();
-  radio.setFrequencyDown();
-  // radio.seek(RDA_SEEK_WRAP,RDA_SEEK_DOWN);
+  // radio.setFrequencyDown();
+  radio.seek(RDA_SEEK_WRAP,RDA_SEEK_DOWN);
 }
 
 uint16_t RadioDriver::getFrequency() {

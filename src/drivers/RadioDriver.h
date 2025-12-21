@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../config.h"
-#include <RDA5807.h>
+#include "RDA5807.h"
 
 class RadioDriver {
 public:
@@ -11,6 +11,7 @@ public:
   void powerDown();
   void setFrequency(uint16_t freq); // freq in 10kHz (e.g. 10110 for 101.1 MHz)
   void setVolume(uint8_t vol);
+  uint8_t getVolume();
   void mute(bool m);
   void seekUp();
   void seekDown();

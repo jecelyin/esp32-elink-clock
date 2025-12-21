@@ -14,6 +14,7 @@ public:
   void init() override;
   void enter() override;
   void exit() override;
+  void update() override;
   void draw(DisplayDriver *display) override;
   bool handleInput(UIKey key) override;
   bool onLongPress() override;

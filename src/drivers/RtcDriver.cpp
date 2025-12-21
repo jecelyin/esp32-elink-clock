@@ -30,7 +30,7 @@ bool RtcDriver::init() {
 }
 
 DateTime RtcDriver::getTime() {
-  if (millis() - _lastReadTime < 1000 && _lastReadTime != 0) {
+  if (millis() - _lastReadTime < 5000 && _lastReadTime != 0) {
     return _cachedTime;
   }
 

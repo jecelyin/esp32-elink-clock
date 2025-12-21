@@ -4,7 +4,7 @@
 #include "drivers/InputDriver.h"
 #include "drivers/RadioDriver.h"
 #include "drivers/RtcDriver.h"
-#include "drivers/SDCardDriver.h"
+// #include "drivers/SDCardDriver.h"
 #include "drivers/SensorDriver.h"
 #include "managers/AlarmManager.h"
 #include "managers/BusManager.h"
@@ -21,7 +21,7 @@ SensorDriver sensorDriver;
 RadioDriver radioDriver;
 AudioDriver audioDriver;
 InputDriver inputDriver;
-SDCardDriver sdCardDriver;
+// SDCardDriver sdCardDriver;
 
 ConfigManager configManager;
 ConnectionManager connectionManager;
@@ -83,11 +83,7 @@ void setup() {
   // Init Drivers
   inputDriver.begin();
 
-  sdCardDriver.begin();
-  displayDriver.init();
-  displayDriver.showMessage("Initializing...");
-
-  sdCardDriver.begin();
+  // sdCardDriver.begin();
   displayDriver.init();
   displayDriver.showMessage("Initializing...");
 

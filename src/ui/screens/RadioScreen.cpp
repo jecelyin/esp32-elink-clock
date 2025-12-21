@@ -178,6 +178,19 @@ void RadioScreen::exit() {
   digitalWrite(RADIO_EN, 0);
 }
 
+void RadioScreen::update() {
+  static unsigned long lastLog = 0;
+  if (millis() - lastLog > 2000) {
+    lastLog = millis();
+    char aux[80];
+    sprintf(aux,
+            "\nYou are tuned on %u MHz | RSSI: %3.3u dbUv | Vol: %2.2u | %s ",
+            radio->getFrequency(), radio->getRSSI(), radio->getVolume(),
+            (radio->isStereo()) ? "Yes" : "No");
+    Serial.print(aux);
+  }
+}
+
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;
   uint16_t freq = radio->getFrequency();
