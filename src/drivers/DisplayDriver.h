@@ -30,6 +30,7 @@ public:
   void update();
   void showMessage(const char *msg);
   void showStatus(const char *msg, int line);
+  void powerOff();
 
   // Expose the display object for drawing
   GxEPD2_BW<EPD2_DRV, EPD2_DRV::HEIGHT> display;

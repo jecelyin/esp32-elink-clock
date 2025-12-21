@@ -150,6 +150,7 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
       drawSingleButton(display, oldIdx, false, true);
       BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
+    display->powerOff();
   }
 
   // Update new focus
@@ -160,6 +161,7 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
     drawSingleButton(display, newIdx, true, true);
     BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
+  display->powerOff();
 }
 
 void RadioScreen::init() {}
@@ -263,6 +265,7 @@ void RadioScreen::draw(DisplayDriver *display) {
 
     BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
+  display->powerOff();
 }
 
 void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w,

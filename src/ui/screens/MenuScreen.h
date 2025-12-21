@@ -43,6 +43,7 @@ public:
         }
         BusManager::getInstance().requestDisplay();
       } while (display->display.nextPage());
+      display->powerOff();
 
       firstDraw = false;
     } else {
@@ -112,6 +113,7 @@ private:
       drawMenuItem(display, index);
       BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
+    display->powerOff();
   }
 
   void drawMenuItem(DisplayDriver *display, int i) {

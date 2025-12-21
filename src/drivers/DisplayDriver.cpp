@@ -28,15 +28,16 @@ void DisplayDriver::clear() {
   BusManager::getInstance().requestDisplay();
   display.setFullWindow();
   display.firstPage();
-  do {
-    display.fillScreen(GxEPD_WHITE);
-  } while (display.nextPage());
+  display.fillScreen(GxEPD_WHITE);
+  display.nextPage();
+  powerOff();
 }
 
 void DisplayDriver::update() {
   BusManager::getInstance().requestDisplay();
   // This might be used for partial updates or triggering a refresh
   display.display();
+  powerOff();
 }
 
 void DisplayDriver::showMessage(const char *msg) {
@@ -56,6 +57,7 @@ void DisplayDriver::showMessage(const char *msg) {
     BusManager::getInstance().requestDisplay();
   } while (display.nextPage());
   display.display();
+  powerOff();
 }
 
 void DisplayDriver::showStatus(const char *msg, int line) {
@@ -85,4 +87,7 @@ void DisplayDriver::showStatus(const char *msg, int line) {
   // need explicit display.display() call after the loop for GxEPD2 helper
   // methods if they handle it. Actually, standard GxEPD2 paged loop handles
   // transmission.
+  powerOff();
 }
+
+void DisplayDriver::powerOff() { display.powerOff(); }

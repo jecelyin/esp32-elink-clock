@@ -47,6 +47,7 @@ public:
 
       BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
+    display->powerOff();
   }
 
   bool handleInput(UIKey key) override {

@@ -192,6 +192,7 @@ private:
       drawContent(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
+    displayDrv->powerOff();
   }
 
   void renderTimePartial(DisplayDriver *displayDrv) {
@@ -209,6 +210,7 @@ private:
       BusManager::getInstance()
           .requestDisplay(); // Must be called before nextPage
     } while (display.nextPage());
+    displayDrv->powerOff();
   }
 
   void renderSensorPartial(DisplayDriver *displayDrv) {
@@ -225,6 +227,7 @@ private:
       drawSensorSection(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
+    displayDrv->powerOff();
   }
 
   void renderWeatherPartial(DisplayDriver *displayDrv) {
@@ -242,6 +245,7 @@ private:
       drawTodayWeather(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
+    displayDrv->powerOff();
 
     // Tomorrow Area: y=141 to 198 (avoids lines at 140 and 199)
     display.setPartialWindow(288, 141, 112, 57);
@@ -251,6 +255,7 @@ private:
       drawTomorrowWeather(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
+    displayDrv->powerOff();
   }
 
   void renderTasksPartial(DisplayDriver *displayDrv) {
@@ -270,6 +275,7 @@ private:
       drawTasksSection(displayDrv);
       BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
+    displayDrv->powerOff();
   }
 
   void drawContent(DisplayDriver *displayDrv) {
