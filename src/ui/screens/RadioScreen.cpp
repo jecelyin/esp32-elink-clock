@@ -184,49 +184,36 @@ void RadioScreen::update() {
   static unsigned long lastLog = 0;
   if (millis() - lastLog > 2000) {
     lastLog = millis();
-    char aux[80];
-    sprintf(aux,
-            "\nYou are tuned on %u MHz | RSSI: %3.3u dbUv | Vol: %2.2u | %s ",
-            radio->getFrequency(), radio->getRSSI(), radio->getVolume(),
-            (radio->isStereo()) ? "Yes" : "No");
-    Serial.print(aux);
+    radio->debugRadioInfo();
   }
 }
 
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;
   uint16_t freq = radio->getFrequency();
-  if (freq < radio->getMinFrequency() || freq > radio->getMaxFrequency()) {
-    freq = radio->getMinFrequency();
-    radio->setFrequency(freq);
-  }
+  // if (freq < radio->getMinFrequency() || freq > radio->getMaxFrequency()) {
+  //   freq = radio->getMinFrequency();
+  //   radio->setFrequency(freq);
+  // }
   float freqVal = freq / 100.0;
   int vol = config->config.volume;
+  RADIO_INFO radioInfo;
+  radio->getRadioInfo(&radioInfo);
+  AUDIO_INFO audioInfo;
+  radio->getAudioInfo(&audioInfo);
+
 
   String rds = "";
-  if (radio->hasRdsInfo()) {
-    rds = radio->getRdsStationName();
-    rds.trim();
-    if (rds.length() == 0) {
-      rds = radio->getRdsProgramInformation();
-      rds.trim();
-    }
+  if (radioInfo.rds) {
+    rds = "RDS found!";
   }
-  int signal = radio->getSignalStrength();
-  int rssi = radio->getRSSI();
+  int rssi = radioInfo.rssi;
   if (smoothedRSSI == 0)
     smoothedRSSI = rssi;
   else
     smoothedRSSI = (smoothedRSSI * 7 + rssi) / 8;
 
-  bool isStereo = radio->isStereo();
-
-  // Periodic Maintenance
-  static unsigned long lastClear = 0;
-  if (millis() - lastClear > 60000) {
-    radio->clearRds();
-    lastClear = millis();
-  }
+  bool isStereo = radioInfo.stereo;
 
   // Check if only focusedControl changed
   bool onlyFocusChanged =
@@ -256,7 +243,7 @@ void RadioScreen::draw(DisplayDriver *display) {
     display->display.fillScreen(GxEPD_WHITE);
     statusBar->draw(display, true);
     drawStaticGrid(display);
-    drawHeaderInfo(display, vol, isStereo, signal, rssi, false);
+    drawHeaderInfo(display, vol, isStereo, rssi, false);
     drawFrequency(display, false);
     drawDial(display, freqVal, false);
     drawSignal(display, smoothedRSSI, false);
@@ -305,7 +292,8 @@ void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
   int h = MAIN_SECTION_H - DIAL_H;
 
   display->u8g2Fonts.setFont(u8g2_font_logisoso78_tn);
-  char *freqStr = radio->getFormattedFrequency();
+  char freqStr[12];
+  radio->getFormattedFrequency(freqStr, sizeof(freqStr));
   int16_t tw = display->u8g2Fonts.getUTF8Width(freqStr);
   int cursorX = x + (w - tw) / 2;
   int cursorY = y + 66;
@@ -456,7 +444,7 @@ void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
 }
 
 void RadioScreen::drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo,
-                                 int signal, int rssi, bool partial) {
+                                 int rssi, bool partial) {
   using namespace Layout;
   int x = 5;
   int y = 24;
@@ -514,7 +502,7 @@ void RadioScreen::drawButtons(DisplayDriver *display, bool partial) {
 }
 
 bool RadioScreen::handleInput(UIKey key) {
-  bool needsRedraw = false;
+  bool needsRedraw = true;
   if (key == UI_KEY_LEFT) {
     focusedControl = (focusedControl - 1 + BUTTON_COUNT) % BUTTON_COUNT;
   } else if (key == UI_KEY_RIGHT) {

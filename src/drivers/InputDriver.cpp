@@ -9,9 +9,9 @@ ButtonEvent Button::update() {
   unsigned long now = millis();
   ButtonEvent event = BTN_NONE;
 
-  if (physicalState == LOW) {
-    Serial.printf("[Button:%s] Pressed\n", name);
-  }
+  // if (physicalState == LOW) {
+    // Serial.printf("[Button:%s] Pressed\n", name);
+  // }
 
   if (physicalState != lastPhysicalState) {
     lastDebounceTime = now;
@@ -24,7 +24,7 @@ ButtonEvent Button::update() {
         // Button Pressed
         pressStartTime = now;
         longPressed = false;
-        Serial.printf("[Button:%s] Pressed 2\n", name);
+        // Serial.printf("[Button:%s] Pressed 2\n", name);
       } else {
         // Button Released
         unsigned long duration = now - pressStartTime;

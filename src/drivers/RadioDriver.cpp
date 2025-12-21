@@ -11,20 +11,32 @@ bool RadioDriver::init() {
 
 void RadioDriver::setup() {
   BusManager::getInstance().requestI2C();
-  radio.softReset();
-  radio.setup();
-  radio.setLnaPortSel(3); // Improve sensitivity
-  radio.setAFC(true);     // Automatic Frequency Control
-  radio.setMute(false);
-  radio.setVolume(15);
+  // Enable information to the Serial port
+  radio.debugEnable(true);
+  radio._wireDebug(false);
+
+  // Set FM Options for Europe
+  // radio.setup(RADIO_FMSPACING, RADIO_FMSPACING_100);   // for EUROPE
+  // radio.setup(RADIO_DEEMPHASIS, RADIO_DEEMPHASIS_50);  // for EUROPE
+
+  // Initialize the Radio
+  if (!radio.initWire(Wire)) {
+    Serial.println("no radio chip found.");
+    delay(4000);
+    ESP.restart();
+  };
+
+  // Set all radio setting to the fixed values.
+  radio.setBandFrequency(RADIO_BAND_FM, 8930);
+
+  radio.setVolume(2);
   radio.setMono(false);
-  radio.setBand(0);
-  radio.setFrequency(10520); // 105.2 MHz
+  radio.setMute(false);
 }
 
 void RadioDriver::powerDown() {
   BusManager::getInstance().requestI2C();
-  radio.powerDown();
+  radio.term();
 }
 
 void RadioDriver::setFrequency(uint16_t freq) {
@@ -49,14 +61,12 @@ void RadioDriver::mute(bool m) {
 
 void RadioDriver::seekUp() {
   BusManager::getInstance().requestI2C();
-  // radio.setFrequencyUp();
-  radio.seek(RDA_SEEK_WRAP, RDA_SEEK_UP);
+  radio.seekUp(false);
 }
 
 void RadioDriver::seekDown() {
   BusManager::getInstance().requestI2C();
-  // radio.setFrequencyDown();
-  radio.seek(RDA_SEEK_WRAP, RDA_SEEK_DOWN);
+  radio.seekDown(false);
 }
 
 uint16_t RadioDriver::getFrequency() {
@@ -65,77 +75,23 @@ uint16_t RadioDriver::getFrequency() {
   return freq;
 }
 
-char *RadioDriver::getFormattedFrequency() {
+void RadioDriver::getFormattedFrequency(char *s, uint8_t length) {
   BusManager::getInstance().requestI2C();
-  char *f = radio.formatCurrentFrequency('.');
-  return f;
+  radio.formatFrequency(s, length);
 }
 
 uint16_t RadioDriver::getMinFrequency() {
   BusManager::getInstance().requestI2C();
-  uint16_t f = radio.getMinimumFrequencyOfTheBand();
+  uint16_t f = radio.getMinFrequency();
   return f;
 }
 
 uint16_t RadioDriver::getMaxFrequency() {
   BusManager::getInstance().requestI2C();
-  uint16_t f = radio.getMaximunFrequencyOfTheBand();
+  uint16_t f = radio.getMaxFrequency();
   return f;
 }
 
-uint8_t RadioDriver::getSignalStrength() {
-  BusManager::getInstance().requestI2C();
-  // RSSI is usually 0-127 or similar. Let's map it to 0-4.
-  // getRssi() returns current Signal Strength
-  uint8_t rssi = radio.getRssi();
-  if (rssi > 50)
-    return 4;
-  if (rssi > 40)
-    return 3;
-  if (rssi > 30)
-    return 2;
-  if (rssi > 15)
-    return 1;
-  return 0;
-}
-
-uint8_t RadioDriver::getRSSI() {
-  BusManager::getInstance().requestI2C();
-  uint8_t rssi = radio.getRssi();
-  return rssi;
-}
-
-bool RadioDriver::hasRdsInfo() {
-  BusManager::getInstance().requestI2C();
-  bool has = radio.hasRdsInfo();
-  return has;
-}
-
-String RadioDriver::getRdsStationName() {
-  BusManager::getInstance().requestI2C();
-  char *s = radio.getRdsStationName();
-  String res = s ? String(s) : String("");
-  return res;
-}
-
-String RadioDriver::getRdsProgramInformation() {
-  BusManager::getInstance().requestI2C();
-  char *s = radio.getRdsProgramInformation();
-  String res = s ? String(s) : String("");
-  return res;
-}
-
-void RadioDriver::clearRds() {
-  BusManager::getInstance().requestI2C();
-  radio.clearRdsFifo();
-  radio.clearRdsBuffer();
-}
-
-bool RadioDriver::isStereo() {
-  BusManager::getInstance().requestI2C();
-  bool s = radio.isStereo();
-  return s;
-}
 
 void RadioDriver::setBias(bool on) {
   digitalWrite(BIAS_CTR, on ? HIGH : LOW);
@@ -143,3 +99,24 @@ void RadioDriver::setBias(bool on) {
 }
 
 bool RadioDriver::getBias() { return biasState; }
+
+void RadioDriver::debugRadioInfo() {
+  BusManager::getInstance().requestI2C();
+  Serial.print("Frequency: ");
+  Serial.print(radio.getFrequency());
+  Serial.print(" MHz Radio:");
+  radio.debugRadioInfo();
+
+  Serial.print("Audio:");
+  radio.debugAudioInfo();
+}
+
+void RadioDriver::getRadioInfo(RADIO_INFO *info) {
+  BusManager::getInstance().requestI2C();
+  radio.getRadioInfo(info);
+}
+
+void RadioDriver::getAudioInfo(AUDIO_INFO *info) {
+  BusManager::getInstance().requestI2C();
+  radio.getAudioInfo(info);
+}

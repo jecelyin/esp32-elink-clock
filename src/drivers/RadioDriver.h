@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../config.h"
-#include "RDA5807.h"
+#include "RDA5807M.h"
 
 class RadioDriver {
 public:
@@ -16,20 +16,15 @@ public:
   void seekUp();
   void seekDown();
   uint16_t getFrequency();
-  char *getFormattedFrequency();
+  void getFormattedFrequency(char *s, uint8_t length);
   uint16_t getMinFrequency();
   uint16_t getMaxFrequency();
-  uint8_t getSignalStrength();
-  uint8_t getRSSI();
-  bool hasRdsInfo();
-  String getRdsStationName();
-  String getRdsProgramInformation();
-  bool isStereo();
-  void clearRds();
   void setBias(bool on);
   bool getBias();
-
+  void debugRadioInfo();
+  void getRadioInfo(RADIO_INFO *info);
+  void getAudioInfo(AUDIO_INFO *info);
 private:
-  RDA5807 radio;
+  RDA5807M radio;
   bool biasState;
 };

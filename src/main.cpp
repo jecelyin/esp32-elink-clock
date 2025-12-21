@@ -167,7 +167,7 @@ void setup() {
   // Create background network task on Core 1 with lower priority than main loop
   // This ensures it only runs when the main loop is idle (e.g. in delay(1)),
   // preventing bus contention without requiring explicit locks everywhere.
-  xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1, NULL, 0);
+  // xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1, NULL, 0);
 }
 
 void loop() {

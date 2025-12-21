@@ -53,7 +53,7 @@ private:
   void drawDial(DisplayDriver *display, float centerFreq, bool partial);
   void drawSignal(DisplayDriver *display, int rssi, bool partial);
   void drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo,
-                      int signal, int rssi, bool partial);
+                      int rssi, bool partial);
   void drawRDS(DisplayDriver *display, const char *text, bool partial);
   void drawButtons(DisplayDriver *display, bool partial);
   void setupWindow(DisplayDriver *display, int x, int y, int w, int h,
