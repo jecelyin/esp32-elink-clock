@@ -21,8 +21,15 @@ void ConnectionManager::loop() {
 
   if (!firstConnectAttempted) {
     firstConnectAttempted = true;
-    wifiManager.autoConnect();
+    wifiManager.setConfigPortalBlocking(false);
+    if (wifiManager.autoConnect("ESP32-Clock")) {
+      Serial.println("WiFi connected");
+    } else {
+      Serial.println("WiFi Config Portal started");
+    }
   }
+
+  wifiManager.process();
 
   if (WiFi.status() == WL_CONNECTED) {
     // Sync time every hour
