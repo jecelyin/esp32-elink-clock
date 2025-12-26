@@ -4,8 +4,7 @@
 #include "drivers/InputDriver.h"
 #include "drivers/RadioDriver.h"
 #include "drivers/RtcDriver.h"
-#include <Wire.h>
-// #include "drivers/SDCardDriver.h"
+#include "drivers/SDCardDriver.h"
 #include "drivers/SensorDriver.h"
 #include "managers/AlarmManager.h"
 #include "managers/BusManager.h"
@@ -14,6 +13,7 @@
 #include "managers/WeatherManager.h"
 #include "ui/UIManager.h"
 #include <Arduino.h>
+#include <Wire.h>
 
 // Global Objects
 DisplayDriver displayDriver;
@@ -22,16 +22,17 @@ SensorDriver sensorDriver;
 RadioDriver radioDriver;
 AudioDriver audioDriver;
 InputDriver inputDriver;
-// SDCardDriver sdCardDriver;
+SDCardDriver sdCardDriver;
 
 ConfigManager configManager;
 ConnectionManager connectionManager;
 WeatherManager weatherManager;
 AlarmManager alarmManager;
+MusicManager musicManager(&audioDriver, &sdCardDriver, &configManager);
 
 UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
                     &connectionManager, &alarmManager, &radioDriver,
-                    &audioDriver, &configManager);
+                    &audioDriver, &musicManager, &configManager);
 
 // #include <nvs_flash.h>
 
@@ -85,9 +86,7 @@ void setup() {
 
   // Init Drivers
   inputDriver.begin();
-
-  // sdCardDriver.begin();
-  // sdCardDriver.begin();
+  sdCardDriver.begin();
   displayDriver.init();
   displayDriver.clear(); // Ensure screen is white before partial updates
   displayDriver.showStatus("Checking Hardware...", 0);
@@ -127,7 +126,7 @@ void setup() {
   if (!allOk) {
     displayDriver.showStatus("I2C Device Check Failed!", 0);
     Serial.println("I2C Device Check Failed!");
-    while (1){
+    while (1) {
       delay(10);
     }
   } else {
@@ -167,7 +166,8 @@ void setup() {
   // Create background network task on Core 1 with lower priority than main loop
   // This ensures it only runs when the main loop is idle (e.g. in delay(1)),
   // preventing bus contention without requiring explicit locks everywhere.
-  // xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1, NULL, 0);
+  // xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1, NULL,
+  // 0);
 }
 
 void loop() {

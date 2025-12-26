@@ -11,9 +11,10 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
                      WeatherManager *weather, SensorDriver *sensor,
                      ConnectionManager *conn, AlarmManager *alarm,
                      RadioDriver *radio, AudioDriver *audio,
-                     ConfigManager *config)
+                     MusicManager *music, ConfigManager *config)
     : display(disp), rtc(rtc), weather(weather), sensor(sensor), conn(conn),
-      alarmMgr(alarm), radio(radio), audio(audio), config(config) {
+      alarmMgr(alarm), radio(radio), audio(audio), music(music),
+      config(config) {
 
   statusBar = new StatusBar(conn, rtc, sensor);
   todoMgr = new TodoManager();
@@ -25,7 +26,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   menuScreen = new MenuScreen(statusBar);
   alarmScreen = new AlarmScreen(alarmMgr, statusBar);
   radioScreen = new RadioScreen(radio, statusBar, config);
-  musicScreen = new MusicScreen(audio, statusBar);
+  musicScreen = new MusicScreen(music, statusBar, config);
   weatherScreen = new WeatherScreen(weather, statusBar);
   settingsScreen = new SettingsScreen(config, statusBar);
 

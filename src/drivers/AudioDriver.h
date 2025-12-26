@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../config.h"
+#include <Arduino.h>
 #include <Audio.h>
 #include <Wire.h>
 
@@ -9,12 +10,14 @@ public:
   AudioDriver();
   bool init();
   void setVolume(uint8_t vol);
-  void play(const char *path);
+  void playFromSD(const char *path);
   void stop();
   void pause();
   void resume();
   void loop();
   bool isPlaying();
+  uint32_t getElapsed();
+  uint32_t getDuration();
 
   Audio audio; // Public to allow callback access if needed
 

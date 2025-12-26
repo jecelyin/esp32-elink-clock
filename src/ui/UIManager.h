@@ -18,10 +18,8 @@ class WeatherScreen;
 #include "../drivers/AudioDriver.h"
 #include "../drivers/RadioDriver.h"
 #include "../managers/AlarmManager.h"
-#include "../drivers/AudioDriver.h"
-#include "../drivers/RadioDriver.h"
-#include "../managers/AlarmManager.h"
 #include "../managers/ConfigManager.h"
+#include "../managers/MusicManager.h"
 #include "../managers/TodoManager.h"
 #include "../managers/WebManager.h"
 #include "components/StatusBar.h"
@@ -40,7 +38,8 @@ class UIManager {
 public:
   UIManager(DisplayDriver *disp, RtcDriver *rtc, WeatherManager *weather,
             SensorDriver *sensor, ConnectionManager *conn, AlarmManager *alarm,
-            RadioDriver *radio, AudioDriver *audio, ConfigManager *config);
+            RadioDriver *radio, AudioDriver *audio, MusicManager *music,
+            ConfigManager *config);
   void init();
   void update();
   void handleInput(UIKey key);
@@ -73,6 +72,7 @@ private:
   AlarmManager *alarmMgr;
   RadioDriver *radio;
   AudioDriver *audio;
+  MusicManager *music;
   ConfigManager *config;
   StatusBar *statusBar;
   TodoManager *todoMgr;

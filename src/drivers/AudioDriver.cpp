@@ -20,7 +20,7 @@ void AudioDriver::setVolume(uint8_t vol) {
   // enough writeES8311(0x32, vol);
 }
 
-void AudioDriver::play(const char *path) { audio.connecttoFS(SPIFFS, path); }
+void AudioDriver::playFromSD(const char *path) { audio.connecttoFS(SD, path); }
 
 void AudioDriver::stop() { audio.stopSong(); }
 
@@ -31,6 +31,9 @@ void AudioDriver::resume() { audio.pauseResume(); }
 void AudioDriver::loop() { audio.loop(); }
 
 bool AudioDriver::isPlaying() { return audio.isRunning(); }
+
+uint32_t AudioDriver::getElapsed() { return audio.getAudioCurrentTime(); }
+uint32_t AudioDriver::getDuration() { return audio.getAudioFileDuration(); }
 
 void AudioDriver::initES8311() {
   BusManager::getInstance().requestI2C();

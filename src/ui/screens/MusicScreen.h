@@ -2,63 +2,72 @@
 
 #include "../../drivers/AudioDriver.h"
 #include "../../managers/BusManager.h"
+#include "../../managers/ConfigManager.h"
+#include "../../managers/MusicManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
 
+#define BTN_PREV 0
+#define BTN_PLAY 1
+#define BTN_NEXT 2
+#define BTN_VOL_DEC 3
+#define BTN_VOL_INC 4
+#define BTN_LOOP 5
+#define BTN_LIST 6
+#define BTN_PAGE_UP 7
+#define BTN_PAGE_DOWN 8
+
 class MusicScreen : public Screen {
 public:
-  MusicScreen(AudioDriver *audio, StatusBar *statusBar)
-      : audio(audio), statusBar(statusBar) {}
+  MusicScreen(MusicManager *music, StatusBar *statusBar, ConfigManager *config);
 
-  void draw(DisplayDriver *display) override {
-    display->display.setFullWindow();
-    display->display.firstPage();
-    do {
-      display->display.fillScreen(GxEPD_WHITE);
-      statusBar->draw(display, true);
-
-      // Header
-      display->u8g2Fonts.setFont(u8g2_font_helvB18_tf);
-      display->u8g2Fonts.setCursor(150, 40);
-      display->u8g2Fonts.print("MUSIC");
-
-      // Icon
-      display->u8g2Fonts.setFont(u8g2_font_open_iconic_embedded_4x_t);
-      display->u8g2Fonts.setCursor(20, 60);
-      display->u8g2Fonts.print("M");
-
-      // Song Info
-      display->u8g2Fonts.setFont(u8g2_font_helvB14_tf);
-      display->u8g2Fonts.setCursor(50, 120);
-      if (audio->isPlaying()) {
-        display->u8g2Fonts.print("Playing: Song.mp3");
-      } else {
-        display->u8g2Fonts.print("Stopped");
-      }
-
-      // Controls
-      display->u8g2Fonts.setFont(u8g2_font_open_iconic_play_2x_t);
-      display->u8g2Fonts.setCursor(100, 200);
-      display->u8g2Fonts.print("D"); // Pause
-      display->u8g2Fonts.setCursor(150, 200);
-      display->u8g2Fonts.print("E"); // Play
-      display->u8g2Fonts.setCursor(200, 200);
-      display->u8g2Fonts.print("F"); // Stop
-
-      BusManager::getInstance().requestDisplay();
-    } while (display->display.nextPage());
-  }
-
-  bool handleInput(UIKey key) override {
-    if (key == UI_KEY_ENTER) { // Menu/Back
-      uiManager->switchScreen(SCREEN_MENU);
-    }
-    // Add playback controls
-    return false;
-  }
+  void init() override;
+  void enter() override;
+  void exit() override;
+  void update() override;
+  void draw(DisplayDriver *display) override;
+  bool handleInput(UIKey key) override;
+  bool onLongPress() override;
 
 private:
-  AudioDriver *audio;
+  MusicManager *music;
   StatusBar *statusBar;
+  ConfigManager *config;
+
+  int focusedControl = 0; // 0: Prev, 1: Play, 2: Next, 3: DecVol, 4: IncVol, 5:
+                          // Loop, 6: Playlist, 7: PageUp, 8: PageDown
+  int playlistScrollOffset = 0;
+  bool isFirstDraw = true;
+
+  // State trackers for partial refresh
+  int lastTrackIdx = -1;
+  int lastVol = -1;
+  LoopMode lastLoopMode = LOOP_ALL;
+  bool lastIsPlaying = false;
+  uint32_t lastElapsed = 0;
+  int lastFocusedControl = -1;
+  int lastScrollOffset = -1;
+
+  struct UIButton {
+    int x, y, w, h;
+    char label[16];
+  };
+
+  static const int BUTTON_COUNT = 9;
+  UIButton buttons[BUTTON_COUNT];
+
+  void initLayout();
+  void drawLeftPanel(DisplayDriver *display);
+  void drawRightPanel(DisplayDriver *display);
+  void drawFooter(DisplayDriver *display);
+  void drawPlaylist(DisplayDriver *display);
+  void drawPlaybackControls(DisplayDriver *display);
+
+  void updateProgress(DisplayDriver *display);
+  void updateVolumeUI(DisplayDriver *display);
+  void updatePlaylist(DisplayDriver *display);
+  void updateFocus(DisplayDriver *display, int oldIdx, int newIdx);
+  void updatePlaybackInfo(DisplayDriver *display);
+  void updateFooterInfo(DisplayDriver *display);
 };
