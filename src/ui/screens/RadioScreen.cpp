@@ -191,23 +191,18 @@ void RadioScreen::update() {
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;
   uint16_t freq = radio->getFrequency();
-  // if (freq < radio->getMinFrequency() || freq > radio->getMaxFrequency()) {
-  //   freq = radio->getMinFrequency();
-  //   radio->setFrequency(freq);
-  // }
   float freqVal = freq / 100.0;
   int vol = config->config.volume;
   RADIO_INFO radioInfo;
   radio->getRadioInfo(&radioInfo);
-  AUDIO_INFO audioInfo;
-  radio->getAudioInfo(&audioInfo);
-
 
   String rds = "";
   if (radioInfo.rds) {
     rds = "RDS found!";
   }
   int rssi = radioInfo.rssi;
+
+  // Smooth RSSI
   if (smoothedRSSI == 0)
     smoothedRSSI = rssi;
   else
@@ -215,44 +210,60 @@ void RadioScreen::draw(DisplayDriver *display) {
 
   bool isStereo = radioInfo.stereo;
 
-  // Check if only focusedControl changed
-  bool onlyFocusChanged =
-      !isFirstDraw && (freq == lastFreq) && (vol == lastVol) &&
-      (rds == lastRDS) && (isStereo == lastStereo) &&
-      (abs(smoothedRSSI - lastRSSI) < 5) && // Allow small RSSI variation
-      (focusedControl != lastFocusedControl);
-
-  if (onlyFocusChanged) {
-    updateButtonFocus(display, lastFocusedControl, focusedControl);
+  if (isFirstDraw) {
+    isFirstDraw = false;
+    lastFreq = freq;
+    lastVol = vol;
+    lastRDS = rds;
+    lastRSSI = smoothedRSSI;
+    lastStereo = isStereo;
     lastFocusedControl = focusedControl;
+
+    display->display.setFullWindow();
+    display->display.firstPage();
+    do {
+      display->display.fillScreen(GxEPD_WHITE);
+      statusBar->draw(display, true);
+      drawStaticGrid(display);
+      drawHeaderInfo(display, vol, isStereo, rssi, false);
+      drawFrequency(display, false);
+      drawDial(display, freqVal, false);
+      drawSignal(display, smoothedRSSI, false);
+      drawRDS(display, rds.c_str(), false);
+      drawButtons(display, false);
+      BusManager::getInstance().requestDisplay();
+    } while (display->display.nextPage());
+    display->powerOff();
     return;
   }
 
-  // Full redraw if anything else changed or is first draw
-  isFirstDraw = false;
-  lastFreq = freq;
-  lastVol = vol;
-  lastRDS = rds;
-  lastRSSI = smoothedRSSI;
-  lastStereo = isStereo;
-  lastFocusedControl = focusedControl;
+  // Partial updates
+  if (freq != lastFreq) {
+    lastFreq = freq;
+    updateFrequency(display);
+  }
 
-  display->display.setFullWindow();
-  display->display.firstPage();
-  do {
-    display->display.fillScreen(GxEPD_WHITE);
-    statusBar->draw(display, true);
-    drawStaticGrid(display);
-    drawHeaderInfo(display, vol, isStereo, rssi, false);
-    drawFrequency(display, false);
-    drawDial(display, freqVal, false);
-    drawSignal(display, smoothedRSSI, false);
-    drawRDS(display, rds.c_str(), false);
-    drawButtons(display, false);
+  if (vol != lastVol || isStereo != lastStereo) {
+    lastVol = vol;
+    lastStereo = isStereo;
+    updateHeader(display, vol, isStereo,
+                 smoothedRSSI); // RSSI needed for header? No, only stereo/vol
+  }
 
-    BusManager::getInstance().requestDisplay();
-  } while (display->display.nextPage());
-  display->powerOff();
+  if (abs(smoothedRSSI - lastRSSI) >= 5) { // Allow small RSSI variation
+    lastRSSI = smoothedRSSI;
+    updateSignal(display, smoothedRSSI);
+  }
+
+  if (rds != lastRDS) {
+    lastRDS = rds;
+    updateRDS(display, rds.c_str());
+  }
+
+  if (focusedControl != lastFocusedControl) {
+    updateButtonFocus(display, lastFocusedControl, focusedControl);
+    lastFocusedControl = focusedControl;
+  }
 }
 
 void RadioScreen::setupWindow(DisplayDriver *display, int x, int y, int w,
@@ -297,15 +308,8 @@ void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
   int16_t tw = display->u8g2Fonts.getUTF8Width(freqStr);
   int cursorX = x + (w - tw) / 2;
   int cursorY = y + 66;
-  // Only refresh the necessary text area (with some padding)
-  int px = cursorX - 10;
-  int pw = tw + 20;
-  // Ensure we don't exceed the safe bounds
-  if (px < x)
-    px = x;
-  if (px + pw > x + w)
-    pw = (x + w) - px;
-  setupWindow(display, px, y, pw, h, partial);
+  // Use fixed full width to ensure reliable clearing of old text
+  setupWindow(display, x, y, w, h, partial);
 
   display->u8g2Fonts.setCursor(cursorX, cursorY);
   display->u8g2Fonts.print(freqStr);
@@ -559,4 +563,115 @@ void RadioScreen::loadPreset(int index) {
   uint16_t freq = config->config.radio_presets[index];
   if (freq > 0)
     radio->setFrequency(freq);
+}
+
+void RadioScreen::updateFrequency(DisplayDriver *display) {
+  using namespace Layout;
+  // Frequency area + Dial area
+  // We update both as they are visually connected and large updates might be
+  // better together Or we can do them separately. Let's do both in one partial
+  // window if possible, but they are vertically separated (Freq at 54, Dial at
+  // 160). Separate updates might be cleaner or one large update. Let's do
+  // separate updates for simplicity of rects.
+
+  uint16_t freq = radio->getFrequency();
+  float freqVal = freq / 100.0;
+
+  // 1. Update Frequency Text
+  int x = 2;
+  int y = 54;
+  int w = DISPLAY_AREA_W - 4;
+  int h = MAIN_SECTION_H - DIAL_H; // This covers the text area
+
+  display->display.setPartialWindow(x, y, w, h);
+  display->display.firstPage();
+  do {
+    drawFrequency(display, false); // partial=false because we handled window
+    BusManager::getInstance().requestDisplay();
+  } while (display->display.nextPage());
+
+  // 2. Update Dial
+  // Dial Y=160, H=40
+  // Margin=10
+  int dx = 10;
+  int dw = DISPLAY_AREA_W - 20; // Matches visibleW in drawDial roughly
+  // Actually drawDial uses margin=20/2 => x=10.
+  // drawDial does: setupWindow(display, x, y, w, h, partial);
+  // where x=10, y=160, w=356, h=40
+
+  const int margin = 20;
+  int dialX = margin / 2;
+  int dialY = DIAL_Y;
+  int dialW = DISPLAY_AREA_W - 4;
+  int dialH = DIAL_H;
+
+  display->display.setPartialWindow(dialX, dialY, dialW, dialH);
+  display->display.firstPage();
+  do {
+    drawDial(display, freqVal, false);
+    BusManager::getInstance().requestDisplay();
+  } while (display->display.nextPage());
+
+  display->powerOff();
+}
+
+void RadioScreen::updateHeader(DisplayDriver *display, int vol, bool isStereo,
+                               int rssi) {
+  using namespace Layout;
+  // Same rect as drawHeaderInfo
+  int x = 5;
+  int y = 24;
+  // int w = DISPLAY_AREA_W - 4;
+  // int h = 30;
+
+  // We only need to update the specific info area:
+  int infoX = x + 8;
+  int infoY = y + 5;
+  int infoW = 80;
+  int infoH = 20;
+
+  display->display.setPartialWindow(infoX, infoY, infoW, infoH);
+  display->display.firstPage();
+  do {
+    drawHeaderInfo(display, vol, isStereo, rssi, false);
+    BusManager::getInstance().requestDisplay();
+  } while (display->display.nextPage());
+  display->powerOff();
+}
+
+void RadioScreen::updateSignal(DisplayDriver *display, int rssi) {
+  using namespace Layout;
+  int x = DISPLAY_AREA_W + 2;
+  int y = MAIN_SECTION_Y + 2;
+  int w = VOL_BAR_W - 4;
+  int h = MAIN_SECTION_H;
+
+  display->display.setPartialWindow(x, y, w, h);
+  display->display.firstPage();
+  do {
+    drawSignal(display, rssi, false);
+    BusManager::getInstance().requestDisplay();
+  } while (display->display.nextPage());
+  display->powerOff();
+}
+
+void RadioScreen::updateRDS(DisplayDriver *display, const char *text) {
+  using namespace Layout;
+  int y = MAIN_SECTION_Y + MAIN_SECTION_H;
+  int w = DISPLAY_AREA_W;
+  int h = 20;
+  int x = 0; // drawRDS calculates x centered, but clearing needs full width
+
+  display->display.setPartialWindow(x, y, w, h);
+  display->display.firstPage();
+  do {
+    drawRDS(display, text, false);
+    BusManager::getInstance().requestDisplay();
+  } while (display->display.nextPage());
+  display->powerOff();
+}
+
+void RadioScreen::updateButtons(DisplayDriver *display) {
+  // This might be used if we need to redraw all buttons
+  // Currently we only use updateButtonFocus
 }

@@ -52,12 +52,18 @@ private:
   void drawFrequency(DisplayDriver *display, bool partial);
   void drawDial(DisplayDriver *display, float centerFreq, bool partial);
   void drawSignal(DisplayDriver *display, int rssi, bool partial);
-  void drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo,
-                      int rssi, bool partial);
+  void drawHeaderInfo(DisplayDriver *display, int vol, bool isStereo, int rssi,
+                      bool partial);
   void drawRDS(DisplayDriver *display, const char *text, bool partial);
   void drawButtons(DisplayDriver *display, bool partial);
   void setupWindow(DisplayDriver *display, int x, int y, int w, int h,
                    bool partial);
+
+  void updateFrequency(DisplayDriver *display);
+  void updateHeader(DisplayDriver *display, int vol, bool isStereo, int rssi);
+  void updateSignal(DisplayDriver *display, int rssi);
+  void updateRDS(DisplayDriver *display, const char *text);
+  void updateButtons(DisplayDriver *display);
 
   void savePreset(int index);
   void loadPreset(int index);
