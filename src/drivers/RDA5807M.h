@@ -1,41 +1,40 @@
-///
-/// \file RDA5807M.h
-/// \brief Library header file for the radio library to control the RDA5807M radio chip.
-///
-/// \author Matthias Hertel, http://www.mathertel.de
-/// \copyright Copyright (c) 2014-2015 by Matthias Hertel.\n
-/// This work is licensed under a BSD style license.\n
-/// See http://www.mathertel.de/License.aspx
-///
-/// \details
-/// This library enables the use of the Radio Chip RDA5807M from http://www.rdamicro.com/ that supports FM radio bands and RDS data.
-///
-/// More documentation and source code is available at http://www.mathertel.de/Arduino
-///
-/// History:
-/// --------
-/// * 12.05.2014 creation of the RDA5807M library.
-/// * 28.06.2014 running simple radio
-/// * 08.07.2014 RDS data receive function can be registered.
-
-// multi-Band enabled
-
-// - - - - -
-// help from: http://arduino.vom-kuhberg.de/index.php
-//   http://projects.qi-hardware.com/index.php/p/qi-kernel/source/tree/144e9c2530f863e32a3538b06c63484401bbe314/drivers/media/radio/radio-rda5807.c
-
-
-#ifndef RDA5807M_h
-#define RDA5807M_h
+#pragma once
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "radio.h"
 
-// ----- library definition -----
+// ----- Type Definitions -----
 
-/// Library to control the RDA5807M radio chip.
-class RDA5807M : public RADIO {
+typedef void (*receiveRDSFunction)(uint16_t block1, uint16_t block2,
+                                   uint16_t block3, uint16_t block4);
+
+typedef uint16_t RDA5807M_Freq;
+
+struct RDA5807M_Info {
+  bool active;
+  uint8_t rssi;
+  uint8_t snr;
+  bool rds;
+  bool tuned;
+  bool mono;
+  bool stereo;
+};
+
+struct RDA5807M_AudioInfo {
+  uint8_t volume;
+  bool mute;
+  bool softmute;
+  bool bassBoost;
+};
+
+enum RDA5807M_Band {
+  RDA5807M_BAND_FM = 0,     // 87-108 MHz
+  RDA5807M_BAND_FMWORLD = 1 // 76-108 MHz
+};
+
+// ----- RDA5807M Class -----
+
+class RDA5807M {
 public:
   RDA5807M();
 
@@ -43,48 +42,68 @@ public:
   void term();
 
   // ----- Audio features -----
+  void setVolume(uint8_t newVolume);
+  uint8_t getVolume();
 
-  void setVolume(int8_t newVolume) override;
-  void setBassBoost(bool switchOn) override;
-  void setMono(bool switchOn) override;
-  void setMute(bool switchOn) override;
-  void setSoftMute(bool switchOn) override;  ///< Set the soft mute mode (mute on low signals) on or off.
+  void setBassBoost(bool switchOn);
+  bool getBassBoost();
+
+  void setMono(bool switchOn);
+  bool getMono();
+
+  void setMute(bool switchOn);
+  bool getMute();
+
+  void setSoftMute(bool switchOn);
+  bool getSoftMute();
 
   // ----- Receiver features -----
-  void setBand(RADIO_BAND newBand);
-  void setFrequency(RADIO_FREQ newF);
-  RADIO_FREQ getFrequency(void);
+  void setBand(RDA5807M_Band newBand);
+  void
+  setFrequency(uint16_t newF); // Frequency in 10kHz (e.g. 10110 = 101.1 MHz)
+  uint16_t getFrequency();
 
-  void seekUp(bool toNextSender = true);    // start seek mode upwards
-  void seekDown(bool toNextSender = true);  // start seek mode downwards
+  void seekUp(bool wrap = true);
+  void seekDown(bool wrap = true);
 
-  // ----- Supporting RDS for RADIO_BAND_FM and RADIO_BAND_FMWORLD
-
+  // ----- RDS -----
   void checkRDS();
+  void attachReceiveRDS(receiveRDSFunction newFunction);
 
-  // ----- combined status functions -----
+  // ----- Info -----
+  void getRadioInfo(RDA5807M_Info *info);
+  void getAudioInfo(RDA5807M_AudioInfo *info);
 
-  virtual void getRadioInfo(RADIO_INFO *info);  ///< Retrieve some information about the current radio function of the chip.
+  // ----- Debug -----
+  void debugStatus();
+  void debugEnable(bool enable);
 
-  // ----- Supporting RDS for RADIO_BAND_FM and RADIO_BAND_FMWORLD
+private:
+  // I2C Addresses
+  static const uint8_t I2C_ADDR =
+      0x10; // Sequential Access Only per Datasheet 2.5
 
-  // ----- debug Helpers send information to Serial port
+  // Registers
+  uint16_t registers[16]; // Shadow registers
 
-  void debugScan();    // Scan all frequencies and report a status
-  void debugStatus();  // DebugInfo about actual chip data available
+  // Internal State
+  uint8_t _volume;
+  uint8_t _maxVolume = 15;
+  bool _bassBoost;
+  bool _mono;
+  bool _mute;
+  bool _softMute;
+  uint16_t _currentFreq;
 
-protected:
-  // ----- local variables
-  uint16_t registers[16];  // memory representation of the registers
+  bool _debugEnabled;
+  receiveRDSFunction _sendRDS = nullptr;
 
-  // ----- low level communication to the chip using I2C bus
+  // Helper functions
+  void _readRegisters();
+  void _saveRegisters();             // Saves 02-06
+  void _saveRegister(uint8_t regNr); // Helper to save up to regNr
+  void _write16(uint16_t val);
+  uint16_t _read16();
 
-  void _readRegisters();           // read all status & data registers
-  void _saveRegisters();           // Save writable registers back to the chip
-  void _saveRegister(uint8_t regNr);  // Save one register back to the chip
-
-  // void     _write16(uint16_t val);        // Write 16 Bit Value on I2C-Bus
-  // uint16_t _read16(void);
+  void int16_to_s(char *s, uint16_t val);
 };
-
-#endif

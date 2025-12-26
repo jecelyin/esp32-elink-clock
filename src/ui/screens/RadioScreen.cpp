@@ -186,6 +186,7 @@ void RadioScreen::update() {
     lastLog = millis();
     radio->debugRadioInfo();
   }
+  radio->checkRDS();
 }
 
 void RadioScreen::draw(DisplayDriver *display) {
@@ -193,12 +194,18 @@ void RadioScreen::draw(DisplayDriver *display) {
   uint16_t freq = radio->getFrequency();
   float freqVal = freq / 100.0;
   int vol = config->config.volume;
-  RADIO_INFO radioInfo;
+  RDA5807M_Info radioInfo;
   radio->getRadioInfo(&radioInfo);
 
   String rds = "";
   if (radioInfo.rds) {
-    rds = "RDS found!";
+    const char *ps = radio->getRDSStationName();
+    const char *rt = radio->getRDSText();
+    if (ps && ps[0] && strcmp(ps, "        ") != 0) {
+      rds = ps;
+    } else {
+      rds = "RDS found!";
+    }
   }
   int rssi = radioInfo.rssi;
 
@@ -255,7 +262,7 @@ void RadioScreen::draw(DisplayDriver *display) {
     updateSignal(display, smoothedRSSI);
   }
 
-  if (rds != lastRDS) {
+  if (rds != lastRDS || radio->hasRDSChanged()) {
     lastRDS = rds;
     updateRDS(display, rds.c_str());
   }

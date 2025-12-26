@@ -1,7 +1,13 @@
 #include "RadioDriver.h"
 #include "../managers/BusManager.h"
 
-RadioDriver::RadioDriver() {}
+static RDSParser *g_rdsParser = nullptr;
+static void rdsCallback(uint16_t b1, uint16_t b2, uint16_t b3, uint16_t b4) {
+  if (g_rdsParser)
+    g_rdsParser->decode(b1, b2, b3, b4);
+}
+
+RadioDriver::RadioDriver() { g_rdsParser = &rdsParser; }
 
 bool RadioDriver::init() {
   digitalWrite(BIAS_CTR, LOW);
@@ -13,25 +19,27 @@ void RadioDriver::setup() {
   BusManager::getInstance().requestI2C();
   // Enable information to the Serial port
   radio.debugEnable(true);
-  radio._wireDebug(false);
-
-  // Set FM Options for Europe
-  // radio.setup(RADIO_FMSPACING, RADIO_FMSPACING_100);   // for EUROPE
-  // radio.setup(RADIO_DEEMPHASIS, RADIO_DEEMPHASIS_50);  // for EUROPE
 
   // Initialize the Radio
-  if (!radio.initWire(Wire)) {
+  if (!radio.init()) {
     Serial.println("no radio chip found.");
     delay(4000);
     ESP.restart();
   };
 
   // Set all radio setting to the fixed values.
-  radio.setBandFrequency(RADIO_BAND_FM, 8930);
+  radio.setBand(RDA5807M_BAND_FM);
+  // radio.setFrequency(8930); // 89.3 MHz
 
   radio.setVolume(2);
   radio.setMono(false);
   radio.setMute(false);
+  radio.attachReceiveRDS(rdsCallback);
+
+  // Actually, lambdas without capture cannot be converted to function pointers
+  // easily if state is needed. But RDA5807M's attachReceiveRDS takes a function
+  // pointer. Let's use a static helper or a friend relationship. Simplest: just
+  // use the instance since there's only one.
 }
 
 void RadioDriver::powerDown() {
@@ -41,6 +49,7 @@ void RadioDriver::powerDown() {
 
 void RadioDriver::setFrequency(uint16_t freq) {
   BusManager::getInstance().requestI2C();
+  rdsParser.reset();
   radio.setFrequency(freq);
 }
 
@@ -71,27 +80,26 @@ void RadioDriver::seekDown() {
 
 uint16_t RadioDriver::getFrequency() {
   BusManager::getInstance().requestI2C();
-  uint16_t freq = radio.getFrequency();
-  return freq;
+  return radio.getFrequency();
 }
 
 void RadioDriver::getFormattedFrequency(char *s, uint8_t length) {
   BusManager::getInstance().requestI2C();
-  radio.formatFrequency(s, length);
+  uint16_t freq = radio.getFrequency();
+  // Format as "101.1" etc.
+  // freq is in 10kHz units (e.g. 10110) / 100 = 101.1
+  sprintf(s, "%d.%d", freq / 100, (freq % 100) / 10);
 }
 
 uint16_t RadioDriver::getMinFrequency() {
-  BusManager::getInstance().requestI2C();
-  uint16_t f = radio.getMinFrequency();
-  return f;
+  // FM Standard: 87.5 MHz = 8750
+  return 8750;
 }
 
 uint16_t RadioDriver::getMaxFrequency() {
-  BusManager::getInstance().requestI2C();
-  uint16_t f = radio.getMaxFrequency();
-  return f;
+  // FM Standard: 108.0 MHz = 10800
+  return 10800;
 }
-
 
 void RadioDriver::setBias(bool on) {
   digitalWrite(BIAS_CTR, on ? HIGH : LOW);
@@ -105,18 +113,20 @@ void RadioDriver::debugRadioInfo() {
   Serial.print("Frequency: ");
   Serial.print(radio.getFrequency());
   Serial.print(" MHz Radio:");
-  radio.debugRadioInfo();
-
-  Serial.print("Audio:");
-  radio.debugAudioInfo();
+  radio.debugStatus();
 }
 
-void RadioDriver::getRadioInfo(RADIO_INFO *info) {
+void RadioDriver::getRadioInfo(RDA5807M_Info *info) {
   BusManager::getInstance().requestI2C();
   radio.getRadioInfo(info);
 }
 
-void RadioDriver::getAudioInfo(AUDIO_INFO *info) {
+void RadioDriver::getAudioInfo(RDA5807M_AudioInfo *info) {
   BusManager::getInstance().requestI2C();
   radio.getAudioInfo(info);
+}
+
+void RadioDriver::checkRDS() {
+  BusManager::getInstance().requestI2C();
+  radio.checkRDS();
 }
