@@ -4,6 +4,8 @@
 void BusManager::begin() { currentMode = MODE_NONE; }
 
 void BusManager::requestDisplay() {
+  isLocked = true;
+
   if (currentMode == MODE_DISPLAY) {
     return;
   }
@@ -16,10 +18,11 @@ void BusManager::requestDisplay() {
 
   currentMode = MODE_DISPLAY;
   Serial.println("BusManager: Switched to Display (SPI)");
-  // esp_backtrace_print(100);
 }
 
 void BusManager::requestI2C() {
+  isLocked = true;
+
   if (currentMode == MODE_I2C) {
     return;
   }
@@ -31,5 +34,6 @@ void BusManager::requestI2C() {
 
   currentMode = MODE_I2C;
   Serial.println("BusManager: Switched to I2C");
-  // esp_backtrace_print(100);
 }
+
+void BusManager::releaseBus() { isLocked = false; }

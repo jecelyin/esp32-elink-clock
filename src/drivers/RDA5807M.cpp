@@ -49,7 +49,7 @@
 #define RADIO_REG_RDSD 0x0F
 
 RDA5807M::RDA5807M() {
-  _volume = 1;
+  _volume = 10;
   _maxVolume = 15;
   _bassBoost = false;
   _mono = false;
@@ -282,9 +282,9 @@ void RDA5807M::debugStatus() {
   Serial.print((registers[RADIO_REG_RA] & RADIO_REG_RA_STEREO) ? "Y" : "N");
   Serial.println();
 
-  for (int i = 0; i < 16; i++) {
-    Serial.printf("Reg[%02X]: %04X\n", i, registers[i]);
-  }
+  // for (int i = 0; i < 16; i++) {
+  //   Serial.printf("Reg[%02X]: %04X\n", i, registers[i]);
+  // }
 }
 
 // ----- Internal I2C -----

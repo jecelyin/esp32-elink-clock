@@ -13,6 +13,7 @@
 #include "managers/WeatherManager.h"
 #include "ui/UIManager.h"
 #include <Arduino.h>
+#include <SPIFFS.h>
 #include <Wire.h>
 
 // Global Objects
@@ -37,9 +38,18 @@ UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
 // #include <nvs_flash.h>
 
 bool networkStarted = false;
+TaskHandle_t networkTaskHandle = NULL;
+
+#include <esp_task_wdt.h>
 
 void networkTask(void *pvParameters) {
   while (true) {
+    // Active avoidance: Wait if hardware bus is locked by main thread
+    if (BusManager::getInstance().isBusLocked()) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+      continue;
+    }
+
     connectionManager.loop();
 
     // Only update weather on Home or Weather screens
@@ -141,6 +151,12 @@ void setup() {
   }
   Serial.println("RTC Init Success");
 
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+  } else {
+    Serial.println("SPIFFS Mount Success");
+  }
+
   if (!sensorDriver.init())
     Serial.println("Sensor Init Failed");
   Serial.println("Sensor Init Success");
@@ -160,14 +176,15 @@ void setup() {
   weatherManager.begin(&configManager);
   Serial.println("Weather Manager Init Success");
 
+  Serial.println("UI Manager Init Starting...");
   uiManager.init();
   Serial.println("UI Manager Init Success");
 
-  // Create background network task on Core 1 with lower priority than main loop
-  // This ensures it only runs when the main loop is idle (e.g. in delay(1)),
-  // preventing bus contention without requiring explicit locks everywhere.
-  // xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1, NULL,
-  // 0);
+  // Create background network task on Core 0 (shared with WiFi protocol stack)
+  // This physically isolates network logic from the main UI/Hardware thread on
+  // Core 1 (Arduino default).
+  xTaskCreatePinnedToCore(networkTask, "NetworkTask", 8192, NULL, 1,
+                          &networkTaskHandle, 0); // Moved to Core 0
 }
 
 void loop() {
@@ -177,6 +194,7 @@ void loop() {
   if (connectionManager.hasPendingSync()) {
     rtcDriver.setTime(connectionManager.getNtpTime());
     connectionManager.clearPendingSync();
+    BusManager::getInstance().releaseBus();
   }
 
   // System checks (Alarms, RTC) - Throttle to every 5 seconds to reduce I2C
@@ -189,6 +207,7 @@ void loop() {
 
   t_start = millis();
   uiManager.update();
+  BusManager::getInstance().releaseBus();
   // Serial.printf("UI update: %ums\n", millis() - t_start);
 
   // Signal network startup after first UI draw
@@ -205,7 +224,7 @@ void loop() {
     if (!audioDriver.isPlaying()) {
       // Ensure audio is init
       audioDriver.init();
-      audioDriver.play("/alarm.mp3");
+      audioDriver.audio.connecttoFS(SPIFFS, "/alarm.mp3");
     }
   }
 

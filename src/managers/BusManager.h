@@ -17,6 +17,7 @@ public:
   void begin();
   void requestDisplay();
   void requestI2C();
+  void releaseBus();
 
 private:
   BusManager() {}
@@ -26,4 +27,8 @@ private:
   enum BusMode { MODE_NONE, MODE_DISPLAY, MODE_I2C };
 
   BusMode currentMode = MODE_NONE;
+  volatile bool isLocked = false;
+
+public:
+  bool isBusLocked() const { return isLocked; }
 };

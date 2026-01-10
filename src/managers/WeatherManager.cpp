@@ -57,13 +57,13 @@ void WeatherManager::update() {
       lastUpdate == 0) { // Update every 30 mins
     if (WiFi.status() == WL_CONNECTED) {
       fetchCurrentWeather();
-      delay(200);
+      vTaskDelay(pdMS_TO_TICKS(200));
       fetchForecastWeather();
-      delay(200);
+      vTaskDelay(pdMS_TO_TICKS(200));
       fetchHourlyWeather();
-      delay(200);
+      vTaskDelay(pdMS_TO_TICKS(200));
       fetchDailyWeather();
-      delay(200);
+      vTaskDelay(pdMS_TO_TICKS(200));
       fetchWarning();
       lastUpdate = millis();
     }

@@ -31,11 +31,20 @@ void ConnectionManager::loop() {
 
   wifiManager.process();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    // Sync time every hour
-    if (millis() - lastSyncTime > 3600000 || lastSyncTime == 0) {
-      syncTime();
+  static uint32_t lastReconnectAttempt = 0;
+  if (WiFi.status() != WL_CONNECTED) {
+    // Try to reconnect every 30 seconds if not in config portal
+    if (millis() - lastReconnectAttempt > 30000) {
+      lastReconnectAttempt = millis();
+      Serial.println("WiFi disconnected, attempting to reconnect...");
+      WiFi.begin(); // Standard reconnect
     }
+    return;
+  }
+
+  // Sync time every hour or if it never synced
+  if (millis() - lastSyncTime > 3600000 || lastSyncTime == 0) {
+    syncTime();
   }
 }
 
