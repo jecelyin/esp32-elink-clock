@@ -20,6 +20,10 @@ public:
                 '@'};
     items[5] = {SCREEN_SETTINGS, "Settings",
                 u8g2_font_open_iconic_embedded_4x_t, 'B'};
+    items[6] = {SCREEN_TIMER, "Timer", u8g2_font_open_iconic_embedded_4x_t,
+                'E'};
+    items[7] = {SCREEN_NETWORK_CONFIG, "Config",
+                u8g2_font_open_iconic_embedded_4x_t, 'F'};
     firstDraw = true;
   }
 
@@ -38,7 +42,7 @@ public:
       do {
         display->display.fillScreen(GxEPD_WHITE);
         statusBar->draw(display, true);
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 8; i++) {
           drawMenuItem(display, i);
         }
         BusManager::getInstance().requestDisplay();
@@ -71,13 +75,13 @@ public:
       lastMenuIndex = menuIndex;
       menuIndex--;
       if (menuIndex < 0)
-        menuIndex = 5;
+        menuIndex = 7;
       Serial.printf("Input LEFT: new index=%d\n", menuIndex);
       return true;
     } else if (key == UI_KEY_RIGHT) { // Right (KEY_RIGHT)
       lastMenuIndex = menuIndex;
       menuIndex++;
-      if (menuIndex > 5)
+      if (menuIndex > 7)
         menuIndex = 0;
       Serial.printf("Input RIGHT: new index=%d\n", menuIndex);
       return true;
@@ -118,9 +122,9 @@ private:
 
   void drawMenuItem(DisplayDriver *display, int i) {
     int x_start = 40;
-    int y_start = 100;
+    int y_start = 75;
     int x_gap = 120;
-    int y_gap = 100;
+    int y_gap = 85;
 
     int col = i % 3;
     int row = i / 3;
@@ -134,15 +138,13 @@ private:
 
     // Draw Selection Box
     if (isSelected) {
-      display->display.fillRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
+      display->display.fillRect(x - 10, y - 45, 100, 80, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
       display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
-      // Serial.println("Draw Box: FILLED BLACK, Text: WHITE");
     } else {
-      display->display.drawRect(x - 10, y - 50, 100, 90, GxEPD_BLACK);
+      display->display.drawRect(x - 10, y - 45, 100, 80, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
       display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
-      // Serial.println("Draw Box: RECT BLACK, Text: BLACK");
     }
 
     // Draw Icon
@@ -177,12 +179,12 @@ private:
     int row = index / 3;
 
     int center_x = 40 + col * 120;
-    int center_y = 100 + row * 100;
+    int center_y = 75 + row * 85;
 
     x = center_x - 10;
-    y = center_y - 50;
+    y = center_y - 45;
     w = 100;
-    h = 90;
+    h = 80;
   }
 
   struct MenuItem {
@@ -191,7 +193,7 @@ private:
     const uint8_t *font;
     uint16_t icon;
   };
-  MenuItem items[6];
+  MenuItem items[8];
   int menuIndex;
   int lastMenuIndex;
   StatusBar *statusBar;

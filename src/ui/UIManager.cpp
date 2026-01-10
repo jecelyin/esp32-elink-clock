@@ -3,8 +3,10 @@
 #include "screens/HomeScreen.h"
 #include "screens/MenuScreen.h"
 #include "screens/MusicScreen.h"
+#include "screens/NetworkConfigScreen.h"
 #include "screens/RadioScreen.h"
 #include "screens/SettingsScreen.h"
+#include "screens/TimerScreen.h"
 #include "screens/WeatherScreen.h"
 
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
@@ -29,6 +31,8 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   musicScreen = new MusicScreen(music, statusBar, config);
   weatherScreen = new WeatherScreen(weather, statusBar);
   settingsScreen = new SettingsScreen(config, statusBar);
+  timerScreen = new TimerScreen(statusBar);
+  networkConfigScreen = new NetworkConfigScreen(rtc, conn, statusBar);
 
   // Set UIManager reference
   homeScreen->setUIManager(this);
@@ -38,6 +42,8 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   musicScreen->setUIManager(this);
   weatherScreen->setUIManager(this);
   settingsScreen->setUIManager(this);
+  timerScreen->setUIManager(this);
+  networkConfigScreen->setUIManager(this);
 
   settingsScreen->setUIManager(this);
 
@@ -109,6 +115,12 @@ void UIManager::switchScreen(ScreenState state) {
     break;
   case SCREEN_SETTINGS:
     currentScreenObj = settingsScreen;
+    break;
+  case SCREEN_TIMER:
+    currentScreenObj = timerScreen;
+    break;
+  case SCREEN_NETWORK_CONFIG:
+    currentScreenObj = networkConfigScreen;
     break;
   }
 

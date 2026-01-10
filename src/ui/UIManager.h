@@ -14,6 +14,8 @@ class MusicScreen;
 class RadioScreen;
 class SettingsScreen;
 class WeatherScreen;
+class TimerScreen;
+class NetworkConfigScreen;
 
 #include "../drivers/AudioDriver.h"
 #include "../drivers/RadioDriver.h"
@@ -31,7 +33,9 @@ enum ScreenState {
   SCREEN_RADIO,
   SCREEN_MUSIC,
   SCREEN_WEATHER,
-  SCREEN_SETTINGS
+  SCREEN_SETTINGS,
+  SCREEN_TIMER,
+  SCREEN_NETWORK_CONFIG
 };
 
 class UIManager {
@@ -61,6 +65,8 @@ private:
   MusicScreen *musicScreen;
   WeatherScreen *weatherScreen;
   SettingsScreen *settingsScreen;
+  TimerScreen *timerScreen;
+  NetworkConfigScreen *networkConfigScreen;
 
   Screen *currentScreenObj;
 
