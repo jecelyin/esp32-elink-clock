@@ -167,10 +167,9 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
 void RadioScreen::init() {}
 
 void RadioScreen::enter() {
-  radio->setup();
-  // digitalWrite(CODEC_EN, 0);
   digitalWrite(AMP_EN, 1);
   digitalWrite(RADIO_EN, 1);
+  radio->setup();
   isFirstDraw = true;
 }
 
@@ -191,9 +190,11 @@ void RadioScreen::update() {
 
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;
+  radio->setFrequency(10520); // For testing
   uint16_t freq = radio->getFrequency();
   float freqVal = freq / 100.0;
   int vol = config->config.volume;
+  radio->setVolume(vol);
   RDA5807M_Info radioInfo;
   radio->getRadioInfo(&radioInfo);
 

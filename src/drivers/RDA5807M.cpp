@@ -1,52 +1,53 @@
 #include "RDA5807M.h"
+#include "../managers/BusManager.h"
+#include <esp_log.h>
 
 // ----- Register Definitions -----
+#define I2C_ADDR_SEQ 0x10
+#define I2C_ADDR_IDX 0x11
 
-#define RADIO_REG_CHIPID 0x00
+#define REG_CHIP_ID 0x00
+#define REG_CTRL 0x02
+#define REG_CHAN 0x03
+#define REG_R4 0x04
+#define REG_VOL 0x05
+#define REG_RA 0x0a
+#define REG_RB 0x0b
+#define REG_RDSA 0x0c
+#define REG_RDSB 0x0d
+#define REG_RDSC 0x0e
+#define REG_RDSD 0x0f
 
-#define RADIO_REG_CTRL 0x02
-#define RADIO_REG_CTRL_OUTPUT 0x8000
-#define RADIO_REG_CTRL_UNMUTE 0x4000
-#define RADIO_REG_CTRL_MONO 0x2000
-#define RADIO_REG_CTRL_BASS 0x1000
-#define RADIO_REG_CTRL_SEEKUP 0x0200 // Bit 9
-#define RADIO_REG_CTRL_SEEK 0x0100   // Bit 8
-#define RADIO_REG_CTRL_RDS 0x0008    // Bit 3
-#define RADIO_REG_CTRL_NEW 0x0010    // Bit 4
-#define RADIO_REG_CTRL_RESET 0x0002
-#define RADIO_REG_CTRL_ENABLE 0x0001
+// Control Bits
+#define BIT_CTRL_ENABLE 0
+#define BIT_CTRL_SOFT_RESET 1
+#define BIT_CTRL_RDS_EN 3
+#define BIT_CTRL_CLK_MODE 4
+#define BIT_CTRL_SEEK 8
+#define BIT_CTRL_SEEKUP 9
+#define BIT_CTRL_BASS 12
+#define BIT_CTRL_MONO 13
+#define BIT_CTRL_DMUTE 14
+#define BIT_CTRL_DHIZ 15
 
-#define RADIO_REG_CHAN 0x03
-#define RADIO_REG_CHAN_SPACE 0x0003
-#define RADIO_REG_CHAN_SPACE_100 0x0000
-#define RADIO_REG_CHAN_BAND 0x000C
-#define RADIO_REG_CHAN_BAND_FM 0x0000
-#define RADIO_REG_CHAN_BAND_FMWORLD 0x0008
-#define RADIO_REG_CHAN_TUNE 0x0010
-#define RADIO_REG_CHAN_NR 0x7FC0
+#define BIT_CHAN_SPACE 0
+#define BIT_CHAN_BAND 2
+#define BIT_CHAN_TUNE 4
+#define BIT_CHAN_CHAN 6
 
-#define RADIO_REG_R4 0x04
-#define RADIO_REG_R4_EM50 0x0800
-#define RADIO_REG_R4_SOFTMUTE 0x0200
-#define RADIO_REG_R4_AFC 0x0100
+#define BIT_R4_DE 11
+#define BIT_R4_SOFTMUTE_EN 9
 
-#define RADIO_REG_VOL 0x05
-#define RADIO_REG_VOL_VOL 0x000F
+#define BIT_VOL_VOLUME 0
+#define BIT_VOL_SEEKTH 8
 
-#define RADIO_REG_RA 0x0A
-#define RADIO_REG_RA_RDS 0x8000
-#define RADIO_REG_RA_RDSBLOCK 0x0800
-#define RADIO_REG_RA_STEREO 0x0400
-#define RADIO_REG_RA_NR 0x03FF
+#define BIT_RA_STC 14
+#define MASK_RA_READCHAN 0x03FF
+#define BIT_RB_RSSI 9
 
-#define RADIO_REG_RB 0x0B
-#define RADIO_REG_RB_FMTRUE 0x0100
-#define RADIO_REG_RB_FMREADY 0x0080
+#define BV(x) (1 << (x))
 
-#define RADIO_REG_RDSA 0x0C
-#define RADIO_REG_RDSB 0x0D
-#define RADIO_REG_RDSC 0x0E
-#define RADIO_REG_RDSD 0x0F
+static const char *TAG = "RDA5807M";
 
 RDA5807M::RDA5807M() {
   _volume = 10;
@@ -56,49 +57,50 @@ RDA5807M::RDA5807M() {
   _mute = false;
   _softMute = false;
   _debugEnabled = false;
-  _currentFreq = 8790; // Default
+  _currentFreq = 8790;
 
-  // Initialize shadow registers
   for (int i = 0; i < 16; i++) {
     registers[i] = 0;
   }
 }
 
 bool RDA5807M::init() {
-  // 1. Initialize Register Cache with defaults
-  registers[RADIO_REG_CHIPID] = 0x5804;
-  registers[1] = 0x0000;
+  BusManager::getInstance().requestI2C();
 
-  // Reset enabled, Enable=1
-  registers[RADIO_REG_CTRL] = (RADIO_REG_CTRL_RESET | RADIO_REG_CTRL_ENABLE);
+  // 1. Check ID using Index Access (0x11)
+  uint16_t chipId = _readReg(REG_CHIP_ID);
+  if (chipId == 0 || chipId == 0xFFFF) {
+    ESP_LOGE(TAG, "Radio not found on 0x11 (ID: %04X).", chipId);
+    return false;
+  }
+  ESP_LOGI(TAG, "Chip ID: %04X", chipId);
 
-  registers[RADIO_REG_CHAN] = 0x0000; // Default band (FM), Space 100kHz
-  registers[RADIO_REG_R4] = RADIO_REG_R4_EM50; // De-emphasis 50us
+  // 2. Soft Reset
+  _writeReg(REG_CTRL, BV(BIT_CTRL_SOFT_RESET) | BV(BIT_CTRL_ENABLE));
+  delay(50);
 
-  // Volume defaults (simulating old driver's 0x9081)
-  registers[RADIO_REG_VOL] = 0x9081;
+  // 3. Complete Initialization (Synced with rda5807.c)
+  // Enable: DHIZ (Audio Output), DMUTE (Unmute), RDS, ENABLE
+  registers[REG_CTRL] = BV(BIT_CTRL_DHIZ) | BV(BIT_CTRL_DMUTE) |
+                        BV(BIT_CTRL_RDS_EN) | BV(BIT_CTRL_ENABLE);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
 
-  registers[6] = 0x0000;
-  registers[7] = 0x0000;
+  // De-emphasis = 50us
+  registers[REG_R4] = BV(BIT_R4_DE);
+  _writeReg(REG_R4, registers[REG_R4]);
 
-  // 2. Reset the chip (Sequential Write 02h-06h)
-  _saveRegisters(); // Writes 02,03,04,05,06
+  // Set Volume, Seek threshold = ~32 dB SNR, INT_MODE = 1
+  registers[REG_VOL] = 0x888a;
+  _writeReg(REG_VOL, registers[REG_VOL]);
+  setVolume(_volume);
 
-  delay(100);
-
-  // 3. Enable normal operation (Sequential Write again without Reset bit)
-  registers[RADIO_REG_CTRL] = RADIO_REG_CTRL_ENABLE | RADIO_REG_CTRL_OUTPUT |
-                              RADIO_REG_CTRL_RDS | RADIO_REG_CTRL_NEW;
-  // Keep defaults for others
-  _saveRegisters(); // Writes 02,03,04,05,06
-
+  ESP_LOGI(TAG, "Initialized via 0x11.");
   return true;
 }
 
 void RDA5807M::term() {
   setVolume(0);
-  registers[RADIO_REG_CTRL] = 0x0000; // Disable
-  _saveRegisters();
+  _writeReg(REG_CTRL, 0);
 }
 
 // ----- Audio -----
@@ -108,10 +110,9 @@ void RDA5807M::setVolume(uint8_t newVolume) {
     newVolume = _maxVolume;
   _volume = newVolume;
 
-  registers[RADIO_REG_VOL] &= ~RADIO_REG_VOL_VOL;
-  registers[RADIO_REG_VOL] |= (_volume & RADIO_REG_VOL_VOL);
-
-  _saveRegister(RADIO_REG_VOL);
+  registers[REG_VOL] &= ~(0x0F << BIT_VOL_VOLUME);
+  registers[REG_VOL] |= (_volume << BIT_VOL_VOLUME);
+  _writeReg(REG_VOL, registers[REG_VOL]);
 }
 
 uint8_t RDA5807M::getVolume() { return _volume; }
@@ -119,10 +120,10 @@ uint8_t RDA5807M::getVolume() { return _volume; }
 void RDA5807M::setBassBoost(bool switchOn) {
   _bassBoost = switchOn;
   if (switchOn)
-    registers[RADIO_REG_CTRL] |= RADIO_REG_CTRL_BASS;
+    registers[REG_CTRL] |= BV(BIT_CTRL_BASS);
   else
-    registers[RADIO_REG_CTRL] &= ~RADIO_REG_CTRL_BASS;
-  _saveRegister(RADIO_REG_CTRL);
+    registers[REG_CTRL] &= ~BV(BIT_CTRL_BASS);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
 }
 
 bool RDA5807M::getBassBoost() { return _bassBoost; }
@@ -130,10 +131,10 @@ bool RDA5807M::getBassBoost() { return _bassBoost; }
 void RDA5807M::setMono(bool switchOn) {
   _mono = switchOn;
   if (switchOn)
-    registers[RADIO_REG_CTRL] |= RADIO_REG_CTRL_MONO;
+    registers[REG_CTRL] |= BV(BIT_CTRL_MONO);
   else
-    registers[RADIO_REG_CTRL] &= ~RADIO_REG_CTRL_MONO;
-  _saveRegister(RADIO_REG_CTRL);
+    registers[REG_CTRL] &= ~BV(BIT_CTRL_MONO);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
 }
 
 bool RDA5807M::getMono() { return _mono; }
@@ -141,10 +142,10 @@ bool RDA5807M::getMono() { return _mono; }
 void RDA5807M::setMute(bool switchOn) {
   _mute = switchOn;
   if (switchOn)
-    registers[RADIO_REG_CTRL] &= ~RADIO_REG_CTRL_UNMUTE;
+    registers[REG_CTRL] &= ~BV(BIT_CTRL_DMUTE);
   else
-    registers[RADIO_REG_CTRL] |= RADIO_REG_CTRL_UNMUTE;
-  _saveRegister(RADIO_REG_CTRL);
+    registers[REG_CTRL] |= BV(BIT_CTRL_DMUTE);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
 }
 
 bool RDA5807M::getMute() { return _mute; }
@@ -152,10 +153,10 @@ bool RDA5807M::getMute() { return _mute; }
 void RDA5807M::setSoftMute(bool switchOn) {
   _softMute = switchOn;
   if (switchOn)
-    registers[RADIO_REG_R4] |= RADIO_REG_R4_SOFTMUTE;
+    registers[REG_R4] |= BV(BIT_R4_SOFTMUTE_EN);
   else
-    registers[RADIO_REG_R4] &= ~RADIO_REG_R4_SOFTMUTE;
-  _saveRegister(RADIO_REG_R4);
+    registers[REG_R4] &= ~BV(BIT_R4_SOFTMUTE_EN);
+  _writeReg(REG_R4, registers[REG_R4]);
 }
 
 bool RDA5807M::getSoftMute() { return _softMute; }
@@ -163,79 +164,74 @@ bool RDA5807M::getSoftMute() { return _softMute; }
 // ----- Receiver -----
 
 void RDA5807M::setBand(RDA5807M_Band newBand) {
-  uint16_t r = RADIO_REG_CHAN_BAND_FM;
-  if (newBand == RDA5807M_BAND_FMWORLD) {
-    r = RADIO_REG_CHAN_BAND_FMWORLD;
-  }
-
-  registers[RADIO_REG_CHAN] &= ~RADIO_REG_CHAN_BAND;
-  registers[RADIO_REG_CHAN] |= r;
-  registers[RADIO_REG_CHAN] |= RADIO_REG_CHAN_SPACE_100;
-
-  _saveRegister(RADIO_REG_CHAN);
+  uint16_t b = (newBand == RDA5807M_BAND_FMWORLD) ? 1 : 0;
+  registers[REG_CHAN] &= ~(0x03 << BIT_CHAN_BAND);
+  registers[REG_CHAN] |= (b << BIT_CHAN_BAND);
+  _writeReg(REG_CHAN, registers[REG_CHAN]);
 }
 
 void RDA5807M::setFrequency(uint16_t newF) {
-  _currentFreq = newF;
-
-  // Calculate chan
-  uint16_t spacing = 10;  // 100kHz
-  uint16_t bottom = 8700; // 87.0 MHz
-
-  // Adjust bottom based on band
-  if ((registers[RADIO_REG_CHAN] & RADIO_REG_CHAN_BAND) ==
-      RADIO_REG_CHAN_BAND_FMWORLD) {
+  uint16_t bottom = 8700;
+  if (((registers[REG_CHAN] >> BIT_CHAN_BAND) & 0x03) == 1) {
     bottom = 7600;
   }
 
-  if (newF < bottom)
-    newF = bottom;
+  uint16_t channel = (newF - bottom) / 10;
 
-  uint16_t channel = (newF - bottom) / spacing;
+  registers[REG_CHAN] &= ~(0x03FF << BIT_CHAN_CHAN);
+  registers[REG_CHAN] |= (channel << BIT_CHAN_CHAN);
+  registers[REG_CHAN] |= BV(BIT_CHAN_TUNE);
 
-  registers[RADIO_REG_CHAN] &= ~(RADIO_REG_CHAN_TUNE | RADIO_REG_CHAN_NR);
-  registers[RADIO_REG_CHAN] |= RADIO_REG_CHAN_TUNE;
-  registers[RADIO_REG_CHAN] |= (channel << 6);
+  _writeReg(REG_CHAN, registers[REG_CHAN]);
 
-  _saveRegister(RADIO_REG_CHAN);
+  // Wait for Tune Complete (STC bit in RA)
+  int retry = 50;
+  while (retry--) {
+    uint16_t status = _readReg(REG_RA);
+    if (status & BV(BIT_RA_STC))
+      break;
+    delay(10);
+  }
 }
 
 uint16_t RDA5807M::getFrequency() {
-  _readRegisters();
-  uint16_t channel = registers[RADIO_REG_RA] & RADIO_REG_RA_NR;
-  uint16_t spacing = 10;
+  uint16_t ra = _readReg(REG_RA);
+  uint16_t channel = ra & MASK_RA_READCHAN;
   uint16_t bottom = 8700;
-  if ((registers[RADIO_REG_CHAN] & RADIO_REG_CHAN_BAND) ==
-      RADIO_REG_CHAN_BAND_FMWORLD) {
+  if (((registers[REG_CHAN] >> BIT_CHAN_BAND) & 0x03) == 1) {
     bottom = 7600;
   }
-  return bottom + (channel * spacing);
+  return bottom + (channel * 10);
 }
 
 void RDA5807M::seekUp(bool wrap) {
-  registers[RADIO_REG_CTRL] |= RADIO_REG_CTRL_SEEKUP;
-  registers[RADIO_REG_CTRL] |= RADIO_REG_CTRL_SEEK;
-  _saveRegister(RADIO_REG_CTRL);
-
-  registers[RADIO_REG_CTRL] &= ~RADIO_REG_CTRL_SEEK;
+  registers[REG_CTRL] |= BV(BIT_CTRL_SEEKUP);
+  registers[REG_CTRL] |= BV(BIT_CTRL_SEEK);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
+  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEK);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
 }
 
 void RDA5807M::seekDown(bool wrap) {
-  registers[RADIO_REG_CTRL] &= ~RADIO_REG_CTRL_SEEKUP;
-  registers[RADIO_REG_CTRL] |= RADIO_REG_CTRL_SEEK;
-  _saveRegister(RADIO_REG_CTRL);
-  registers[RADIO_REG_CTRL] &= ~RADIO_REG_CTRL_SEEK;
+  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEKUP);
+  registers[REG_CTRL] |= BV(BIT_CTRL_SEEK);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
+  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEK);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
 }
 
 // ----- RDS -----
 
 void RDA5807M::checkRDS() {
-  _readRegisters();
   if (_sendRDS) {
-    // Check if RDS data is available (Bit 15 of Register 0Ah)
-    if (registers[RADIO_REG_RA] & RADIO_REG_RA_RDS) {
-      _sendRDS(registers[RADIO_REG_RDSA], registers[RADIO_REG_RDSB],
-               registers[RADIO_REG_RDSC], registers[RADIO_REG_RDSD]);
+    uint16_t ra = _readReg(REG_RA);
+    if (ra & (1 << 15)) {
+      uint16_t blocks[4];
+      blocks[0] = _readReg(REG_RDSA);
+      blocks[1] = _readReg(REG_RDSB);
+      blocks[2] = _readReg(REG_RDSC);
+      blocks[3] = _readReg(REG_RDSD);
+      _sendRDS(blocks[0], blocks[1], blocks[2], blocks[3]);
     }
   }
 }
@@ -247,13 +243,15 @@ void RDA5807M::attachReceiveRDS(receiveRDSFunction newFunction) {
 // ----- Info -----
 
 void RDA5807M::getRadioInfo(RDA5807M_Info *info) {
-  _readRegisters();
+  uint16_t ra = _readReg(REG_RA);
+  uint16_t rb = _readReg(REG_RB);
+
   info->active = true;
-  info->rssi = registers[RADIO_REG_RB] >> 10;
-  info->tuned = (registers[RADIO_REG_RB] & RADIO_REG_RB_FMTRUE) != 0;
-  info->stereo = (registers[RADIO_REG_RA] & RADIO_REG_RA_STEREO) != 0;
-  info->rds = (registers[RADIO_REG_RA] & RADIO_REG_RA_RDS) != 0;
-  info->mono = (registers[RADIO_REG_CTRL] & RADIO_REG_CTRL_MONO) != 0;
+  info->rssi = rb >> BIT_RB_RSSI;
+  info->tuned = (ra & BV(BIT_RA_STC)) != 0;
+  info->stereo = (ra & (1 << 10)) != 0;
+  info->rds = (ra & (1 << 15)) != 0;
+  info->mono = (registers[REG_CTRL] & BV(BIT_CTRL_MONO)) != 0;
   info->snr = 0;
 }
 
@@ -271,65 +269,43 @@ void RDA5807M::debugEnable(bool enable) { _debugEnabled = enable; }
 void RDA5807M::debugStatus() {
   if (!_debugEnabled)
     return;
-
-  _readRegisters();
-
-  Serial.print("Freq: ");
-  Serial.print(getFrequency());
-  Serial.print(" RSSI: ");
-  Serial.print(registers[RADIO_REG_RB] >> 10);
-  Serial.print(" Stereo: ");
-  Serial.print((registers[RADIO_REG_RA] & RADIO_REG_RA_STEREO) ? "Y" : "N");
-  Serial.println();
-
-  // for (int i = 0; i < 16; i++) {
-  //   Serial.printf("Reg[%02X]: %04X\n", i, registers[i]);
-  // }
+  ESP_LOGI(TAG, "Freq: %d, Vol: %d", getFrequency(), _volume);
 }
 
 // ----- Internal I2C -----
 
 void RDA5807M::_readRegisters() {
-  // Read from I2C Address 0x10 starts at Register 0x0A (Datasheet 2.5)
-  // We read 6 words (12 bytes) to cover 0x0A to 0x0F
-  Wire.requestFrom(I2C_ADDR, (uint8_t)12);
-
-  if (Wire.available() >= 12) {
-    for (int i = 0; i < 6; i++) {
-      registers[0x0A + i] = _read16();
-    }
+  for (int i = 0; i < 6; i++) {
+    registers[0x0A + i] = _readReg(0x0A + i);
   }
 }
 
 void RDA5807M::_saveRegisters() {
-  // Write to I2C Address 0x10 starts at Register 0x02 (Datasheet 2.5)
-  // We want to save 0x02 to 0x06 (5 words) ideally.
-  // Datasheet says we can stop anytime by STOP condition.
-
-  Wire.beginTransmission(I2C_ADDR);
   for (int i = 2; i <= 6; i++) {
-    _write16(registers[i]);
+    _writeReg(i, registers[i]);
   }
-  Wire.endTransmission();
 }
 
 void RDA5807M::_saveRegister(uint8_t regNr) {
-  // We cannot do Random Access (0x11) strictly per 2.5.
-  // We must do Sequential Write from 0x02 up to regNr.
+  _writeReg(regNr, registers[regNr]);
+}
 
-  // Ensure we are only saving writable regs 0x02 to 0x07 (or 3A)
-  // We only care about up to 0x07 (Data Sheet mentions only up to 0x5...0x7
-  // mainly for control) If regNr < 2 or > 6, maybe we shouldn't be here, but
-  // let's handle 2-6.
-
-  if (regNr < 0x02)
-    return;
-
-  Wire.beginTransmission(I2C_ADDR);
-  for (int i = 0x02; i <= regNr; i++) {
-    _write16(registers[i]);
-  }
+void RDA5807M::_writeReg(uint8_t reg, uint16_t val) {
+  BusManager::getInstance().requestI2C();
+  Wire.beginTransmission(I2C_ADDR_IDX);
+  Wire.write(reg);
+  _write16(val);
   Wire.endTransmission();
+}
+
+uint16_t RDA5807M::_readReg(uint8_t reg) {
+  BusManager::getInstance().requestI2C();
+  Wire.beginTransmission(I2C_ADDR_IDX);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0)
+    return 0;
+  Wire.requestFrom(I2C_ADDR_IDX, (uint8_t)2);
+  return _read16();
 }
 
 void RDA5807M::_write16(uint16_t val) {
@@ -338,6 +314,8 @@ void RDA5807M::_write16(uint16_t val) {
 }
 
 uint16_t RDA5807M::_read16() {
+  if (Wire.available() < 2)
+    return 0;
   uint8_t hi = Wire.read();
   uint8_t lo = Wire.read();
   return (hi << 8) | lo;

@@ -94,6 +94,7 @@ void setup() {
   pinMode(KEY_RIGHT, INPUT_PULLUP);
   pinMode(KEY_ENTER, INPUT_PULLUP);
 
+  delay(100); // Let power stabilize
   // Init Drivers
   inputDriver.begin();
   sdCardDriver.begin();

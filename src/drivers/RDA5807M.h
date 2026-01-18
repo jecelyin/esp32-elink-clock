@@ -79,10 +79,6 @@ public:
   void debugEnable(bool enable);
 
 private:
-  // I2C Addresses
-  static const uint8_t I2C_ADDR =
-      0x10; // Sequential Access Only per Datasheet 2.5
-
   // Registers
   uint16_t registers[16]; // Shadow registers
 
@@ -102,6 +98,9 @@ private:
   void _readRegisters();
   void _saveRegisters();             // Saves 02-06
   void _saveRegister(uint8_t regNr); // Helper to save up to regNr
+  void _writeReg(uint8_t reg, uint16_t val);
+  uint16_t _readReg(uint8_t reg);
+
   void _write16(uint16_t val);
   uint16_t _read16();
 
