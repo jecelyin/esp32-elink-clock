@@ -1,5 +1,7 @@
 #include "SensorDriver.h"
 #include "../managers/BusManager.h"
+#include <Arduino.h>
+#include <Wire.h>
 
 // ESP32 ADC 参数
 static const float ADC_MAX = 4095.0;
@@ -13,6 +15,12 @@ SensorDriver::SensorDriver() {}
 bool SensorDriver::init() {
   BusManager::getInstance().requestI2C();
   return sht31.begin(SHT30_I2C_ADDR);
+}
+
+bool SensorDriver::checkDevice(uint8_t address) {
+  BusManager::getInstance().requestI2C();
+  Wire.beginTransmission(address);
+  return Wire.endTransmission() == 0;
 }
 
 #include <driver/adc.h>
@@ -78,4 +86,14 @@ int SensorDriver::getBatteryLevel() {
     return 0; // Cutoff usually around 3.2-3.3V under load
 
   return (int)((voltage - 3.3f) / (4.2f - 3.3f) * 100.0f);
+}
+
+bool SensorDriver::checkHardware() {
+  uint8_t addresses[] = {RX8010_I2C_ADDR, SHT30_I2C_ADDR, ES8311_ADDRESS,
+                         M5807_ADDR_FULL_ACCESS};
+  for (uint8_t addr : addresses) {
+    if (!checkDevice(addr))
+      return false;
+  }
+  return true;
 }

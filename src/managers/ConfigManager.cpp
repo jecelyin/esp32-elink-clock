@@ -4,8 +4,7 @@ ConfigManager::ConfigManager() {
   // Defaults
   config.volume = 10;
   config.time_format_24 = true;
-  config.volume = 10;
-  config.time_format_24 = true;
+  config.hw_checked = false;
   for (int i = 0; i < 8; i++) {
     config.radio_presets[i] = 0;
   }
@@ -21,6 +20,7 @@ void ConfigManager::load() {
   config.wifi_pass = prefs.getString("pass", "");
   config.volume = prefs.getUChar("vol", 10);
   config.time_format_24 = prefs.getBool("fmt24", true);
+  config.hw_checked = prefs.getBool("hwck", false);
   for (int i = 0; i < 8; i++) {
     char key[16];
     sprintf(key, "radio_p%d", i);
@@ -33,6 +33,7 @@ void ConfigManager::save() {
   prefs.putString("pass", config.wifi_pass);
   prefs.putUChar("vol", config.volume);
   prefs.putBool("fmt24", config.time_format_24);
+  prefs.putBool("hwck", config.hw_checked);
   for (int i = 0; i < 8; i++) {
     char key[16];
     sprintf(key, "radio_p%d", i);

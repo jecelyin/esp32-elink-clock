@@ -96,52 +96,55 @@ void setup() {
   // Init Drivers
   inputDriver.begin();
   sdCardDriver.begin();
+  configManager.begin();
+  Serial.println("Config Manager Init Success");
+
+  sdCardDriver.begin();
   displayDriver.init();
   displayDriver.clear(); // Ensure screen is white before partial updates
-  displayDriver.showStatus("Checking Hardware...", 0);
 
-  // I2C Device List
-  struct I2CDevice {
-    const char *name;
-    uint8_t address;
-  };
-  I2CDevice devices[] = {
-      {"RTC (RX8010SJ)", RX8010_I2C_ADDR},
-      {"Sensor (SHT30)", SHT30_I2C_ADDR},
-      {"Audio (ES8311)", ES8311_ADDRESS},         // Or 0x60
-      {"Radio (RDA5807)", M5807_ADDR_FULL_ACCESS} // Direct Access
-  };
+  // 硬件自检逻辑：分离显示逻辑
+  if (!configManager.config.hw_checked) {
+    displayDriver.showStatus("Checking Hardware...", 0);
 
-  char buffer[64];
-  bool allOk = true;
-  for (int i = 0; i < 4; i++) {
-    sprintf(buffer, "Checking %s...", devices[i].name);
-    displayDriver.showStatus(buffer, i + 1);
-    BusManager::getInstance().requestI2C();
-    Wire.beginTransmission(devices[i].address);
-    uint8_t error = Wire.endTransmission();
+    struct I2CDevice {
+      const char *name;
+      uint8_t address;
+    };
+    I2CDevice devices[] = {{"RTC (RX8010SJ)", RX8010_I2C_ADDR},
+                           {"Sensor (SHT30)", SHT30_I2C_ADDR},
+                           {"Audio (ES8311)", ES8311_ADDRESS},
+                           {"Radio (RDA5807)", M5807_ADDR_FULL_ACCESS}};
 
-    if (error == 0) {
-      sprintf(buffer, "%s: OK", devices[i].name);
+    bool allOk = true;
+    for (int i = 0; i < 4; i++) {
+      char buffer[64];
+      sprintf(buffer, "Checking %s...", devices[i].name);
+      displayDriver.showStatus(buffer, i + 1);
+
+      if (sensorDriver.checkDevice(devices[i].address)) {
+        sprintf(buffer, "%s: OK", devices[i].name);
+      } else {
+        sprintf(buffer, "%s: FAIL", devices[i].name);
+        allOk = false;
+      }
+      displayDriver.showStatus(buffer, i + 1);
+      delay(200);
+    }
+
+    if (allOk) {
+      displayDriver.showStatus("Hardware Check OK", 0);
+      configManager.config.hw_checked = true;
+      configManager.save();
+      delay(1000);
     } else {
-      sprintf(buffer, "%s: FAIL (%d)", devices[i].name, error);
-      allOk = false;
+      displayDriver.showStatus("Hardware Check Failed!", 0);
+      while (1) {
+        delay(10);
+      }
     }
-    displayDriver.showStatus(buffer, i + 1);
-    delay(200); // Give user time to see it
   }
 
-  delay(1000); // Pause before standard init
-  if (!allOk) {
-    displayDriver.showStatus("I2C Device Check Failed!", 0);
-    Serial.println("I2C Device Check Failed!");
-    while (1) {
-      delay(10);
-    }
-  } else {
-    displayDriver.showStatus("I2C Device Check OK", 0);
-    Serial.println("I2C Device Check OK");
-  }
   digitalWrite(RADIO_EN, LOW);
 
   if (!rtcDriver.init()) {
@@ -165,9 +168,6 @@ void setup() {
 
   audioDriver.init();
   Serial.println("Audio Init Success");
-
-  configManager.begin();
-  Serial.println("Config Manager Init Success");
 
   connectionManager.begin(&configManager, &rtcDriver);
   Serial.println("Connection Manager Init Success");

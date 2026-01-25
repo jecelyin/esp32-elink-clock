@@ -30,7 +30,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   radioScreen = new RadioScreen(radio, statusBar, config);
   musicScreen = new MusicScreen(music, statusBar, config);
   weatherScreen = new WeatherScreen(weather, statusBar);
-  settingsScreen = new SettingsScreen(config, statusBar);
+  settingsScreen = new SettingsScreen(config, statusBar, sensor);
   timerScreen = new TimerScreen(statusBar);
   networkConfigScreen = new NetworkConfigScreen(rtc, conn, statusBar);
 
