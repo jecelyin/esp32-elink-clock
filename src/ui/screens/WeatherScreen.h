@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../../managers/BusManager.h"
 #include "../../managers/WeatherManager.h"
 #include "../../utils/qweather_fonts.h"
 #include "../Screen.h"
@@ -151,7 +150,6 @@ public:
           display->display.drawLine(260, y + rowH, 400, y + rowH, GxEPD_BLACK);
       }
 
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
     display->powerOff();
   }

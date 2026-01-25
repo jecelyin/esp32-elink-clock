@@ -1,5 +1,4 @@
 #include "RadioDriver.h"
-#include "../managers/BusManager.h"
 
 static RDSParser *g_rdsParser = nullptr;
 static void rdsCallback(uint16_t b1, uint16_t b2, uint16_t b3, uint16_t b4) {
@@ -16,7 +15,6 @@ bool RadioDriver::init() {
 }
 
 void RadioDriver::setup() {
-  BusManager::getInstance().requestI2C();
   // Enable information to the Serial port
   radio.debugEnable(true);
 
@@ -42,49 +40,26 @@ void RadioDriver::setup() {
   // use the instance since there's only one.
 }
 
-void RadioDriver::powerDown() {
-  BusManager::getInstance().requestI2C();
-  radio.term();
-}
+void RadioDriver::powerDown() { radio.term(); }
 
 void RadioDriver::setFrequency(uint16_t freq) {
-  BusManager::getInstance().requestI2C();
   rdsParser.reset();
   radio.setFrequency(freq);
 }
 
-void RadioDriver::setVolume(uint8_t vol) {
-  BusManager::getInstance().requestI2C();
-  radio.setVolume(vol);
-}
+void RadioDriver::setVolume(uint8_t vol) { radio.setVolume(vol); }
 
-uint8_t RadioDriver::getVolume() {
-  BusManager::getInstance().requestI2C();
-  return radio.getVolume();
-}
+uint8_t RadioDriver::getVolume() { return radio.getVolume(); }
 
-void RadioDriver::mute(bool m) {
-  BusManager::getInstance().requestI2C();
-  radio.setMute(m);
-}
+void RadioDriver::mute(bool m) { radio.setMute(m); }
 
-void RadioDriver::seekUp() {
-  BusManager::getInstance().requestI2C();
-  radio.seekUp(false);
-}
+void RadioDriver::seekUp() { radio.seekUp(false); }
 
-void RadioDriver::seekDown() {
-  BusManager::getInstance().requestI2C();
-  radio.seekDown(false);
-}
+void RadioDriver::seekDown() { radio.seekDown(false); }
 
-uint16_t RadioDriver::getFrequency() {
-  BusManager::getInstance().requestI2C();
-  return radio.getFrequency();
-}
+uint16_t RadioDriver::getFrequency() { return radio.getFrequency(); }
 
 void RadioDriver::getFormattedFrequency(char *s, uint8_t length) {
-  BusManager::getInstance().requestI2C();
   uint16_t freq = radio.getFrequency();
   // Format as "101.1" etc.
   // freq is in 10kHz units (e.g. 10110) / 100 = 101.1
@@ -109,7 +84,6 @@ void RadioDriver::setBias(bool on) {
 bool RadioDriver::getBias() { return biasState; }
 
 void RadioDriver::debugRadioInfo() {
-  BusManager::getInstance().requestI2C();
   Serial.print("Frequency: ");
   Serial.print(radio.getFrequency());
   Serial.print(" MHz Radio:");
@@ -117,16 +91,11 @@ void RadioDriver::debugRadioInfo() {
 }
 
 void RadioDriver::getRadioInfo(RDA5807M_Info *info) {
-  BusManager::getInstance().requestI2C();
   radio.getRadioInfo(info);
 }
 
 void RadioDriver::getAudioInfo(RDA5807M_AudioInfo *info) {
-  BusManager::getInstance().requestI2C();
   radio.getAudioInfo(info);
 }
 
-void RadioDriver::checkRDS() {
-  BusManager::getInstance().requestI2C();
-  radio.checkRDS();
-}
+void RadioDriver::checkRDS() { radio.checkRDS(); }

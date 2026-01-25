@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
@@ -45,7 +44,6 @@ public:
         for (int i = 0; i < 8; i++) {
           drawMenuItem(display, i);
         }
-        BusManager::getInstance().requestDisplay();
       } while (display->display.nextPage());
       display->powerOff();
 
@@ -115,7 +113,6 @@ private:
     do {
       display->display.fillScreen(GxEPD_WHITE);
       drawMenuItem(display, index);
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
     display->powerOff();
   }

@@ -1,25 +1,18 @@
 #include "RtcDriver.h"
-#include "../managers/BusManager.h"
 
 RtcDriver::RtcDriver() {}
 
 bool RtcDriver::init() {
-  BusManager::getInstance().requestI2C();
-  // Wire.begin(); // Handled by BusManager
-
-  // Check Voltage Low Flag (VLF) [cite: 1278]
+  // Check Voltage Low Flag (VLF)
   // Register 0x1E, Bit 1. If 1, data is invalid (power loss).
   uint8_t flags = readRegister(RX8010_REG_FLAG);
 
   if (flags & RX8010_FLAG_VLF) {
     // Power was lost. Initialization required.
-    // Recommended sequence from Datasheet Section 13.7 Ex.1 [cite: 1330]
-
-    // 1. Initialize Control Registers
+    // Recommended sequence from Datasheet
     writeRegister(RX8010_REG_CTRL, 0x00); // Clear STOP, TEST, etc.
     writeRegister(RX8010_REG_FLAG, 0x00); // Clear VLF and other flags
 
-    // 2. You might want to set a default time here, e.g., 2000-01-01
     DateTime dt = {0, 0, 0, 1, 1, 0, 6}; // Sat Jan 1st 2000
     setTime(dt);
 
@@ -36,8 +29,7 @@ DateTime RtcDriver::getTime() {
 
   DateTime dt;
 
-  // Burst read from 0x10 to 0x16 [cite: 507]
-  BusManager::getInstance().requestI2C();
+  // Burst read from 0x10 to 0x16
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(RX8010_REG_SEC);
   Wire.endTransmission();
@@ -45,14 +37,12 @@ DateTime RtcDriver::getTime() {
   Wire.requestFrom(RX8010_I2C_ADDR, 7);
 
   if (Wire.available() == 7) {
-    // Masking 0x7F ensures we ignore the Read-Only '0' bits defined in
-    // datasheet
     dt.second = bcdToDec(Wire.read() & 0x7F);
     dt.minute = bcdToDec(Wire.read() & 0x7F);
-    dt.hour = bcdToDec(Wire.read() & 0x3F); // 24-hour format usually
+    dt.hour = bcdToDec(Wire.read() & 0x3F);
 
     uint8_t weekRaw = Wire.read();
-    dt.week = weekBitmaskToBin(weekRaw); // Convert 0x01/0x02... to 0-6
+    dt.week = weekBitmaskToBin(weekRaw);
 
     dt.day = bcdToDec(Wire.read() & 0x3F);
     dt.month = bcdToDec(Wire.read() & 0x1F);
@@ -66,28 +56,25 @@ DateTime RtcDriver::getTime() {
 }
 
 void RtcDriver::setTime(DateTime dt) {
-  // Procedure based on Datasheet Section 13.7 Ex.2 [cite: 1363]
-
-  // 1. Set STOP bit to "1" to prevent timer update during writing [cite: 1374]
+  // 1. Set STOP bit to "1" to prevent timer update during writing
   uint8_t ctrl = readRegister(RX8010_REG_CTRL);
   writeRegister(RX8010_REG_CTRL, ctrl | RX8010_CTRL_STOP);
 
   // 2. Write time data
-  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(RX8010_REG_SEC);
 
   Wire.write(decToBcd(dt.second));
   Wire.write(decToBcd(dt.minute));
   Wire.write(decToBcd(dt.hour));
-  Wire.write(weekBinToBitmask(dt.week)); // Convert 0-6 to 0x01/0x02...
+  Wire.write(weekBinToBitmask(dt.week));
   Wire.write(decToBcd(dt.day));
   Wire.write(decToBcd(dt.month));
   Wire.write(decToBcd(dt.year));
 
   Wire.endTransmission();
 
-  // 3. Clear STOP bit to "0" to restart clock [cite: 1390]
+  // 3. Clear STOP bit to "0" to restart clock
   writeRegister(RX8010_REG_CTRL, ctrl & ~RX8010_CTRL_STOP);
 
   // Invalidate cache after setTime
@@ -95,55 +82,53 @@ void RtcDriver::setTime(DateTime dt) {
 }
 
 // --- Individual Getters/Setters ---
-// Optimized: All getters use getTime() which is burst-read and cached.
 
 void RtcDriver::setSecond(uint8_t seconds) {
   writeRegister(RX8010_REG_SEC, decToBcd(seconds));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint8_t RtcDriver::getSecond() { return getTime().second; }
 
 void RtcDriver::setMinute(uint8_t minutes) {
   writeRegister(RX8010_REG_MIN, decToBcd(minutes));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint8_t RtcDriver::getMinute() { return getTime().minute; }
 
 void RtcDriver::setHour(uint8_t hours) {
   writeRegister(RX8010_REG_HOUR, decToBcd(hours));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint8_t RtcDriver::getHour() { return getTime().hour; }
 
 void RtcDriver::setDay(uint8_t day) {
   writeRegister(RX8010_REG_DAY, decToBcd(day));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint8_t RtcDriver::getDay() { return getTime().day; }
 
 void RtcDriver::setWeek(uint8_t week) {
   writeRegister(RX8010_REG_WEEK, weekBinToBitmask(week));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint8_t RtcDriver::getWeek() { return getTime().week; }
 
 void RtcDriver::setMonth(uint8_t month) {
   writeRegister(RX8010_REG_MONTH, decToBcd(month));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint8_t RtcDriver::getMonth() { return getTime().month; }
 
 void RtcDriver::setYear(uint16_t year) {
-  // Stores last two digits. Expects year > 2000.
   uint8_t y = (year >= 2000) ? (year - 2000) : year;
   writeRegister(RX8010_REG_YEAR, decToBcd(y));
-  _lastReadTime = 0; // Invalidate cache
+  _lastReadTime = 0;
 }
 
 uint16_t RtcDriver::getYear() { return getTime().year + 2000; }
@@ -157,14 +142,13 @@ time_t RtcDriver::getTimeAsTimeT() {
   t.tm_min = dt.minute;
   t.tm_hour = dt.hour;
   t.tm_mday = dt.day;
-  t.tm_mon = dt.month - 1; // struct tm is 0-11
-  t.tm_year =
-      dt.year + 100; // struct tm is years since 1900. RTC is years since 2000.
+  t.tm_mon = dt.month - 1;
+  t.tm_year = dt.year + 100;
   return mktime(&t);
 }
 
 void RtcDriver::setTime(uint8_t hour, uint8_t minute, uint8_t second) {
-  DateTime dt = getTime(); // Read current date to preserve it
+  DateTime dt = getTime();
   dt.hour = hour;
   dt.minute = minute;
   dt.second = second;
@@ -172,7 +156,7 @@ void RtcDriver::setTime(uint8_t hour, uint8_t minute, uint8_t second) {
 }
 
 void RtcDriver::setDate(uint8_t day, uint8_t month, uint16_t year) {
-  DateTime dt = getTime(); // Read current time to preserve it
+  DateTime dt = getTime();
   dt.day = day;
   dt.month = month;
   dt.year = (year >= 2000) ? (year - 2000) : year;
@@ -181,13 +165,12 @@ void RtcDriver::setDate(uint8_t day, uint8_t month, uint16_t year) {
   t.tm_mday = day;
   t.tm_mon = month - 1;
   t.tm_year = dt.year + 100;
-  mktime(&t); // Normalizes struct and finds tm_wday
+  mktime(&t);
   dt.week = t.tm_wday;
 
   setTime(dt);
 }
 
-// Parses compile time strings: __DATE__ "Mmm dd yyyy", __TIME__ "hh:mm:ss"
 void RtcDriver::setDateTime(const char *date, const char *time) {
   char monthStr[4];
   int day, year, hour, minute, second;
@@ -236,24 +219,20 @@ uint8_t RtcDriver::bcdToDec(uint8_t val) {
 }
 
 uint8_t RtcDriver::readRegister(uint8_t reg) {
-  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(reg);
   Wire.endTransmission();
   Wire.requestFrom(RX8010_I2C_ADDR, 1);
-  uint8_t val = Wire.read();
-  return val;
+  return Wire.read();
 }
 
 void RtcDriver::writeRegister(uint8_t reg, uint8_t val) {
-  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(RX8010_I2C_ADDR);
   Wire.write(reg);
   Wire.write(val);
   Wire.endTransmission();
 }
 
-// RX8010 uses a bitmask: Sun=0x01, Mon=0x02, Tue=0x04 ... Sat=0x40
 uint8_t RtcDriver::weekBinToBitmask(uint8_t week0to6) {
   return (1 << week0to6);
 }
@@ -264,5 +243,5 @@ uint8_t RtcDriver::weekBitmaskToBin(uint8_t bitmask) {
       return i;
     }
   }
-  return 0; // Default to Sunday if error
+  return 0;
 }

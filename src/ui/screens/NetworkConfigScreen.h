@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../drivers/RtcDriver.h"
-#include "../../managers/BusManager.h"
 #include "../../managers/ConnectionManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
@@ -93,21 +92,18 @@ private:
 
   void renderAll(DisplayDriver *displayDrv) {
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestDisplay();
     display.setFullWindow();
     display.firstPage();
     do {
       display.fillScreen(GxEPD_WHITE);
       // Status bar handles itself at y=0-24
       drawContent(displayDrv);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }
 
   void renderTimePartial(DisplayDriver *displayDrv) {
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestDisplay();
     // Time area in status bar (usually x=150 to 250 range for center time)
     // Or just partial refresh the whole status bar height (24px)
     display.setPartialWindow(0, 0, 400, 24);
@@ -115,7 +111,6 @@ private:
     do {
       // StatusBar draws its own black background
       statusBar->draw(displayDrv, true); // true to show time in status bar
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }

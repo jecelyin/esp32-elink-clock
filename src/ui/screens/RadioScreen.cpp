@@ -148,7 +148,6 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
     display->display.firstPage();
     do {
       drawSingleButton(display, oldIdx, false, true);
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
     display->powerOff();
   }
@@ -159,7 +158,6 @@ void RadioScreen::updateButtonFocus(DisplayDriver *display, int oldIdx,
   display->display.firstPage();
   do {
     drawSingleButton(display, newIdx, true, true);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
   display->powerOff();
 }
@@ -239,7 +237,6 @@ void RadioScreen::draw(DisplayDriver *display) {
       drawSignal(display, smoothedRSSI, false);
       drawRDS(display, rds.c_str(), false);
       drawButtons(display, false);
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
     display->powerOff();
     return;
@@ -595,7 +592,6 @@ void RadioScreen::updateFrequency(DisplayDriver *display) {
   display->display.firstPage();
   do {
     drawFrequency(display, false); // partial=false because we handled window
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 
   // 2. Update Dial
@@ -617,7 +613,6 @@ void RadioScreen::updateFrequency(DisplayDriver *display) {
   display->display.firstPage();
   do {
     drawDial(display, freqVal, false);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 
   display->powerOff();
@@ -642,7 +637,6 @@ void RadioScreen::updateHeader(DisplayDriver *display, int vol, bool isStereo,
   display->display.firstPage();
   do {
     drawHeaderInfo(display, vol, isStereo, rssi, false);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
   display->powerOff();
 }
@@ -658,7 +652,6 @@ void RadioScreen::updateSignal(DisplayDriver *display, int rssi) {
   display->display.firstPage();
   do {
     drawSignal(display, rssi, false);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
   display->powerOff();
 }
@@ -674,7 +667,6 @@ void RadioScreen::updateRDS(DisplayDriver *display, const char *text) {
   display->display.firstPage();
   do {
     drawRDS(display, text, false);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
   display->powerOff();
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../../managers/BusManager.h"
 #include "../../managers/ConfigManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
@@ -46,7 +45,6 @@ public:
       display->u8g2Fonts.setCursor(50, 210);
       display->u8g2Fonts.print("> Hardware Check (Press Enter)");
 
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 

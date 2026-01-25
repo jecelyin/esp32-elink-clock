@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../managers/AlarmManager.h"
-#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
@@ -45,7 +44,6 @@ public:
           drawAlarmList(display, false);
         }
 
-        BusManager::getInstance().requestDisplay();
       } while (display->display.nextPage());
       display->powerOff();
       return;
@@ -137,8 +135,6 @@ private:
       display->display.drawLine(10, y + ROW_H - 1, 390, y + ROW_H - 1,
                                 GxEPD_BLACK);
 
-      if (partial)
-        BusManager::getInstance().requestDisplay();
     } while (partial && display->display.nextPage());
 
     if (partial)
@@ -167,8 +163,6 @@ private:
       int tw = display->u8g2Fonts.getUTF8Width("返回主菜单");
       display->u8g2Fonts.setCursor(200 - tw / 2, y + 36);
       display->u8g2Fonts.print("返回主菜单");
-      if (partial)
-        BusManager::getInstance().requestDisplay();
     } while (partial && display->display.nextPage());
     if (partial)
       display->powerOff();
@@ -270,8 +264,6 @@ private:
       }
       display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
 
-      if (partial)
-        BusManager::getInstance().requestDisplay();
     } while (partial && display->display.nextPage());
     if (partial)
       display->powerOff();

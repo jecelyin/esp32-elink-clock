@@ -1,5 +1,4 @@
 #include "DisplayDriver.h"
-#include "../managers/BusManager.h"
 
 // Constructor: Initialize the display object with pin definitions
 // GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
@@ -7,10 +6,8 @@ DisplayDriver::DisplayDriver()
     : display(EPD2_DRV(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
 
 void DisplayDriver::init() {
-  BusManager::getInstance().requestDisplay();
 
   SPISettings spisettings(4000000, MSBFIRST, SPI_MODE0);
-  // SPI.begin is handled by BusManager
   display.epd2.selectSPI(SPI, spisettings);
   // explicitly, GxEPD2 usually handles it if standard pins
   // display.init(115200);
@@ -25,7 +22,6 @@ void DisplayDriver::init() {
 }
 
 void DisplayDriver::clear() {
-  BusManager::getInstance().requestDisplay();
   display.setFullWindow();
   display.firstPage();
   display.fillScreen(GxEPD_WHITE);
@@ -34,7 +30,6 @@ void DisplayDriver::clear() {
 }
 
 void DisplayDriver::update() {
-  BusManager::getInstance().requestDisplay();
   // This might be used for partial updates or triggering a refresh
   display.display();
   powerOff();
@@ -54,7 +49,6 @@ void DisplayDriver::showMessage(const char *msg) {
     int16_t y = display.height() / 2;
     u8g2Fonts.setCursor(x, y);
     u8g2Fonts.print(msg);
-    BusManager::getInstance().requestDisplay();
   } while (display.nextPage());
   display.display();
   powerOff();
@@ -80,7 +74,6 @@ void DisplayDriver::showStatus(const char *msg, int line) {
     u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
     u8g2Fonts.setCursor(10, y);
     u8g2Fonts.print(msg);
-    BusManager::getInstance().requestDisplay();
   } while (display.nextPage());
   // display.display() is automatic with GxEPD2 loops usually, but for partial
   // we might need to be careful GxEPD2 example uses distinct loop. We don't

@@ -95,7 +95,6 @@ void MusicScreen::draw(DisplayDriver *display) {
       drawRightPanel(display);
       drawFooter(display);
 
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
     display->powerOff();
     return;
@@ -396,7 +395,6 @@ void MusicScreen::updateProgress(DisplayDriver *display) {
     display->display.drawRect(15, y + 15, SCREEN_W - 140, 4, COLOR_FG);
     display->display.fillRect(15, y + 15, (int)((SCREEN_W - 140) * pct), 4,
                               COLOR_FG);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 }
 
@@ -428,7 +426,6 @@ void MusicScreen::updateFocus(DisplayDriver *display, int oldIdx, int newIdx) {
       } else {
         display->u8g2Fonts.print(btn.label);
       }
-      BusManager::getInstance().requestDisplay();
     } while (display->display.nextPage());
   }
 }
@@ -441,7 +438,6 @@ void MusicScreen::updatePlaylist(DisplayDriver *display) {
   do {
     display->display.fillScreen(COLOR_BG);
     drawPlaylist(display);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 }
 
@@ -452,7 +448,6 @@ void MusicScreen::updatePlaybackInfo(DisplayDriver *display) {
   do {
     display->display.fillScreen(COLOR_BG);
     drawLeftPanel(display);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 }
 
@@ -464,6 +459,5 @@ void MusicScreen::updateFooterInfo(DisplayDriver *display) {
   do {
     display->display.fillScreen(COLOR_BG);
     drawFooter(display);
-    BusManager::getInstance().requestDisplay();
   } while (display->display.nextPage());
 }

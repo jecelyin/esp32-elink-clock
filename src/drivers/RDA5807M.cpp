@@ -1,5 +1,4 @@
 #include "RDA5807M.h"
-#include "../managers/BusManager.h"
 #include <esp_log.h>
 
 // ----- Register Definitions -----
@@ -65,7 +64,6 @@ RDA5807M::RDA5807M() {
 }
 
 bool RDA5807M::init() {
-  BusManager::getInstance().requestI2C();
 
   // 1. Check ID using Index Access (0x11)
   uint16_t chipId = _readReg(REG_CHIP_ID);
@@ -291,7 +289,6 @@ void RDA5807M::_saveRegister(uint8_t regNr) {
 }
 
 void RDA5807M::_writeReg(uint8_t reg, uint16_t val) {
-  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(I2C_ADDR_IDX);
   Wire.write(reg);
   _write16(val);
@@ -299,7 +296,6 @@ void RDA5807M::_writeReg(uint8_t reg, uint16_t val) {
 }
 
 uint16_t RDA5807M::_readReg(uint8_t reg) {
-  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(I2C_ADDR_IDX);
   Wire.write(reg);
   if (Wire.endTransmission(false) != 0)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../../managers/BusManager.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
@@ -146,7 +145,6 @@ private:
         drawButton(i);
       }
 
-      BusManager::getInstance().requestDisplay();
     } while (displayDrv->display.nextPage());
     displayDrv->powerOff();
   }
@@ -161,7 +159,6 @@ private:
     do {
       displayDrv->display.fillRect(48, 80, 304, 100, GxEPD_WHITE);
       drawLargeTime();
-      BusManager::getInstance().requestDisplay();
     } while (displayDrv->display.nextPage());
     displayDrv->powerOff();
   }
@@ -173,7 +170,6 @@ private:
     do {
       displayDrv->display.fillRect(16, 205, 368, 15, GxEPD_WHITE);
       drawProgressBar();
-      BusManager::getInstance().requestDisplay();
     } while (displayDrv->display.nextPage());
     displayDrv->powerOff();
   }
@@ -186,8 +182,6 @@ private:
     do {
       displayDrv->display.fillRect(80, 40, 240, 165, GxEPD_WHITE);
       drawPhrase();
-      // Don't draw time here, we use updateTimeDisplay for that to keep it fast
-      BusManager::getInstance().requestDisplay();
     } while (displayDrv->display.nextPage());
     displayDrv->powerOff();
   }
@@ -205,7 +199,6 @@ private:
     do {
       displayDrv->display.fillRect(ax, y, aw, h, GxEPD_WHITE);
       drawButton(index);
-      BusManager::getInstance().requestDisplay();
     } while (displayDrv->display.nextPage());
     displayDrv->powerOff();
   }

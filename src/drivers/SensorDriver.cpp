@@ -1,5 +1,5 @@
 #include "SensorDriver.h"
-#include "../managers/BusManager.h"
+#include "../config.h"
 #include <Arduino.h>
 #include <Wire.h>
 
@@ -12,13 +12,9 @@ static const float DIVIDER_RATIO = 2.0; // 读到的是 1/2，需要 ×2
 
 SensorDriver::SensorDriver() {}
 
-bool SensorDriver::init() {
-  BusManager::getInstance().requestI2C();
-  return sht31.begin(SHT30_I2C_ADDR);
-}
+bool SensorDriver::init() { return sht31.begin(SHT30_I2C_ADDR); }
 
 bool SensorDriver::checkDevice(uint8_t address) {
-  BusManager::getInstance().requestI2C();
   Wire.beginTransmission(address);
   return Wire.endTransmission() == 0;
 }
@@ -27,7 +23,6 @@ bool SensorDriver::checkDevice(uint8_t address) {
 #include <esp_adc_cal.h>
 
 bool SensorDriver::readData(float &temp, float &hum) {
-  BusManager::getInstance().requestI2C();
   float t = sht31.readTemperature();
   float h = sht31.readHumidity();
 

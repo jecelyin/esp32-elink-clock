@@ -7,7 +7,6 @@
 #include "drivers/SDCardDriver.h"
 #include "drivers/SensorDriver.h"
 #include "managers/AlarmManager.h"
-#include "managers/BusManager.h"
 #include "managers/ConfigManager.h"
 #include "managers/ConnectionManager.h"
 #include "managers/WeatherManager.h"
@@ -44,12 +43,6 @@ TaskHandle_t networkTaskHandle = NULL;
 
 void networkTask(void *pvParameters) {
   while (true) {
-    // Active avoidance: Wait if hardware bus is locked by main thread
-    if (BusManager::getInstance().isBusLocked()) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-      continue;
-    }
-
     connectionManager.loop();
 
     // Only update weather on Home or Weather screens
@@ -67,30 +60,26 @@ void setup() {
   delay(3000);
   Serial.println("System Starting...");
 
-  // Init Bus Manager (Arbitration for SPI/I2C on 18/23)
-  BusManager::getInstance().begin();
-
-  pinMode(EPD_BUSY, OUTPUT);
-  pinMode(EPD_RST, OUTPUT);
-  pinMode(EPD_CS, OUTPUT);
-  pinMode(EPD_DC, OUTPUT);
+  pinMode(EPD_BUSY, INPUT); // EPD BUSY is usually input
   pinMode(SD_EN, OUTPUT);
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_OFF);
+  digitalWrite(SD_CS, HIGH);
 
   // Audio & Power
   pinMode(CODEC_EN, OUTPUT);
   pinMode(AMP_EN, OUTPUT);
   pinMode(RADIO_EN, OUTPUT);
 
-  digitalWrite(CODEC_EN, HIGH); // Enable Codec for I2C
-  digitalWrite(AMP_EN, LOW);    // Keep Amp off initially
-  digitalWrite(RADIO_EN, HIGH);
-
   // Input Keys
   pinMode(KEY_LEFT, INPUT_PULLUP);
   pinMode(KEY_RIGHT, INPUT_PULLUP);
   pinMode(KEY_ENTER, INPUT_PULLUP);
+
+  digitalWrite(AMP_EN, LOW); // Keep Amp off initially
+  digitalWrite(RADIO_EN, LOW);
+
+  Wire.begin(I2C_SDA, I2C_SCL);
 
   delay(100); // Let power stabilize
   // Init Drivers
@@ -101,12 +90,16 @@ void setup() {
 
   sdCardDriver.begin();
   displayDriver.init();
+  // 必须在 DisplayDriver init 之后调用
+  SPI.begin(EPD_SCK, SPI_MISO, EPD_MOSI);
+
   displayDriver.clear(); // Ensure screen is white before partial updates
 
   // 硬件自检逻辑：分离显示逻辑
   if (!configManager.config.hw_checked) {
     displayDriver.showStatus("Checking Hardware...", 0);
-
+    digitalWrite(CODEC_EN, HIGH); // Enable Codec for I2C
+    digitalWrite(RADIO_EN, HIGH);
     struct I2CDevice {
       const char *name;
       uint8_t address;
@@ -143,9 +136,8 @@ void setup() {
         delay(10);
       }
     }
+    digitalWrite(RADIO_EN, LOW);
   }
-
-  digitalWrite(RADIO_EN, LOW);
 
   if (!rtcDriver.init()) {
     Serial.println("RTC Init Failed");
@@ -193,7 +185,6 @@ void loop() {
   if (connectionManager.hasPendingSync()) {
     rtcDriver.setTime(connectionManager.getNtpTime());
     connectionManager.clearPendingSync();
-    BusManager::getInstance().releaseBus();
   }
 
   // System checks (Alarms, RTC) - Throttle to every 5 seconds to reduce I2C
@@ -206,7 +197,6 @@ void loop() {
 
   t_start = millis();
   uiManager.update();
-  BusManager::getInstance().releaseBus();
   // Serial.printf("UI update: %ums\n", millis() - t_start);
 
   // Signal network startup after first UI draw

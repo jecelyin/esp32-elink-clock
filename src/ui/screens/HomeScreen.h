@@ -3,7 +3,6 @@
 #include <Arduino.h>
 
 #include "../../drivers/RtcDriver.h"
-#include "../../managers/BusManager.h"
 #include "../../managers/ConnectionManager.h"
 #include "../../managers/TodoManager.h"
 #include "../../managers/WeatherManager.h"
@@ -190,7 +189,6 @@ private:
     auto &display = displayDrv->display;
     auto &u8g2 = displayDrv->u8g2Fonts;
 
-    BusManager::getInstance().requestDisplay();
     display.setFullWindow();
     display.firstPage();
     do {
@@ -204,7 +202,6 @@ private:
       display.drawLine(0, 220, 400, 220, GxEPD_BLACK);
 
       drawContent(displayDrv);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }
@@ -212,7 +209,6 @@ private:
   void renderTimePartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Time");
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestDisplay(); // Request before setup
     // Time Area: Left side, top part.
     // Static Lines: y=199/200, x=280.
     // Safe Rect: (0, 50, 280, 145) -> y[50, 194], x[0, 279]
@@ -221,8 +217,6 @@ private:
     do {
       display.fillRect(0, 50, 280, 145, GxEPD_WHITE);
       drawTimeSection(displayDrv);
-      BusManager::getInstance()
-          .requestDisplay(); // Must be called before nextPage
     } while (display.nextPage());
     displayDrv->powerOff();
   }
@@ -230,14 +224,12 @@ private:
   void renderStatusBarPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Status Bar");
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestDisplay();
     // Status Bar Area: y=0 to 24, x=0 to 400
     display.setPartialWindow(0, 0, 400, 24);
     display.firstPage();
     do {
       // StatusBar::draw internally handles fillRect(0, 0, 400, 24, GxEPD_BLACK)
       statusBar->draw(displayDrv, false);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }
@@ -245,7 +237,6 @@ private:
   void renderSensorPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Sensor");
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestI2C();
     // Sensor Area:
     // x=288 to 400 (w=112) is 8-pixel aligned and avoids the line at 280
     // y=25 to 81 (h=56) avoids lines at 24 and 82
@@ -254,7 +245,6 @@ private:
     do {
       display.fillRect(288, 25, 112, 56, GxEPD_WHITE);
       drawSensorSection(displayDrv);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }
@@ -262,7 +252,6 @@ private:
   void renderWeatherPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Weather");
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestDisplay();
 
     // Split into Today and Tomorrow to avoid byte alignment issues clearing
     // lines Today Area: y=83 to 139 (avoids lines at 82 and 140) x=288 to 400
@@ -272,7 +261,6 @@ private:
     do {
       display.fillRect(288, 83, 112, 56, GxEPD_WHITE);
       drawTodayWeather(displayDrv);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
 
@@ -282,7 +270,6 @@ private:
     do {
       display.fillRect(288, 141, 112, 57, GxEPD_WHITE);
       drawTomorrowWeather(displayDrv);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }
@@ -290,7 +277,6 @@ private:
   void renderTasksPartial(DisplayDriver *displayDrv) {
     Serial.println("Partial Update: Tasks");
     auto &display = displayDrv->display;
-    BusManager::getInstance().requestDisplay();
     // Tasks Area:
     // Static lines y=199, 200.
     // Start y=202. h=98 -> ends 299. Safe.
@@ -302,7 +288,6 @@ private:
       // Static line at 220 is inside 202-300 range, MUST redraw it.
       display.drawLine(0, 220, 400, 220, GxEPD_BLACK);
       drawTasksSection(displayDrv);
-      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }
