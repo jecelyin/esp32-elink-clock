@@ -82,12 +82,10 @@ void setup() {
   pinMode(CODEC_EN, OUTPUT);
   pinMode(AMP_EN, OUTPUT);
   pinMode(RADIO_EN, OUTPUT);
-  pinMode(BIAS_CTR, OUTPUT);
 
   digitalWrite(CODEC_EN, HIGH); // Enable Codec for I2C
   digitalWrite(AMP_EN, LOW);    // Keep Amp off initially
   digitalWrite(RADIO_EN, HIGH);
-  digitalWrite(BIAS_CTR, LOW);
 
   // Input Keys
   pinMode(KEY_LEFT, INPUT_PULLUP);

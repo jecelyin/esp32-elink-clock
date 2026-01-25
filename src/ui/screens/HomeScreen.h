@@ -29,9 +29,10 @@ const unsigned char Bitmap_humiditySHT30[] PROGMEM = {
 class HomeScreen : public Screen {
 public:
   HomeScreen(RtcDriver *rtc, WeatherManager *weather, SensorDriver *sensor,
-             StatusBar *statusBar, TodoManager *todoMgr)
+             StatusBar *statusBar, TodoManager *todoMgr,
+             ConnectionManager *conn)
       : rtc(rtc), weather(weather), sensor(sensor), statusBar(statusBar),
-        todoMgr(todoMgr) {}
+        todoMgr(todoMgr), conn(conn) {}
 
   void init() override {
     fullRefreshNeeded = true;
@@ -104,6 +105,14 @@ public:
         lastTaskCount = tasks.size();
         lastTasksMinute = now.minute;
       }
+
+      // 4. Status Bar (WiFi status change or Minute change for time)
+      bool wifiState = conn->isConnected();
+      if (wifiState != lastWifiState || now.minute != lastStatusBarMinute) {
+        renderStatusBarPartial(displayDrv);
+        lastWifiState = wifiState;
+        lastStatusBarMinute = now.minute;
+      }
     }
 
     // Check Sensor (every 60 seconds)
@@ -138,6 +147,7 @@ private:
   SensorDriver *sensor;
   StatusBar *statusBar;
   TodoManager *todoMgr;
+  ConnectionManager *conn;
 
   // State for change detection
   bool fullRefreshNeeded = true;
@@ -151,6 +161,8 @@ private:
   String lastWeatherStr = "";
   String lastWeatherIcon = "";
   int lastTaskCount = -1;
+  bool lastWifiState = false;
+  int lastStatusBarMinute = -1;
 
   void updateState() {
     DateTime now = rtc->getTime();
@@ -169,6 +181,8 @@ private:
     lastWeatherIcon = weather->data.icon_str;
 
     lastTaskCount = todoMgr->getVisibleTodos(now).size();
+    lastWifiState = conn->isConnected();
+    lastStatusBarMinute = now.minute;
   }
 
   void renderAll(DisplayDriver *displayDrv) {
@@ -209,6 +223,21 @@ private:
       drawTimeSection(displayDrv);
       BusManager::getInstance()
           .requestDisplay(); // Must be called before nextPage
+    } while (display.nextPage());
+    displayDrv->powerOff();
+  }
+
+  void renderStatusBarPartial(DisplayDriver *displayDrv) {
+    Serial.println("Partial Update: Status Bar");
+    auto &display = displayDrv->display;
+    BusManager::getInstance().requestDisplay();
+    // Status Bar Area: y=0 to 24, x=0 to 400
+    display.setPartialWindow(0, 0, 400, 24);
+    display.firstPage();
+    do {
+      // StatusBar::draw internally handles fillRect(0, 0, 400, 24, GxEPD_BLACK)
+      statusBar->draw(displayDrv, false);
+      BusManager::getInstance().requestDisplay();
     } while (display.nextPage());
     displayDrv->powerOff();
   }

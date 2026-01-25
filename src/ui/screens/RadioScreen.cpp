@@ -190,7 +190,7 @@ void RadioScreen::update() {
 
 void RadioScreen::draw(DisplayDriver *display) {
   using namespace Layout;
-  radio->setFrequency(10520); // For testing
+  // radio->setFrequency(10520); // For testing
   uint16_t freq = radio->getFrequency();
   float freqVal = freq / 100.0;
   int vol = config->config.volume;

@@ -5,7 +5,7 @@
 static const float ADC_MAX = 4095.0;
 static const float ADC_REF = 3.3;
 
-// 分压比（300k / (300k + 300k)）
+// 分压比（10k / (10k + 10k)）
 static const float DIVIDER_RATIO = 2.0; // 读到的是 1/2，需要 ×2
 
 SensorDriver::SensorDriver() {}

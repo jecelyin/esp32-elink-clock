@@ -73,9 +73,9 @@ ButtonEvent InputDriver::loop() {
   ev = leftButton.update();
   if (ev != BTN_NONE)
     e = ev;
-  // todo: right button is float
-  // ev = rightButton.update();
-  // if (ev != BTN_NONE) e = ev;
+
+    ev = rightButton.update();
+  if (ev != BTN_NONE) e = ev;
 
   return e;
 }

@@ -46,21 +46,26 @@ public:
       u8g2.print(timeStr);
     }
 
-
     // Battery (Right aligned)
-    int battLevel = sensor->getBatteryLevel();
+    // 每分钟更新一次电池电量以节省功耗
+    if (millis() - lastBattUpdate >= 60000 || lastBattLevel == -1) {
+      lastBattLevel = sensor->getBatteryLevel();
+      lastBattUpdate = millis();
+    }
+
+    int battLevel = lastBattLevel;
     u8g2.setFont(u8g2_font_helvB08_tr);
     u8g2.setCursor(370, 15);
     u8g2.print(battLevel);
     u8g2.print("%");
-    
+
     // Draw Custom Battery Icon
     // x=350, y=6, w=16, h=10
     int bx = 350;
     int by = 6;
     int bw = 16;
     int bh = 10;
-    
+
     // Outline
     display->display.drawRect(bx, by, bw, bh, GxEPD_WHITE);
     // Nub
@@ -68,7 +73,8 @@ public:
     // Fill
     if (battLevel > 0) {
       int fillW = (bw - 4) * battLevel / 100;
-      if (fillW < 1) fillW = 1;
+      if (fillW < 1)
+        fillW = 1;
       // Use fillRect for white bar
       display->display.fillRect(bx + 2, by + 2, fillW, bh - 4, GxEPD_WHITE);
     }
@@ -82,4 +88,6 @@ private:
   ConnectionManager *conn;
   RtcDriver *rtc;
   SensorDriver *sensor;
+  int lastBattLevel = -1;
+  uint32_t lastBattUpdate = 0;
 };

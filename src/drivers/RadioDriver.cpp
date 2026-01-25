@@ -10,7 +10,7 @@ static void rdsCallback(uint16_t b1, uint16_t b2, uint16_t b3, uint16_t b4) {
 RadioDriver::RadioDriver() { g_rdsParser = &rdsParser; }
 
 bool RadioDriver::init() {
-  digitalWrite(BIAS_CTR, LOW);
+  // digitalWrite(BIAS_CTR, LOW);
   biasState = false;
   return true;
 }
@@ -102,7 +102,7 @@ uint16_t RadioDriver::getMaxFrequency() {
 }
 
 void RadioDriver::setBias(bool on) {
-  digitalWrite(BIAS_CTR, on ? HIGH : LOW);
+  // digitalWrite(BIAS_CTR, on ? HIGH : LOW);
   biasState = on;
 }
 

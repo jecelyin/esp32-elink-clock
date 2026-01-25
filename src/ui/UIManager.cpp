@@ -24,7 +24,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   webMgr = new WebManager(todoMgr);
 
   // Create Screens
-  homeScreen = new HomeScreen(rtc, weather, sensor, statusBar, todoMgr);
+  homeScreen = new HomeScreen(rtc, weather, sensor, statusBar, todoMgr, conn);
   menuScreen = new MenuScreen(statusBar);
   alarmScreen = new AlarmScreen(alarmMgr, statusBar);
   radioScreen = new RadioScreen(radio, statusBar, config);
