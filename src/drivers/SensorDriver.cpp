@@ -7,8 +7,8 @@
 static const float ADC_MAX = 4095.0;
 static const float ADC_REF = 3.3;
 
-// 分压比（10k / (10k + 10k)）
-static const float DIVIDER_RATIO = 2.0; // 读到的是 1/2，需要 ×2
+// 分压比（实测：电池4.07V时，分压点2.0V => 4.07 / 2.0 = 2.035）
+static const float DIVIDER_RATIO = 2.035; // 读到的是分压，需要还原
 
 SensorDriver::SensorDriver() {}
 
@@ -43,7 +43,12 @@ float SensorDriver::getBatteryVoltage() {
 
   // ADC 配置
   adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten(BAT_ADC_CHANNEL, ADC_ATTEN_DB_11);
+  adc1_config_channel_atten(BAT_ADC_CHANNEL, ADC_ATTEN_DB_12);
+
+  // 使用 ESP32 内置校准数据
+  esp_adc_cal_characteristics_t adc_chars;
+  esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_12, 1100,
+                           &adc_chars);
 
   // -------- 高阻分压关键处理 --------
 
@@ -60,8 +65,9 @@ float SensorDriver::getBatteryVoltage() {
   }
   raw /= samples;
 
-  // ADC 原始值 → ADC 引脚电压
-  float adcVoltage = (raw / ADC_MAX) * ADC_REF;
+  // ADC 原始值 → ADC 引脚电压 (单位: mV)
+  uint32_t voltage_mv = esp_adc_cal_raw_to_voltage(raw, &adc_chars);
+  float adcVoltage = voltage_mv / 1000.0;
 
   // 分压还原为电池电压
   float batteryVoltage = adcVoltage * DIVIDER_RATIO;
