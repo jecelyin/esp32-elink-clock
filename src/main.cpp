@@ -242,5 +242,5 @@ void loop() {
     }
   }
 
-  delay(1); // Give some time for background tasks
+  delay(10); // Give some time for background tasks
 }

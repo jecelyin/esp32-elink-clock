@@ -7,21 +7,23 @@ SDCardDriver::SDCardDriver() { spi = new SPIClass(HSPI); }
 SDCardDriver::~SDCardDriver() { delete spi; }
 
 bool SDCardDriver::begin() {
+  pinMode(SD_EN, OUTPUT);
   digitalWrite(SD_EN, SD_PWD_ON);
-  delay(10); // Power stabilization
+  delay(20); // 给 SD 卡更长的稳定时间
 
   Serial.println("Mounting SD card...");
   spi->begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
   if (!SD.begin(SD_CS, *spi)) {
     Serial.println("Card Mount Failed");
-    digitalWrite(SD_EN, SD_PWD_OFF); // Power off on failure
+    digitalWrite(SD_EN, SD_PWD_OFF); // 挂载失败立即切断电源
     return false;
   }
   uint8_t cardType = SD.cardType();
 
   if (cardType == CARD_NONE) {
     Serial.println("No SD card attached");
-    digitalWrite(SD_EN, SD_PWD_OFF); // Power off
+    SD.end();                        // 确保释放资源
+    digitalWrite(SD_EN, SD_PWD_OFF); // 未检测到卡也切断电源
     return false;
   }
 
