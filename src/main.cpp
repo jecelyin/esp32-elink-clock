@@ -14,6 +14,8 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <Wire.h>
+#include <esp_pm.h>
+#include <esp_wifi.h>
 
 // Global Objects
 DisplayDriver displayDriver;
@@ -42,23 +44,55 @@ TaskHandle_t networkTaskHandle = NULL;
 #include <esp_task_wdt.h>
 
 void networkTask(void *pvParameters) {
-  while (true) {
-    connectionManager.loop();
+  static uint32_t lastWiFiEnable = 0;
+  const uint32_t WIFI_SYNC_INTERVAL = 3600000; // 每小时同步一次
 
-    // Only update weather on Home or Weather screens
-    if (uiManager.getCurrentState() == SCREEN_HOME ||
-        uiManager.getCurrentState() == SCREEN_WEATHER) {
-      weatherManager.update();
+  while (true) {
+    uint32_t now = millis();
+
+    // 定时开启 WiFi 进行同步
+    if (now - lastWiFiEnable >= WIFI_SYNC_INTERVAL || lastWiFiEnable == 0) {
+      if (!connectionManager.isNetworkEnabled()) {
+        Serial.println("Scheduled WiFi Sync Starting...");
+        connectionManager.enableNetwork(true);
+        lastWiFiEnable = now;
+      }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100)); // Run every 100ms
+    if (connectionManager.isNetworkEnabled()) {
+      connectionManager.loop();
+
+      // Only update weather on Home or Weather screens
+      if (uiManager.getCurrentState() == SCREEN_HOME ||
+          uiManager.getCurrentState() == SCREEN_WEATHER) {
+        weatherManager.update();
+      }
+
+      // 同步完成后关闭 WiFi 以省电
+      // 判断条件：NTP 已同步且天气已更新（在过去 2 分钟内有更新）
+      if (connectionManager.isSyncComplete() &&
+          (millis() - weatherManager.getLastUpdate() < 120000)) {
+        Serial.println("Sync Complete, powering off WiFi...");
+        connectionManager.enableNetwork(false);
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(500)); // 增加延迟，降低轮询开销
   }
 }
 
 void setup() {
+  setCpuFrequencyMhz(80); // 降低主频至 80MHz 以节省功耗
   Serial.begin(115200);
-  delay(3000);
-  Serial.println("System Starting...");
+  delay(1000);
+  Serial.println("System Starting with Power Optimization...");
+
+  // 启用自动电源管理 (轻度睡眠)
+#if CONFIG_PM_ENABLE
+  esp_pm_config_esp32_t pm_config = {
+      .max_freq_mhz = 80, .min_freq_mhz = 40, .light_sleep_enable = true};
+  esp_pm_configure(&pm_config);
+#endif
 
   pinMode(EPD_BUSY, INPUT); // EPD BUSY is usually input
   pinMode(SD_EN, OUTPUT);
@@ -84,11 +118,11 @@ void setup() {
   delay(100); // Let power stabilize
   // Init Drivers
   inputDriver.begin();
-  sdCardDriver.begin();
+  // sdCardDriver.begin();
   configManager.begin();
   Serial.println("Config Manager Init Success");
 
-  sdCardDriver.begin();
+  // sdCardDriver.begin();
   displayDriver.init();
   // 必须在 DisplayDriver init 之后调用
   SPI.begin(EPD_SCK, SPI_MISO, EPD_MOSI);
@@ -189,8 +223,11 @@ void loop() {
 
   // System checks (Alarms, RTC) - Throttle to every 5 seconds to reduce I2C
   // flood
+  // System checks (Alarms, RTC) - 降低频率，仅在非响铃时减少 I2C 通信
   static uint32_t lastSystemCheck = 0;
-  if (millis() - lastSystemCheck >= 5000) {
+  uint32_t checkInterval =
+      alarmManager.isRinging() ? 1000 : 30000; // 正常 30s 检查一次
+  if (millis() - lastSystemCheck >= checkInterval) {
     lastSystemCheck = millis();
     alarmManager.check(rtcDriver.getTime());
   }
@@ -242,5 +279,19 @@ void loop() {
     }
   }
 
-  delay(10); // Give some time for background tasks
+  // 外设电源动态管理
+  if (!alarmManager.isRinging() && !audioDriver.isPlaying()) {
+    digitalWrite(AMP_EN, LOW);
+    digitalWrite(CODEC_EN, LOW);
+  } else {
+    digitalWrite(CODEC_EN, HIGH);
+    // digitalWrite(AMP_EN, HIGH); // 由音频驱动自行控制更佳
+  }
+
+  // 仅在收音机界面且处于活动状态时开启收音机电源
+  if (uiManager.getCurrentState() != SCREEN_RADIO) {
+    digitalWrite(RADIO_EN, LOW);
+  }
+
+  delay(50); // 增加延迟以允许 ESP32 进入自动轻度睡眠
 }

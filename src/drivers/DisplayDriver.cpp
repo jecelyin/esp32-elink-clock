@@ -83,4 +83,4 @@ void DisplayDriver::showStatus(const char *msg, int line) {
   powerOff();
 }
 
-void DisplayDriver::powerOff() { display.powerOff(); }
+void DisplayDriver::powerOff() { display.hibernate(); }

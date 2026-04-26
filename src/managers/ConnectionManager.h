@@ -14,6 +14,8 @@ public:
   void startAP();
   void syncTime();
   void enableNetwork(bool enable);
+  bool isNetworkEnabled() const { return networkEnabled; }
+  bool isSyncComplete();
 
   bool hasPendingSync() const { return pendingSync; }
   DateTime getNtpTime() const { return ntpTime; }

@@ -51,6 +51,7 @@ public:
   WeatherManager();
   void begin(ConfigManager *config);
   void update();
+  unsigned long getLastUpdate() const { return lastUpdate; }
   WeatherData data;
 
 private:

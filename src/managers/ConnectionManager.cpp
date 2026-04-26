@@ -13,7 +13,20 @@ void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
   rtcDriver = rtc;
 }
 
-void ConnectionManager::enableNetwork(bool enable) { networkEnabled = enable; }
+void ConnectionManager::enableNetwork(bool enable) {
+  if (networkEnabled == enable)
+    return;
+
+  networkEnabled = enable;
+  if (!enable) {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    Serial.println("WiFi Power Off to save energy");
+  } else {
+    WiFi.mode(WIFI_STA);
+    Serial.println("WiFi Power On for sync");
+  }
+}
 
 void ConnectionManager::loop() {
   if (!networkEnabled)
@@ -49,6 +62,10 @@ void ConnectionManager::loop() {
 }
 
 bool ConnectionManager::isConnected() { return WiFi.status() == WL_CONNECTED; }
+
+bool ConnectionManager::isSyncComplete() {
+  return (lastSyncTime > 0) && (WiFi.status() == WL_CONNECTED);
+}
 
 void ConnectionManager::startAP() {
   // WiFi.softAP("ESP32-Clock", "12345678");
