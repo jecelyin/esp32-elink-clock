@@ -49,6 +49,7 @@ public:
   void handleInput(UIKey key);
   void onLongPressEnter();
   void switchScreen(ScreenState state);
+  uint32_t getIdleSleepIntervalMs() const;
 
   DisplayDriver *getDisplayDriver() { return display; }
   ScreenState getCurrentState() { return currentScreenState; }

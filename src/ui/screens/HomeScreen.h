@@ -11,6 +11,7 @@
 #include "../components/StatusBar.h"
 
 #include "../../drivers/SensorDriver.h"
+#include "../../utils/WakeTiming.h"
 #include "../../utils/qweather_fonts.h"
 
 // sht30温度小图标 width: 16, height: 16
@@ -37,7 +38,6 @@ public:
     fullRefreshNeeded = true;
     lastMinute = -1;
     lastTasksMinute = -1;
-    lastTimeCheck = 0;
     lastSensorCheck = 0;
   }
 
@@ -45,7 +45,6 @@ public:
     fullRefreshNeeded = true;
     lastMinute = -1;
     lastTasksMinute = -1;
-    lastTimeCheck = 0;
     lastSensorCheck = 0;
   }
 
@@ -58,6 +57,19 @@ public:
     updateState();
   }
 
+  uint32_t getIdleSleepIntervalMs() const override {
+    uint32_t nowMs = millis();
+    DateTime now = rtc->getSoftwareTime();
+    uint32_t minuteDelayMs =
+        WakeTiming::getMsUntilNextMinuteBoundary(now, nowMs);
+    uint32_t sensorDelayMs =
+        WakeTiming::getRemainingIntervalMs(lastSensorCheck, 60000UL, nowMs);
+    if (sensorDelayMs == 0) {
+      return minuteDelayMs < 1000UL ? minuteDelayMs : 1000UL;
+    }
+    return minuteDelayMs < sensorDelayMs ? minuteDelayMs : sensorDelayMs;
+  }
+
   void update() override {
     if (!uiManager)
       return;
@@ -65,56 +77,45 @@ public:
     if (!displayDrv)
       return;
 
-    uint32_t nowMs = millis();
-
     // Ensure full refresh if requested (e.g. at startup)
     if (fullRefreshNeeded) {
       draw(displayDrv);
       return;
     }
 
-    // Check Time, Weather, and Tasks (every 5 seconds)
-    if (nowMs - lastTimeCheck >= 5000) {
-      lastTimeCheck = nowMs;
-      DateTime now = rtc->getTime();
+    uint32_t nowMs = millis();
+    DateTime now = rtc->getTime();
 
-      // 1. Time
-      if (now.minute != lastMinute) {
-        renderTimePartial(displayDrv);
-        lastMinute = now.minute;
-      }
-
-      // 2. Weather
-      if (weather->data.temp != lastWeatherTemp ||
-          weather->data.weather != lastWeatherStr ||
-          String(weather->data.icon_str) != lastWeatherIcon) {
-        renderWeatherPartial(displayDrv);
-        lastWeatherTemp = weather->data.temp;
-        lastWeatherStr = weather->data.weather;
-        lastWeatherIcon = weather->data.icon_str;
-      }
-
-      // 3. Tasks (Check if minute changed OR task list changed)
-      std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
-      bool tasksNeedUpdate =
-          (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount);
-
-      if (tasksNeedUpdate) {
-        renderTasksPartial(displayDrv);
-        lastTaskCount = tasks.size();
-        lastTasksMinute = now.minute;
-      }
-
-      // 4. Status Bar (WiFi status change or Minute change for time)
-      bool wifiState = conn->isConnected();
-      if (wifiState != lastWifiState || now.minute != lastStatusBarMinute) {
-        renderStatusBarPartial(displayDrv);
-        lastWifiState = wifiState;
-        lastStatusBarMinute = now.minute;
-      }
+    if (now.minute != lastMinute) {
+      renderTimePartial(displayDrv);
+      lastMinute = now.minute;
     }
 
-    // Check Sensor (every 60 seconds)
+    if (weather->data.temp != lastWeatherTemp ||
+        weather->data.weather != lastWeatherStr ||
+        String(weather->data.icon_str) != lastWeatherIcon) {
+      renderWeatherPartial(displayDrv);
+      lastWeatherTemp = weather->data.temp;
+      lastWeatherStr = weather->data.weather;
+      lastWeatherIcon = weather->data.icon_str;
+    }
+
+    std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
+    bool tasksNeedUpdate =
+        (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount);
+    if (tasksNeedUpdate) {
+      renderTasksPartial(displayDrv);
+      lastTaskCount = tasks.size();
+      lastTasksMinute = now.minute;
+    }
+
+    bool wifiState = conn->isConnected();
+    if (wifiState != lastWifiState || now.minute != lastStatusBarMinute) {
+      renderStatusBarPartial(displayDrv);
+      lastWifiState = wifiState;
+      lastStatusBarMinute = now.minute;
+    }
+
     if (nowMs - lastSensorCheck >= 60000) {
       lastSensorCheck = nowMs;
       float temp, hum;
@@ -154,7 +155,6 @@ private:
   int lastTasksMinute = -1;
   float lastTemp = -999;
   float lastHum = -999;
-  uint32_t lastTimeCheck = 0;
   uint32_t lastSensorCheck = 0;
   int lastWeatherTemp = -999;
   String lastWeatherStr = "";
@@ -167,7 +167,6 @@ private:
     DateTime now = rtc->getTime();
     lastMinute = now.minute;
     lastTasksMinute = now.minute;
-    lastTimeCheck = millis();
     lastSensorCheck = millis();
 
     float t, h;

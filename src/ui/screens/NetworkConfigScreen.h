@@ -2,6 +2,7 @@
 
 #include "../../drivers/RtcDriver.h"
 #include "../../managers/ConnectionManager.h"
+#include "../../utils/WakeTiming.h"
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
@@ -36,6 +37,11 @@ public:
     updateState();
   }
 
+  uint32_t getIdleSleepIntervalMs() const override {
+    return WakeTiming::getMsUntilNextMinuteBoundary(rtc->getSoftwareTime(),
+                                                    millis());
+  }
+
   void update() override {
     if (!uiManager)
       return;
@@ -43,21 +49,15 @@ public:
     if (!displayDrv)
       return;
 
-    uint32_t nowMs = millis();
-
     if (fullRefreshNeeded) {
       draw(displayDrv);
       return;
     }
 
-    // Update time every 5 seconds if minute changed
-    if (nowMs - lastTimeCheck >= 5000) {
-      lastTimeCheck = nowMs;
-      DateTime now = rtc->getTime();
-      if (now.minute != lastMinute) {
-        renderTimePartial(displayDrv);
-        lastMinute = now.minute;
-      }
+    DateTime now = rtc->getTime();
+    if (now.minute != lastMinute) {
+      renderTimePartial(displayDrv);
+      lastMinute = now.minute;
     }
   }
 
@@ -82,12 +82,10 @@ private:
 
   bool fullRefreshNeeded = true;
   int lastMinute = -1;
-  uint32_t lastTimeCheck = 0;
 
   void updateState() {
     DateTime now = rtc->getTime();
     lastMinute = now.minute;
-    lastTimeCheck = millis();
   }
 
   void renderAll(DisplayDriver *displayDrv) {

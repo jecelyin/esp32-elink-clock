@@ -15,6 +15,8 @@ public:
   void syncTime();
   void flushPendingRtcSync();
   void enableNetwork(bool enable);
+  void startScheduledSyncIfDue(uint32_t now);
+  uint32_t getNextScheduledWorkDelayMs(uint32_t now) const;
   bool isNetworkEnabled() const { return networkEnabled; }
   bool isSyncComplete();
 
@@ -31,6 +33,7 @@ private:
   unsigned long lastSyncTime = 0;
   unsigned long lastReconnectAttempt = 0;
   unsigned long lastRtcSyncAttempt = 0;
+  unsigned long lastNetworkPowerOnTime = 0;
   uint8_t rtcSyncFailCount = 0;
   bool networkEnabled = false;
   bool firstConnectAttempted = false;

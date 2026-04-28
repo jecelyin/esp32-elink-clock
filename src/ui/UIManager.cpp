@@ -131,3 +131,10 @@ void UIManager::switchScreen(ScreenState state) {
     currentScreenObj->draw(display);
   }
 }
+
+uint32_t UIManager::getIdleSleepIntervalMs() const {
+  if (currentScreenObj == nullptr) {
+    return 30000UL;
+  }
+  return currentScreenObj->getIdleSleepIntervalMs();
+}

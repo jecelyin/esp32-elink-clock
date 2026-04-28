@@ -27,7 +27,9 @@ bool RtcDriver::init() {
 DateTime RtcDriver::getTime() {
   if (_hasCachedTime && _lastReadTime != 0 &&
       millis() - _lastReadTime < RTC_CACHE_MS) {
-    return _cachedTime;
+    // 关键逻辑：缓存窗口内返回软件时钟推进后的结果，
+    // 避免 UI 和闹钟在 5 秒缓存期内看到“冻结时间”。
+    return getSoftwareTime();
   }
   uint8_t buffer[7] = {0};
   if (!readBytes(RX8010_REG_SEC, buffer, sizeof(buffer)))

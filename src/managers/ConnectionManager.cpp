@@ -5,6 +5,7 @@
 namespace {
 constexpr uint32_t CONFIG_PORTAL_TIMEOUT_SEC = 120UL;
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_SEC = 20UL;
+constexpr uint32_t AUTO_NETWORK_SYNC_INTERVAL_MS = 3600000UL;
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 30000UL;
 constexpr uint32_t NTP_SYNC_INTERVAL_MS = 3600000UL;
 constexpr uint32_t RTC_SYNC_RETRY_INTERVAL_MS = 1000UL;
@@ -88,6 +89,20 @@ void ConnectionManager::flushPendingRtcSync() {
   }
 }
 
+void ConnectionManager::startScheduledSyncIfDue(uint32_t now) {
+  if (networkEnabled) {
+    return;
+  }
+
+  bool neverStarted = lastNetworkPowerOnTime == 0;
+  bool intervalReached =
+      !neverStarted &&
+      now - lastNetworkPowerOnTime >= AUTO_NETWORK_SYNC_INTERVAL_MS;
+  if (neverStarted || intervalReached) {
+    enableNetwork(true);
+  }
+}
+
 void ConnectionManager::beginAutoConnect() {
   if (firstConnectAttempted)
     return;
@@ -115,6 +130,27 @@ uint32_t ConnectionManager::getRtcSyncRetryInterval() const {
              : intervalMs;
 }
 
+uint32_t ConnectionManager::getNextScheduledWorkDelayMs(uint32_t now) const {
+  if (lastNetworkPowerOnTime == 0 ||
+      now - lastNetworkPowerOnTime >= AUTO_NETWORK_SYNC_INTERVAL_MS) {
+    return 0;
+  }
+
+  uint32_t syncDelayMs =
+      AUTO_NETWORK_SYNC_INTERVAL_MS - (now - lastNetworkPowerOnTime);
+  if (!pendingSync) {
+    return syncDelayMs;
+  }
+
+  uint32_t retryIntervalMs = getRtcSyncRetryInterval();
+  if (lastRtcSyncAttempt == 0 || now - lastRtcSyncAttempt >= retryIntervalMs) {
+    return 0;
+  }
+
+  uint32_t retryDelayMs = retryIntervalMs - (now - lastRtcSyncAttempt);
+  return retryDelayMs < syncDelayMs ? retryDelayMs : syncDelayMs;
+}
+
 void ConnectionManager::powerOffNetwork() {
   // 先确认门户真实处于激活状态，再调用关闭接口，避免 WiFiManager
   // 内部空指针解引用。
@@ -132,6 +168,7 @@ void ConnectionManager::powerOnNetwork() {
   networkEnabled = true;
   firstConnectAttempted = false;
   lastReconnectAttempt = 0;
+  lastNetworkPowerOnTime = millis();
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(true);
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);

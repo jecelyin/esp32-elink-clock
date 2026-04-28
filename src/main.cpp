@@ -12,6 +12,7 @@
 #include "managers/WeatherManager.h"
 #include "ui/UIManager.h"
 #include "utils/I2CBus.h"
+#include "utils/SleepLogger.h"
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <SPIFFS.h>
@@ -43,9 +44,13 @@ UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
 TaskHandle_t networkTaskHandle = NULL;
 
 namespace {
-constexpr uint32_t WIFI_SYNC_INTERVAL_MS = 3600000UL;
 constexpr uint32_t WIFI_SYNC_TIMEOUT_MS = 120000UL;
-constexpr uint64_t IDLE_LIGHT_SLEEP_US = 950000ULL;
+constexpr uint32_t BUTTON_WAKE_GRACE_MS = 120UL;
+constexpr uint32_t USER_ACTIVITY_GRACE_MS = 2000UL;
+constexpr uint32_t ALARM_IDLE_CHECK_INTERVAL_MS = 3600000UL;
+constexpr uint32_t ACTIVE_LOOP_DELAY_MS = 50UL;
+uint32_t g_lastButtonWakeMs = 0;
+uint32_t g_lastUserActivityMs = 0;
 
 void configurePowerSaving() {
   setCpuFrequencyMhz(80);
@@ -54,7 +59,7 @@ void configurePowerSaving() {
 #if defined(CONFIG_PM_ENABLE) && CONFIG_PM_ENABLE
   esp_pm_config_t pm_config = {.max_freq_mhz = 80,
                                .min_freq_mhz = 40,
-                               .light_sleep_enable = true};
+                               .light_sleep_enable = false};
   esp_pm_configure(&pm_config);
 #endif
 }
@@ -64,54 +69,99 @@ bool isButtonHeld() {
          digitalRead(KEY_ENTER) == LOW;
 }
 
+bool isWithinGracePeriod(uint32_t lastMs, uint32_t graceMs) {
+  return lastMs != 0 && millis() - lastMs < graceMs;
+}
+
+void markUserActivity() { g_lastUserActivityMs = millis(); }
+
+uint32_t getAlarmWakeDelayMs(uint32_t nowMs) {
+  if (alarmManager.isRinging()) {
+    return ALARM_IDLE_CHECK_INTERVAL_MS;
+  }
+
+  return alarmManager.getNextWakeDelayMs(rtcDriver.getSoftwareTime(), nowMs);
+}
+
+uint32_t getIdleSleepDelayMs() {
+  uint32_t nowMs = millis();
+  uint32_t nextDelayMs = uiManager.getIdleSleepIntervalMs();
+  uint32_t alarmDelayMs = getAlarmWakeDelayMs(nowMs);
+  uint32_t networkDelayMs =
+      connectionManager.getNextScheduledWorkDelayMs(nowMs);
+  if (alarmDelayMs < nextDelayMs) {
+    nextDelayMs = alarmDelayMs;
+  }
+  if (networkDelayMs < nextDelayMs) {
+    nextDelayMs = networkDelayMs;
+  }
+  return nextDelayMs;
+}
+
+void runScheduledTasks() {
+  connectionManager.startScheduledSyncIfDue(millis());
+  alarmManager.check(rtcDriver.getTime());
+}
+
 bool canEnterIdleSleep() {
   if (connectionManager.isNetworkEnabled() || alarmManager.isRinging() ||
-      audioDriver.isPlaying() || isButtonHeld()) {
+      audioDriver.isPlaying() || isButtonHeld() ||
+      isWithinGracePeriod(g_lastButtonWakeMs, BUTTON_WAKE_GRACE_MS) ||
+      isWithinGracePeriod(g_lastUserActivityMs, USER_ACTIVITY_GRACE_MS)) {
     return false;
   }
 
   ScreenState state = uiManager.getCurrentState();
-  return state != SCREEN_RADIO && state != SCREEN_MUSIC &&
-         state != SCREEN_NETWORK_CONFIG;
+  return state != SCREEN_RADIO && state != SCREEN_MUSIC;
 }
 
 void idleOrLightSleep() {
   if (!canEnterIdleSleep()) {
-    delay(50);
+    delay(ACTIVE_LOOP_DELAY_MS);
     return;
   }
 
+  uint32_t sleepDelayMs = getIdleSleepDelayMs();
+  if (sleepDelayMs == 0) {
+    delay(ACTIVE_LOOP_DELAY_MS);
+    return;
+  }
+  uint64_t sleepDurationUs = static_cast<uint64_t>(sleepDelayMs) * 1000ULL;
+
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-  esp_sleep_enable_timer_wakeup(IDLE_LIGHT_SLEEP_US);
+  esp_sleep_enable_timer_wakeup(sleepDurationUs);
   gpio_wakeup_enable((gpio_num_t)KEY_LEFT, GPIO_INTR_LOW_LEVEL);
   gpio_wakeup_enable((gpio_num_t)KEY_RIGHT, GPIO_INTR_LOW_LEVEL);
   gpio_wakeup_enable((gpio_num_t)KEY_ENTER, GPIO_INTR_LOW_LEVEL);
   esp_sleep_enable_gpio_wakeup();
+  SleepLogger::logEnterLightSleep();
   esp_light_sleep_start();
+
+  esp_sleep_wakeup_cause_t wakeupCause = esp_sleep_get_wakeup_cause();
+  SleepLogger::logWakeFromLightSleep(wakeupCause);
+
+  if (wakeupCause == ESP_SLEEP_WAKEUP_GPIO) {
+    // 关键逻辑：被按键从轻睡眠唤醒后，需要立即把“当前仍按下”的状态
+    // 同步给输入状态机，否则短按会在下一轮再次入睡前被吞掉。
+    g_lastButtonWakeMs = millis();
+    markUserActivity();
+    inputDriver.syncWakePressedButtons();
+  }
 }
 } // namespace
 
 #include <esp_task_wdt.h>
 
 void networkTask(void *pvParameters) {
-  static uint32_t lastWiFiEnable = 0;
   static uint32_t wifiSessionStart = 0;
 
   while (true) {
     uint32_t now = millis();
 
-    // 定时开启 WiFi 进行同步
-    if (now - lastWiFiEnable >= WIFI_SYNC_INTERVAL_MS ||
-        lastWiFiEnable == 0) {
-      if (!connectionManager.isNetworkEnabled()) {
-        Serial.println("Scheduled WiFi Sync Starting...");
-        connectionManager.enableNetwork(true);
-        lastWiFiEnable = now;
+    if (connectionManager.isNetworkEnabled()) {
+      if (wifiSessionStart == 0) {
         wifiSessionStart = now;
       }
-    }
-
-    if (connectionManager.isNetworkEnabled()) {
       connectionManager.loop();
 
       // Only update weather on Home or Weather screens
@@ -129,10 +179,12 @@ void networkTask(void *pvParameters) {
           (!weatherNeeded || weatherFresh)) {
         Serial.println("Sync Complete, powering off WiFi...");
         connectionManager.enableNetwork(false);
+        wifiSessionStart = 0;
       } else if (state != SCREEN_NETWORK_CONFIG &&
                  now - wifiSessionStart > WIFI_SYNC_TIMEOUT_MS) {
         Serial.println("WiFi sync timeout, powering off WiFi...");
         connectionManager.enableNetwork(false);
+        wifiSessionStart = 0;
       }
     }
 
@@ -158,11 +210,6 @@ void setup() {
   pinMode(CODEC_EN, OUTPUT);
   pinMode(AMP_EN, OUTPUT);
   pinMode(RADIO_EN, OUTPUT);
-
-  // Input Keys
-  pinMode(KEY_LEFT, INPUT_PULLUP);
-  pinMode(KEY_RIGHT, INPUT_PULLUP);
-  pinMode(KEY_ENTER, INPUT_PULLUP);
 
   digitalWrite(AMP_EN, LOW); // Keep Amp off initially
   digitalWrite(CODEC_EN, LOW);
@@ -271,18 +318,8 @@ void setup() {
 void loop() {
   uint32_t t_start = millis();
 
+  runScheduledTasks();
   connectionManager.flushPendingRtcSync();
-
-  // System checks (Alarms, RTC) - Throttle to every 5 seconds to reduce I2C
-  // flood
-  // System checks (Alarms, RTC) - 降低频率，仅在非响铃时减少 I2C 通信
-  static uint32_t lastSystemCheck = 0;
-  uint32_t checkInterval =
-      alarmManager.isRinging() ? 1000 : 30000; // 正常 30s 检查一次
-  if (millis() - lastSystemCheck >= checkInterval) {
-    lastSystemCheck = millis();
-    alarmManager.check(rtcDriver.getTime());
-  }
 
   t_start = millis();
   uiManager.update();
@@ -304,6 +341,7 @@ void loop() {
   // Serial.printf("Input loop: %ums\n", millis() - t_start);
 
   if (btn != BTN_NONE) {
+    markUserActivity();
     Serial.print("Button Event: ");
     Serial.println((int)btn);
     if (btn == BTN_ENTER_LONG) {

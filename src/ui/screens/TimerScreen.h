@@ -31,6 +31,10 @@ public:
     lastFocusIndex = -1;
   }
 
+  uint32_t getIdleSleepIntervalMs() const override {
+    return isActive ? 1000UL : 3600000UL;
+  }
+
   void update() override {
     if (!isActive)
       return;

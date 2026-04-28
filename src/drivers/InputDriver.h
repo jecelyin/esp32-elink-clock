@@ -14,13 +14,17 @@ enum ButtonEvent {
 
 class Button {
 public:
-    Button(uint8_t pin, const char* name);
+    Button(uint8_t pin, const char* name, ButtonEvent shortPressEvent,
+           bool supportsLongPress = false);
     void begin();
     ButtonEvent update();
+    void syncPressedState(unsigned long now);
 
 private:
     uint8_t pin;
     const char* name;
+    ButtonEvent shortPressEvent;
+    bool supportsLongPress;
     int lastPhysicalState = HIGH;
     int stableState = HIGH;
     unsigned long lastDebounceTime = 0;
@@ -36,6 +40,7 @@ public:
   InputDriver();
   void begin();
   ButtonEvent loop();
+  void syncWakePressedButtons();
 
 private:
   Button enterButton;
