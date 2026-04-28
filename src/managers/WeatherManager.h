@@ -2,7 +2,6 @@
 
 #include "ConfigManager.h"
 #include <ArduinoJson.h>
-#include <HTTPClient.h>
 #include <functional>
 #include <vector>
 
@@ -57,13 +56,14 @@ public:
 private:
   ConfigManager *configMgr;
   unsigned long lastUpdate = 0;
+  unsigned long lastAttemptTime = 0;
+  bool updateInProgress = false;
 
-  void fetchCurrentWeather();
-  void fetchForecastWeather();
-  void fetchHourlyWeather();
-  void fetchDailyWeather();
-  void fetchWarning();
-  const char *getIcon(int code);
-  bool requestAPI(const char *url,
-                  std::function<void(JsonDocument &)> callback);
+  bool canStartUpdate(uint32_t now) const;
+  bool updateWeatherBatch();
+  bool fetchCurrentWeather();
+  bool fetchForecastWeather();
+  bool fetchHourlyWeather();
+  bool fetchDailyWeather();
+  bool fetchWarning();
 };

@@ -42,7 +42,9 @@ public:
 
   // Core Time Functions
   DateTime getTime();
-  void setTime(DateTime dt);
+  bool setTime(const DateTime &dt);
+  void setSoftwareTime(const DateTime &dt);
+  DateTime getSoftwareTime() const;
 
   // Individual Getters/Setters
   void setSecond(uint8_t seconds);
@@ -74,16 +76,39 @@ public:
                    const char *time); // Supports __DATE__, __TIME__
 
 private:
+  bool canRetryAccess() const;
   uint8_t decToBcd(uint8_t val);
   uint8_t bcdToDec(uint8_t val);
-  uint8_t readRegister(uint8_t reg);
-  void writeRegister(uint8_t reg, uint8_t val);
+  void drainWire();
+  DateTime getFallbackTime() const;
+  DateTime calculateSoftwareTime() const;
+  DateTime fromTimeT(time_t value) const;
+  uint32_t getRetryDelay() const;
+  time_t toTimeT(const DateTime &dt) const;
+  bool readBytes(uint8_t reg, uint8_t *buffer, size_t length);
+  bool readRegister(uint8_t reg, uint8_t &value);
+  bool recoverAfterFailedAttempt(uint8_t attempt);
+  void seedSoftwareClock(const DateTime &dt);
+  bool tryReadBytes(uint8_t reg, uint8_t *buffer, size_t length);
+  bool tryWriteBytes(uint8_t reg, const uint8_t *buffer, size_t length);
+  bool writeBytes(uint8_t reg, const uint8_t *buffer, size_t length,
+                  bool ignoreRetry = false);
+  bool writeRegister(uint8_t reg, uint8_t val, bool ignoreRetry = false);
+  void markBusFailure(const char *operation, int code);
+  void markReadSuccess(const DateTime &dt);
 
   // RX8010 specific: The Week register is a bitmask, not a number 0-6.
   // Datasheet Section 13.1.2, Page 15
   uint8_t weekBinToBitmask(uint8_t week0to6);
   uint8_t weekBitmaskToBin(uint8_t bitmask);
 
-  DateTime _cachedTime;
+  DateTime _cachedTime = {0, 0, 0, 1, 1, 0, 6};
+  DateTime _softBaseTime = {0, 0, 0, 1, 1, 0, 6};
+  bool _hasCachedTime = false;
+  bool _hasSoftwareTime = false;
+  uint8_t _failureCount = 0;
   uint32_t _lastReadTime = 0;
+  uint32_t _softBaseMillis = 0;
+  uint32_t _lastFailureTime = 0;
+  uint32_t _lastErrorLogTime = 0;
 };

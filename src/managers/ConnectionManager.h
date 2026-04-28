@@ -13,18 +13,25 @@ public:
   bool isConnected();
   void startAP();
   void syncTime();
+  void flushPendingRtcSync();
   void enableNetwork(bool enable);
   bool isNetworkEnabled() const { return networkEnabled; }
   bool isSyncComplete();
 
-  bool hasPendingSync() const { return pendingSync; }
-  DateTime getNtpTime() const { return ntpTime; }
-  void clearPendingSync() { pendingSync = false; }
-
 private:
+  void beginAutoConnect();
+  uint32_t getRtcSyncRetryInterval() const;
+  void powerOffNetwork();
+  void powerOnNetwork();
+  void retryWiFiConnection();
+  void stopPortalIfActive();
+
   ConfigManager *configMgr;
   RtcDriver *rtcDriver;
   unsigned long lastSyncTime = 0;
+  unsigned long lastReconnectAttempt = 0;
+  unsigned long lastRtcSyncAttempt = 0;
+  uint8_t rtcSyncFailCount = 0;
   bool networkEnabled = false;
   bool firstConnectAttempted = false;
   bool pendingSync = false;

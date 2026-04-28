@@ -11,10 +11,12 @@
 #include "managers/ConnectionManager.h"
 #include "managers/WeatherManager.h"
 #include "ui/UIManager.h"
+#include "utils/I2CBus.h"
 #include <Arduino.h>
+#include <driver/gpio.h>
 #include <SPIFFS.h>
-#include <Wire.h>
 #include <esp_pm.h>
+#include <esp_sleep.h>
 #include <esp_wifi.h>
 
 // Global Objects
@@ -38,24 +40,74 @@ UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
 
 // #include <nvs_flash.h>
 
-bool networkStarted = false;
 TaskHandle_t networkTaskHandle = NULL;
+
+namespace {
+constexpr uint32_t WIFI_SYNC_INTERVAL_MS = 3600000UL;
+constexpr uint32_t WIFI_SYNC_TIMEOUT_MS = 120000UL;
+constexpr uint64_t IDLE_LIGHT_SLEEP_US = 950000ULL;
+
+void configurePowerSaving() {
+  setCpuFrequencyMhz(80);
+  btStop();
+
+#if defined(CONFIG_PM_ENABLE) && CONFIG_PM_ENABLE
+  esp_pm_config_t pm_config = {.max_freq_mhz = 80,
+                               .min_freq_mhz = 40,
+                               .light_sleep_enable = true};
+  esp_pm_configure(&pm_config);
+#endif
+}
+
+bool isButtonHeld() {
+  return digitalRead(KEY_LEFT) == LOW || digitalRead(KEY_RIGHT) == LOW ||
+         digitalRead(KEY_ENTER) == LOW;
+}
+
+bool canEnterIdleSleep() {
+  if (connectionManager.isNetworkEnabled() || alarmManager.isRinging() ||
+      audioDriver.isPlaying() || isButtonHeld()) {
+    return false;
+  }
+
+  ScreenState state = uiManager.getCurrentState();
+  return state != SCREEN_RADIO && state != SCREEN_MUSIC &&
+         state != SCREEN_NETWORK_CONFIG;
+}
+
+void idleOrLightSleep() {
+  if (!canEnterIdleSleep()) {
+    delay(50);
+    return;
+  }
+
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  esp_sleep_enable_timer_wakeup(IDLE_LIGHT_SLEEP_US);
+  gpio_wakeup_enable((gpio_num_t)KEY_LEFT, GPIO_INTR_LOW_LEVEL);
+  gpio_wakeup_enable((gpio_num_t)KEY_RIGHT, GPIO_INTR_LOW_LEVEL);
+  gpio_wakeup_enable((gpio_num_t)KEY_ENTER, GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+  esp_light_sleep_start();
+}
+} // namespace
 
 #include <esp_task_wdt.h>
 
 void networkTask(void *pvParameters) {
   static uint32_t lastWiFiEnable = 0;
-  const uint32_t WIFI_SYNC_INTERVAL = 3600000; // 每小时同步一次
+  static uint32_t wifiSessionStart = 0;
 
   while (true) {
     uint32_t now = millis();
 
     // 定时开启 WiFi 进行同步
-    if (now - lastWiFiEnable >= WIFI_SYNC_INTERVAL || lastWiFiEnable == 0) {
+    if (now - lastWiFiEnable >= WIFI_SYNC_INTERVAL_MS ||
+        lastWiFiEnable == 0) {
       if (!connectionManager.isNetworkEnabled()) {
         Serial.println("Scheduled WiFi Sync Starting...");
         connectionManager.enableNetwork(true);
         lastWiFiEnable = now;
+        wifiSessionStart = now;
       }
     }
 
@@ -69,10 +121,17 @@ void networkTask(void *pvParameters) {
       }
 
       // 同步完成后关闭 WiFi 以省电
-      // 判断条件：NTP 已同步且天气已更新（在过去 2 分钟内有更新）
+      // 判断条件：NTP 已同步；在首页/天气页时还要求天气刚更新
+      ScreenState state = uiManager.getCurrentState();
+      bool weatherNeeded = state == SCREEN_HOME || state == SCREEN_WEATHER;
+      bool weatherFresh = millis() - weatherManager.getLastUpdate() < 120000;
       if (connectionManager.isSyncComplete() &&
-          (millis() - weatherManager.getLastUpdate() < 120000)) {
+          (!weatherNeeded || weatherFresh)) {
         Serial.println("Sync Complete, powering off WiFi...");
+        connectionManager.enableNetwork(false);
+      } else if (state != SCREEN_NETWORK_CONFIG &&
+                 now - wifiSessionStart > WIFI_SYNC_TIMEOUT_MS) {
+        Serial.println("WiFi sync timeout, powering off WiFi...");
         connectionManager.enableNetwork(false);
       }
     }
@@ -82,17 +141,12 @@ void networkTask(void *pvParameters) {
 }
 
 void setup() {
-  setCpuFrequencyMhz(80); // 降低主频至 80MHz 以节省功耗
+#if ENABLE_SERIAL_DEBUG
   Serial.begin(115200);
   delay(1000);
   Serial.println("System Starting with Power Optimization...");
-
-  // 启用自动电源管理 (轻度睡眠)
-#if CONFIG_PM_ENABLE
-  esp_pm_config_esp32_t pm_config = {
-      .max_freq_mhz = 80, .min_freq_mhz = 40, .light_sleep_enable = true};
-  esp_pm_configure(&pm_config);
 #endif
+  configurePowerSaving();
 
   pinMode(EPD_BUSY, INPUT); // EPD BUSY is usually input
   pinMode(SD_EN, OUTPUT);
@@ -111,9 +165,10 @@ void setup() {
   pinMode(KEY_ENTER, INPUT_PULLUP);
 
   digitalWrite(AMP_EN, LOW); // Keep Amp off initially
+  digitalWrite(CODEC_EN, LOW);
   digitalWrite(RADIO_EN, LOW);
 
-  Wire.begin(I2C_SDA, I2C_SCL);
+  I2CBus::begin();
 
   delay(100); // Let power stabilize
   // Init Drivers
@@ -175,9 +230,9 @@ void setup() {
 
   if (!rtcDriver.init()) {
     Serial.println("RTC Init Failed");
-    // return; // Don't return, try to proceed
+  } else {
+    Serial.println("RTC Init Success");
   }
-  Serial.println("RTC Init Success");
 
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
@@ -185,15 +240,16 @@ void setup() {
     Serial.println("SPIFFS Mount Success");
   }
 
-  if (!sensorDriver.init())
+  if (!sensorDriver.init()) {
     Serial.println("Sensor Init Failed");
-  Serial.println("Sensor Init Success");
+  } else {
+    Serial.println("Sensor Init Success");
+  }
 
   radioDriver.init();
   Serial.println("Radio Init Success");
 
-  audioDriver.init();
-  Serial.println("Audio Init Success");
+  Serial.println("Audio Driver Lazy Init Enabled");
 
   connectionManager.begin(&configManager, &rtcDriver);
   Serial.println("Connection Manager Init Success");
@@ -215,11 +271,7 @@ void setup() {
 void loop() {
   uint32_t t_start = millis();
 
-  // Handle pending time sync from ConnectionManager
-  if (connectionManager.hasPendingSync()) {
-    rtcDriver.setTime(connectionManager.getNtpTime());
-    connectionManager.clearPendingSync();
-  }
+  connectionManager.flushPendingRtcSync();
 
   // System checks (Alarms, RTC) - Throttle to every 5 seconds to reduce I2C
   // flood
@@ -236,21 +288,13 @@ void loop() {
   uiManager.update();
   // Serial.printf("UI update: %ums\n", millis() - t_start);
 
-  // Signal network startup after first UI draw
-  if (!networkStarted) {
-    networkStarted = true;
-    connectionManager.enableNetwork(true);
-  }
-
   t_start = millis();
   audioDriver.loop(); // For audio processing
   // Serial.printf("Audio loop: %ums\n", millis() - t_start);
 
   if (alarmManager.isRinging()) {
     if (!audioDriver.isPlaying()) {
-      // Ensure audio is init
-      audioDriver.init();
-      audioDriver.audio.connecttoFS(SPIFFS, "/alarm.mp3");
+      audioDriver.playFromFS(SPIFFS, "/alarm.mp3");
     }
   }
 
@@ -281,8 +325,8 @@ void loop() {
 
   // 外设电源动态管理
   if (!alarmManager.isRinging() && !audioDriver.isPlaying()) {
-    digitalWrite(AMP_EN, LOW);
-    digitalWrite(CODEC_EN, LOW);
+    if (uiManager.getCurrentState() != SCREEN_MUSIC)
+      audioDriver.end();
   } else {
     digitalWrite(CODEC_EN, HIGH);
     // digitalWrite(AMP_EN, HIGH); // 由音频驱动自行控制更佳
@@ -293,5 +337,5 @@ void loop() {
     digitalWrite(RADIO_EN, LOW);
   }
 
-  delay(50); // 增加延迟以允许 ESP32 进入自动轻度睡眠
+  idleOrLightSleep();
 }

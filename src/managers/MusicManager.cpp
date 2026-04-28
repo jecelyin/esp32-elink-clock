@@ -59,8 +59,12 @@ void MusicManager::playTrack(int index) {
 void MusicManager::togglePlay() {
   if (currentTrackIndex == -1 && !playlist.empty()) {
     playTrack(0);
+  } else if (audio->isPlaying()) {
+    audio->pause();
+  } else if (currentTrackIndex != -1) {
+    loadTrack(currentTrackIndex);
   } else {
-    audio->pause(); // Audio library pauseResume() handles both
+    audio->pause(); // Keep a no-op fallback if no track is selected
   }
 }
 
