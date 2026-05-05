@@ -8,6 +8,7 @@
 #include "screens/SettingsScreen.h"
 #include "screens/TimerScreen.h"
 #include "screens/WeatherScreen.h"
+#include "../utils/WakeTiming.h"
 
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
                      WeatherManager *weather, SensorDriver *sensor,
@@ -60,15 +61,18 @@ void UIManager::init() {
 }
 
 void UIManager::update() {
-  // Refresh logic is now handled by individual screens
-  // if (millis() - lastRefresh > 60000 || lastRefresh == 0) {
-  //   if (currentScreenObj)
-  //     currentScreenObj->draw(display);
-  //   lastRefresh = millis();
-  // }
-
   if (currentScreenObj)
     currentScreenObj->update();
+
+  if (statusBar && display) {
+    // 关键逻辑：首页顶部状态栏不显示时间，其余页面显示时间。
+    // 这里统一在 UIManager 层补齐状态栏局刷，避免每个页面各自维护分钟刷新，
+    // 从而修复“离开首页后顶部时间/联网状态不更新”的问题。
+    bool showTimeInStatusBar = currentScreenState != SCREEN_HOME;
+    if (statusBar->needsRefresh(showTimeInStatusBar)) {
+      statusBar->refreshPartial(display, showTimeInStatusBar);
+    }
+  }
 
   if (webMgr)
     webMgr->loop();
@@ -136,5 +140,18 @@ uint32_t UIManager::getIdleSleepIntervalMs() const {
   if (currentScreenObj == nullptr) {
     return 30000UL;
   }
-  return currentScreenObj->getIdleSleepIntervalMs();
+
+  uint32_t screenDelayMs = currentScreenObj->getIdleSleepIntervalMs();
+  bool statusBarShowsTime = currentScreenState != SCREEN_HOME;
+  if (!statusBarShowsTime || rtc == nullptr) {
+    return screenDelayMs;
+  }
+
+  // 关键逻辑：非首页页面虽然大多没有自己的 update() 定时器，
+  // 但顶部状态栏仍然要按分钟刷新时间。
+  // 如果这里继续沿用 Screen 默认的 1 小时休眠周期，主循环就只会在按键
+  // GPIO 唤醒时恢复执行，表现出来就是“只有按一下键，时间才跳一下”。
+  uint32_t minuteDelayMs = WakeTiming::getMsUntilNextMinuteBoundary(
+      rtc->getSoftwareTime(), millis());
+  return minuteDelayMs < screenDelayMs ? minuteDelayMs : screenDelayMs;
 }
