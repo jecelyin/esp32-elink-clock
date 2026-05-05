@@ -163,6 +163,7 @@ void networkTask(void *pvParameters) {
         wifiSessionStart = now;
       }
       connectionManager.loop();
+      alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
 
       // Only update weather on Home or Weather screens
       if (uiManager.getCurrentState() == SCREEN_HOME ||
@@ -300,6 +301,9 @@ void setup() {
 
   connectionManager.begin(&configManager, &rtcDriver);
   Serial.println("Connection Manager Init Success");
+
+  alarmManager.begin();
+  Serial.println("Alarm Manager Init Success");
 
   weatherManager.begin(&configManager);
   Serial.println("Weather Manager Init Success");

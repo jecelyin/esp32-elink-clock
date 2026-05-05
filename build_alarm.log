@@ -1,0 +1,100 @@
+********************************************************************************
+Obsolete PIO Core v6.1.18 is used (previous was 6.1.19)
+Please remove multiple PIO Cores from a system:
+https://docs.platformio.org/en/latest/core/installation/troubleshooting.html
+********************************************************************************
+Processing esp32dev (platform: espressif32; board: esp32dev; framework: arduino)
+--------------------------------------------------------------------------------
+PermissionError: Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/__main__.py", line 103, in main
+    cli()  # pylint: disable=no-value-for-parameter
+    ~~~^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/click/core.py", line 1157, in __call__
+    return self.main(*args, **kwargs)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/click/core.py", line 1078, in main
+    rv = self.invoke(ctx)
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/cli.py", line 85, in invoke
+    return super().invoke(ctx)
+           ~~~~~~~~~~~~~~^^^^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/click/core.py", line 1688, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/click/core.py", line 1434, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/click/core.py", line 783, in invoke
+    return __callback(*args, **kwargs)
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/click/decorators.py", line 33, in new_func
+    return f(get_current_context(), *args, **kwargs)
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/run/cli.py", line 147, in cli
+    process_env(
+    ~~~~~~~~~~~^
+        ctx,
+        ^^^^
+    ...<9 lines>...
+        verbose,
+        ^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/run/cli.py", line 210, in process_env
+    ).process()
+      ~~~~~~~^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/run/processor.py", line 81, in process
+    install_project_env_dependencies(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self.name,
+        ^^^^^^^^^^
+    ...<3 lines>...
+        },
+        ^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/commands/install.py", line 132, in install_project_env_dependencies
+    _install_project_env_platform(project_env, options),
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/commands/install.py", line 149, in _install_project_env_platform
+    PlatformPackageManager().install(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        spec,
+        ^^^^^
+    ...<3 lines>...
+        force=options.get("force"),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/manager/platform.py", line 50, in install
+    pkg = super().install(spec, force=force, skip_dependencies=True)
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/manager/_install.py", line 46, in install
+    self.lock()
+    ~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/manager/base.py", line 99, in lock
+    self._lockfile.acquire()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/lockfile.py", line 95, in acquire
+    return self._lock()
+           ~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/platformio/6.1.18_5/libexec/lib/python3.14/site-packages/platformio/package/lockfile.py", line 65, in _lock
+    self._fp = open(  # pylint: disable=consider-using-with
+               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self._lock_path, mode="w", encoding="utf8"
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+PermissionError: [Errno 1] Operation not permitted: '/Users/jecelyin/.platformio/platforms.lock'
+
+============================================================
+
+An unexpected error occurred. Further steps:
+
+* Verify that you have the latest version of PlatformIO using
+  `python -m pip install -U platformio` command
+
+* Try to find answer in FAQ Troubleshooting section
+  https://docs.platformio.org/page/faq/index.html
+
+* Report this problem to the developers
+  https://github.com/platformio/platformio-core/issues
+
+============================================================
+
