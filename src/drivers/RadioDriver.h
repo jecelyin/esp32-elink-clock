@@ -20,8 +20,6 @@ public:
   void getFormattedFrequency(char *s, uint8_t length);
   uint16_t getMinFrequency();
   uint16_t getMaxFrequency();
-  void setBias(bool on);
-  bool getBias();
   void debugRadioInfo();
   void getRadioInfo(RDA5807M_Info *info);
   void getAudioInfo(RDA5807M_AudioInfo *info);
@@ -36,5 +34,5 @@ public:
 private:
   RDA5807M radio;
   RDSParser rdsParser;
-  bool biasState;
+  uint16_t lastFrequency;
 };

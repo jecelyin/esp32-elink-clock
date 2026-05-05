@@ -50,32 +50,23 @@ void RadioScreen::initButtons() {
         strcpy(buttons[i].label, "<< SEEK");
       else
         strcpy(buttons[i].label, "SEEK >>");
-    } else if (i < 5) {
-      // Row 2: VOL and BIAS
-      int w1 = 66;
-      int w2 = 67;
-      int w3 = 67;
+    } else if (i < CONTROL_PRESET_START) {
+      // Row 2: VOL
       if (i == 2) {
         buttons[i].x = 0;
-        buttons[i].w = w1 + 1;
-      } else if (i == 3) {
-        buttons[i].x = w1;
-        buttons[i].w = w2 + 1;
-      } else if (i == 4) {
-        buttons[i].x = w1 + w2;
-        buttons[i].w = w3 + 1;
+      } else {
+        buttons[i].x = cellW;
       }
+      buttons[i].w = cellW + 1;
       buttons[i].y = startY + cellH;
       buttons[i].h = cellH + 1;
       if (i == 2)
         strcpy(buttons[i].label, "VOL -");
-      else if (i == 3)
+      else
         strcpy(buttons[i].label, "VOL +");
-      else if (i == 4)
-        strcpy(buttons[i].label, radio->getBias() ? "BIAS\nON" : "BIAS\nOFF");
     } else {
       // Presets
-      int pIdx = i - 5;
+      int pIdx = i - CONTROL_PRESET_START;
       int pW = 50;
       int pH = 50;
       int startX = 200;
@@ -533,23 +524,18 @@ bool RadioScreen::handleInput(UIKey key) {
         radio->setVolume(config->config.volume);
         config->save();
       }
-    } else if (focusedControl == 4) {
-      bool currentBias = radio->getBias();
-      radio->setBias(!currentBias);
-      strcpy(buttons[4].label, !currentBias ? "BIAS\nON" : "BIAS\nOFF");
-      // Trigger a redraw of this button
-      isFirstDraw = false; // Ensure we do a partial if possible, though
-                           // RadioScreen::draw handles it
-    } else if (focusedControl >= 5 && focusedControl <= 12) {
-      loadPreset(focusedControl - 5);
+    } else if (focusedControl >= CONTROL_PRESET_START &&
+               focusedControl < BUTTON_COUNT) {
+      loadPreset(focusedControl - CONTROL_PRESET_START);
     }
   }
   return needsRedraw;
 }
 
 bool RadioScreen::onLongPress() {
-  if (focusedControl >= 5 && focusedControl <= 12) {
-    savePreset(focusedControl - 5);
+  if (focusedControl >= CONTROL_PRESET_START &&
+      focusedControl < BUTTON_COUNT) {
+    savePreset(focusedControl - CONTROL_PRESET_START);
     return true; // Update UI to show saved state or just refresh
   } else {
     if (uiManager)
@@ -669,9 +655,4 @@ void RadioScreen::updateRDS(DisplayDriver *display, const char *text) {
     drawRDS(display, text, false);
   } while (display->display.nextPage());
   display->powerOff();
-}
-
-void RadioScreen::updateButtons(DisplayDriver *display) {
-  // This might be used if we need to redraw all buttons
-  // Currently we only use updateButtonFocus
 }

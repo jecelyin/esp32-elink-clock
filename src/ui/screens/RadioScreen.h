@@ -27,12 +27,12 @@ private:
     int x, y, w, h;
     char label[16];
   };
-  static const int BUTTON_COUNT = 13;
+  static const int CONTROL_PRESET_START = 4;
+  static const int BUTTON_COUNT = CONTROL_PRESET_START + 8;
   UIButton buttons[BUTTON_COUNT];
 
   // UI State
-  int focusedControl; // 0: Seek-, 1: Seek+, 2: Vol-, 3: Vol+, 4: BIAS, 5-12:
-                      // Presets
+  int focusedControl; // 0: Seek-, 1: Seek+, 2: Vol-, 3: Vol+, 4-11: Presets
   int lastFocusedControl;
   uint16_t lastFreq;
   int lastVol;
@@ -62,7 +62,6 @@ private:
   void updateHeader(DisplayDriver *display, int vol, bool isStereo, int rssi);
   void updateSignal(DisplayDriver *display, int rssi);
   void updateRDS(DisplayDriver *display, const char *text);
-  void updateButtons(DisplayDriver *display);
 
   void savePreset(int index);
   void loadPreset(int index);

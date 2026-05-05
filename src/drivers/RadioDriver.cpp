@@ -4,6 +4,9 @@
 namespace {
 constexpr uint32_t RADIO_I2C_LOCK_TIMEOUT_MS = 300UL;
 constexpr uint32_t RADIO_I2C_ERROR_LOG_INTERVAL_MS = 3000UL;
+constexpr uint16_t RADIO_DEFAULT_FREQUENCY = 8750;
+constexpr uint16_t RADIO_MIN_FREQUENCY = 8750;
+constexpr uint16_t RADIO_MAX_FREQUENCY = 10800;
 uint32_t g_lastRadioI2CErrorLogTime = 0;
 
 void logRadioI2CFailure(const char *operation) {
@@ -39,6 +42,13 @@ Value runWithRadioBusLock(const char *operation, Value fallback,
   }
   return callback();
 }
+
+uint16_t normalizeFrequency(uint16_t freq) {
+  if (freq < RADIO_MIN_FREQUENCY || freq > RADIO_MAX_FREQUENCY) {
+    return RADIO_DEFAULT_FREQUENCY;
+  }
+  return freq;
+}
 } // namespace
 
 static RDSParser *g_rdsParser = nullptr;
@@ -47,11 +57,12 @@ static void rdsCallback(uint16_t b1, uint16_t b2, uint16_t b3, uint16_t b4) {
     g_rdsParser->decode(b1, b2, b3, b4);
 }
 
-RadioDriver::RadioDriver() { g_rdsParser = &rdsParser; }
+RadioDriver::RadioDriver() : lastFrequency(RADIO_DEFAULT_FREQUENCY) {
+  g_rdsParser = &rdsParser;
+}
 
 bool RadioDriver::init() {
-  // digitalWrite(BIAS_CTR, LOW);
-  biasState = false;
+  lastFrequency = RADIO_DEFAULT_FREQUENCY;
   return true;
 }
 
@@ -72,6 +83,9 @@ void RadioDriver::setup() {
     radio.setMono(false);
     radio.setMute(false);
     radio.attachReceiveRDS(rdsCallback);
+    // 关键逻辑：RDA5807M 仅完成 init 还不足以让模拟音频链路进入稳定输出，
+    // 如果这里不主动回写一次频点，首次进入页面时通常要先 seek 一次才会听到沙沙声。
+    radio.setFrequency(lastFrequency);
   });
 
   if (!busReady) {
@@ -90,8 +104,10 @@ void RadioDriver::powerDown() {
 }
 
 void RadioDriver::setFrequency(uint16_t freq) {
+  lastFrequency = normalizeFrequency(freq);
   rdsParser.reset();
-  runWithRadioBusLock("setFrequency", [&]() { radio.setFrequency(freq); });
+  runWithRadioBusLock("setFrequency",
+                      [&]() { radio.setFrequency(lastFrequency); });
 }
 
 void RadioDriver::setVolume(uint8_t vol) {
@@ -113,8 +129,10 @@ void RadioDriver::seekDown() {
 }
 
 uint16_t RadioDriver::getFrequency() {
-  return runWithRadioBusLock("getFrequency", (uint16_t)0,
-                             [&]() { return radio.getFrequency(); });
+  uint16_t freq = runWithRadioBusLock("getFrequency", lastFrequency,
+                                      [&]() { return radio.getFrequency(); });
+  lastFrequency = normalizeFrequency(freq);
+  return lastFrequency;
 }
 
 void RadioDriver::getFormattedFrequency(char *s, uint8_t length) {
@@ -125,21 +143,12 @@ void RadioDriver::getFormattedFrequency(char *s, uint8_t length) {
 }
 
 uint16_t RadioDriver::getMinFrequency() {
-  // FM Standard: 87.5 MHz = 8750
-  return 8750;
+  return RADIO_MIN_FREQUENCY;
 }
 
 uint16_t RadioDriver::getMaxFrequency() {
-  // FM Standard: 108.0 MHz = 10800
-  return 10800;
+  return RADIO_MAX_FREQUENCY;
 }
-
-void RadioDriver::setBias(bool on) {
-  // digitalWrite(BIAS_CTR, on ? HIGH : LOW);
-  biasState = on;
-}
-
-bool RadioDriver::getBias() { return biasState; }
 
 void RadioDriver::debugRadioInfo() {
   runWithRadioBusLock("debugRadioInfo", [&]() {
