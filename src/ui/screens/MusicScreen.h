@@ -62,6 +62,21 @@ private:
   void drawFooter(DisplayDriver *display);
   void drawPlaylist(DisplayDriver *display);
   void drawPlaybackControls(DisplayDriver *display);
+  bool isSymbolButton(int buttonIndex) const;
+  const uint8_t *getButtonFont(int buttonIndex) const;
+  uint16_t getButtonGlyph(int buttonIndex) const;
+  void drawButtonContent(DisplayDriver *display, int buttonIndex,
+                         const UIButton &btn, bool focused);
+  void drawButtonLabel(DisplayDriver *display, const UIButton &btn,
+                       const char *text, const uint8_t *font, bool focused,
+                       int offsetX = 0, int offsetY = 0);
+  void drawButtonGlyph(DisplayDriver *display, const UIButton &btn,
+                       const uint8_t *font, uint16_t glyph, bool focused,
+                       int offsetX = 0, int offsetY = 0);
+  void drawLoopButton(DisplayDriver *display, const UIButton &btn,
+                      bool focused);
+  void setAlignedPartialWindow(DisplayDriver *display, int x, int y, int w,
+                               int h);
 
   void updateProgress(DisplayDriver *display);
   void updateVolumeUI(DisplayDriver *display);

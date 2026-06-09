@@ -85,6 +85,14 @@ public:
     return false;
   }
 
+  bool onLongPress() override {
+    // 关键逻辑：UIManager 会把 ENTER 长按单独分发到 onLongPress()，
+    // 如果设置页不显式处理，这个手势不会复用 handleInput() 里的返回菜单逻辑。
+    if (uiManager)
+      uiManager->switchScreen(SCREEN_MENU);
+    return false;
+  }
+
 private:
   ConfigManager *config;
   StatusBar *statusBar;

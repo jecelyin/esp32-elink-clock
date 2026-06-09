@@ -15,6 +15,16 @@ const uint16_t COLOR_BG = GxEPD_WHITE;
 const uint16_t COLOR_FG = GxEPD_BLACK;
 } // namespace MusicLayout
 
+namespace MusicGlyphs {
+constexpr uint16_t PREV = 'G';
+constexpr uint16_t PLAY = 'E';
+constexpr uint16_t PAUSE = 'D';
+constexpr uint16_t NEXT = 'H';
+constexpr uint16_t PAGE_UP = 'O';
+constexpr uint16_t PAGE_DOWN = 'L';
+constexpr uint16_t LOOP = 'W';
+} // namespace MusicGlyphs
+
 MusicScreen::MusicScreen(MusicManager *music, StatusBar *statusBar,
                          ConfigManager *config)
     : music(music), statusBar(statusBar), config(config) {
@@ -166,27 +176,13 @@ void MusicScreen::drawLeftPanel(DisplayDriver *display) {
 
 void MusicScreen::drawPlaybackControls(DisplayDriver *display) {
   using namespace MusicLayout;
-  // Prev, Play/Pause, Next Icons
-  // Using simple text/symbols for now as icons depend on available fonts
-
   for (int i = 0; i <= 2; i++) {
     UIButton &btn = buttons[i];
     bool focused = (focusedControl == i);
     if (focused)
       display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
     display->display.drawRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
-
-    display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
-    display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-    int tw = display->u8g2Fonts.getUTF8Width(btn.label);
-    display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2,
-                                 btn.y + btn.h / 2 + 5);
-
-    if (i == 1) {
-      display->u8g2Fonts.print(music->isPlaying() ? "||" : ">");
-    } else {
-      display->u8g2Fonts.print(btn.label);
-    }
+    drawButtonContent(display, i, btn, focused);
   }
 }
 
@@ -200,16 +196,13 @@ void MusicScreen::drawRightPanel(DisplayDriver *display) {
   display->display.drawLine(PANEL_LEFT_W + PANEL_RIGHT_W / 2, y,
                             PANEL_LEFT_W + PANEL_RIGHT_W / 2, y + 36, COLOR_FG);
 
+  display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
   for (int i = 7; i <= 8; i++) {
     UIButton &btn = buttons[i];
     bool focused = (focusedControl == i);
     if (focused)
       display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
-    display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
-    int tw = display->u8g2Fonts.getUTF8Width(btn.label);
-    display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2,
-                                 btn.y + btn.h / 2 + 5);
-    display->u8g2Fonts.print(btn.label);
+    drawButtonContent(display, i, btn, focused);
   }
 }
 
@@ -292,12 +285,7 @@ void MusicScreen::drawFooter(DisplayDriver *display) {
   bool focused = (focusedControl == 5);
   if (focused)
     display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
-  display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
-  display->u8g2Fonts.setCursor(btn.x + 5, btn.y + 20);
-  display->u8g2Fonts.print(
-      music->getLoopMode() == LOOP_ALL
-          ? "ALL"
-          : (music->getLoopMode() == LOOP_ONE ? "ONE" : "OFF"));
+  drawButtonContent(display, BTN_LOOP, btn, focused);
 }
 
 void MusicScreen::updateVolumeUI(DisplayDriver *display) {
@@ -309,9 +297,7 @@ void MusicScreen::updateVolumeUI(DisplayDriver *display) {
   bool focusedDec = (focusedControl == 3);
   if (focusedDec)
     display->display.fillRect(btnDec.x, btnDec.y, btnDec.w, btnDec.h, COLOR_FG);
-  display->u8g2Fonts.setForegroundColor(focusedDec ? COLOR_BG : COLOR_FG);
-  display->u8g2Fonts.setCursor(btnDec.x + 5, btnDec.y + 20);
-  display->u8g2Fonts.print("-");
+  drawButtonContent(display, BTN_VOL_DEC, btnDec, focusedDec);
 
   // Vol Val
   display->u8g2Fonts.setForegroundColor(COLOR_FG);
@@ -323,9 +309,129 @@ void MusicScreen::updateVolumeUI(DisplayDriver *display) {
   bool focusedInc = (focusedControl == 4);
   if (focusedInc)
     display->display.fillRect(btnInc.x, btnInc.y, btnInc.w, btnInc.h, COLOR_FG);
-  display->u8g2Fonts.setForegroundColor(focusedInc ? COLOR_BG : COLOR_FG);
-  display->u8g2Fonts.setCursor(btnInc.x + 5, btnInc.y + 20);
-  display->u8g2Fonts.print("+");
+  drawButtonContent(display, BTN_VOL_INC, btnInc, focusedInc);
+}
+
+bool MusicScreen::isSymbolButton(int buttonIndex) const {
+  return buttonIndex == BTN_PREV || buttonIndex == BTN_PLAY ||
+         buttonIndex == BTN_NEXT || buttonIndex == BTN_LOOP ||
+         buttonIndex == BTN_PAGE_UP || buttonIndex == BTN_PAGE_DOWN;
+}
+
+const uint8_t *MusicScreen::getButtonFont(int buttonIndex) const {
+  if (buttonIndex == BTN_PREV || buttonIndex == BTN_PLAY ||
+      buttonIndex == BTN_NEXT) {
+    return u8g2_font_open_iconic_play_2x_t;
+  }
+  if (buttonIndex == BTN_LOOP || buttonIndex == BTN_PAGE_UP ||
+      buttonIndex == BTN_PAGE_DOWN) {
+    return u8g2_font_open_iconic_arrow_2x_t;
+  }
+  return u8g2_font_helvB10_tf;
+}
+
+uint16_t MusicScreen::getButtonGlyph(int buttonIndex) const {
+  using namespace MusicGlyphs;
+  // 关键逻辑：u8g2 的 Open Iconic 字形是按官方图标顺序映射到 ASCII，
+  // 这里显式绑定每个按钮对应的 glyph，彻底替换此前的几何手绘符号。
+  switch (buttonIndex) {
+  case BTN_PREV:
+    return PREV;
+  case BTN_PLAY:
+    return music->isPlaying() ? PAUSE : PLAY;
+  case BTN_NEXT:
+    return NEXT;
+  case BTN_LOOP:
+    return LOOP;
+  case BTN_PAGE_UP:
+    return PAGE_UP;
+  case BTN_PAGE_DOWN:
+    return PAGE_DOWN;
+  default:
+    return 0;
+  }
+}
+
+void MusicScreen::drawButtonContent(DisplayDriver *display, int buttonIndex,
+                                    const UIButton &btn, bool focused) {
+  if (!isSymbolButton(buttonIndex)) {
+    drawButtonLabel(display, btn, buttons[buttonIndex].label,
+                    u8g2_font_helvB10_tf, focused);
+    return;
+  }
+  if (buttonIndex == BTN_LOOP) {
+    drawLoopButton(display, btn, focused);
+    return;
+  }
+  drawButtonGlyph(display, btn, getButtonFont(buttonIndex),
+                  getButtonGlyph(buttonIndex), focused);
+}
+
+void MusicScreen::drawButtonLabel(DisplayDriver *display, const UIButton &btn,
+                                  const char *text, const uint8_t *font,
+                                  bool focused, int offsetX, int offsetY) {
+  using namespace MusicLayout;
+  display->u8g2Fonts.setFontMode(1);
+  display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(focused ? COLOR_FG : COLOR_BG);
+  display->u8g2Fonts.setFont(font);
+
+  int tw = display->u8g2Fonts.getUTF8Width(text);
+  int ascent = display->u8g2Fonts.getFontAscent();
+  int descent = display->u8g2Fonts.getFontDescent();
+  int baseline = btn.y + (btn.h + ascent + descent) / 2 + offsetY;
+  display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2 + offsetX, baseline);
+  display->u8g2Fonts.print(text);
+
+  display->u8g2Fonts.setFontMode(1);
+  display->u8g2Fonts.setForegroundColor(COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(COLOR_BG);
+}
+
+void MusicScreen::drawButtonGlyph(DisplayDriver *display, const UIButton &btn,
+                                  const uint8_t *font, uint16_t glyph,
+                                  bool focused, int offsetX, int offsetY) {
+  using namespace MusicLayout;
+  display->u8g2Fonts.setFontMode(1);
+  display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(focused ? COLOR_FG : COLOR_BG);
+  display->u8g2Fonts.setFont(font);
+
+  int glyphWidth = u8g2_GetGlyphWidth(&(display->u8g2Fonts.u8g2), glyph);
+  int ascent = display->u8g2Fonts.getFontAscent();
+  int descent = display->u8g2Fonts.getFontDescent();
+  int baseline = btn.y + (btn.h + ascent + descent) / 2 + offsetY;
+  int x = btn.x + (btn.w - glyphWidth) / 2 + offsetX;
+  display->u8g2Fonts.drawGlyph(x, baseline, glyph);
+
+  display->u8g2Fonts.setForegroundColor(COLOR_FG);
+  display->u8g2Fonts.setBackgroundColor(COLOR_BG);
+}
+
+void MusicScreen::drawLoopButton(DisplayDriver *display, const UIButton &btn,
+                                 bool focused) {
+  // 关键逻辑：循环按钮的三态统一复用同一个 loop 图标，
+  // 再用小号字体叠加 “1” 或 “/”，保证整个按钮仍然是字体方案，
+  // 同时避免退回 ALL/ONE/OFF 这类文本。
+  drawButtonGlyph(display, btn, u8g2_font_open_iconic_arrow_2x_t,
+                  MusicGlyphs::LOOP, focused);
+
+  if (music->getLoopMode() == LOOP_ONE) {
+    drawButtonLabel(display, btn, "1", u8g2_font_5x8_tf, focused, 8, 7);
+    return;
+  }
+  if (music->getLoopMode() == LOOP_NONE) {
+    drawButtonLabel(display, btn, "/", u8g2_font_helvB08_tf, focused, 0, 1);
+  }
+}
+
+void MusicScreen::setAlignedPartialWindow(DisplayDriver *display, int x, int y,
+                                          int w, int h) {
+  using namespace MusicLayout;
+  int alignedX = max(0, (x / 8) * 8);
+  int right = min(SCREEN_W, x + w);
+  int alignedRight = min(SCREEN_W, ((right + 7) / 8) * 8);
+  display->display.setPartialWindow(alignedX, y, alignedRight - alignedX, h);
 }
 
 bool MusicScreen::handleInput(UIKey key) {
@@ -379,7 +485,7 @@ bool MusicScreen::onLongPress() {
 void MusicScreen::updateProgress(DisplayDriver *display) {
   using namespace MusicLayout;
   uint16_t y = SCREEN_H - FOOTER_H + 5;
-  display->display.setPartialWindow(15, y, SCREEN_W - 140, 25);
+  setAlignedPartialWindow(display, 15, y, SCREEN_W - 140, 25);
   display->display.firstPage();
   do {
     display->display.fillScreen(COLOR_BG);
@@ -399,51 +505,46 @@ void MusicScreen::updateProgress(DisplayDriver *display) {
 }
 
 void MusicScreen::updateFocus(DisplayDriver *display, int oldIdx, int newIdx) {
-  using namespace MusicLayout;
-  // Redraw both buttons
-  int indices[] = {oldIdx, newIdx};
-  for (int i : indices) {
-    if (i < 0 || i >= BUTTON_COUNT)
-      continue;
-    UIButton &btn = buttons[i];
-    display->display.setPartialWindow(btn.x, btn.y, btn.w, btn.h);
-    display->display.firstPage();
-    do {
-      display->display.fillScreen(COLOR_BG);
-      bool focused = (focusedControl == i);
-      if (focused)
-        display->display.fillRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
-      display->display.drawRect(btn.x, btn.y, btn.w, btn.h, COLOR_FG);
+  bool needsLeftRefresh =
+      (oldIdx >= BTN_PREV && oldIdx <= BTN_NEXT) ||
+      (newIdx >= BTN_PREV && newIdx <= BTN_NEXT);
+  bool needsFooterRefresh =
+      (oldIdx >= BTN_VOL_DEC && oldIdx <= BTN_LOOP) ||
+      (newIdx >= BTN_VOL_DEC && newIdx <= BTN_LOOP);
+  bool needsRightRefresh =
+      (oldIdx >= BTN_LIST && oldIdx <= BTN_PAGE_DOWN) ||
+      (newIdx >= BTN_LIST && newIdx <= BTN_PAGE_DOWN);
 
-      display->u8g2Fonts.setForegroundColor(focused ? COLOR_BG : COLOR_FG);
-      display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
-      int tw = display->u8g2Fonts.getUTF8Width(btn.label);
-      display->u8g2Fonts.setCursor(btn.x + (btn.w - tw) / 2,
-                                   btn.y + btn.h / 2 + 5);
-
-      if (i == BTN_PLAY) {
-        display->u8g2Fonts.print(music->isPlaying() ? "||" : ">");
-      } else {
-        display->u8g2Fonts.print(btn.label);
-      }
-    } while (display->display.nextPage());
+  // 关键逻辑：Music 页不同控件的完整绘制方式并不一致。
+  // 例如播放列表区域并不是一个普通按钮，循环按钮展示的也是动态文案 ALL/ONE/OFF。
+  // 如果焦点变化时直接按“通用按钮文本”局刷，会把列表区域误画成 List，
+  // 也会把循环模式错误覆盖成 L，最终表现为按钮文本乱码或内容错乱。
+  // 这里改为按功能区域重绘，确保局刷与首屏全量渲染走同一套绘制逻辑。
+  if (needsLeftRefresh) {
+    updatePlaybackInfo(display);
+  }
+  if (needsFooterRefresh) {
+    updateFooterInfo(display);
+  }
+  if (needsRightRefresh) {
+    updatePlaylist(display);
   }
 }
 
 void MusicScreen::updatePlaylist(DisplayDriver *display) {
   using namespace MusicLayout;
-  display->display.setPartialWindow(PANEL_LEFT_W + 1, SYS_BAR_H,
-                                    PANEL_RIGHT_W - 1, LAYOUT_H);
+  setAlignedPartialWindow(display, PANEL_LEFT_W + 1, SYS_BAR_H,
+                          PANEL_RIGHT_W - 1, LAYOUT_H);
   display->display.firstPage();
   do {
     display->display.fillScreen(COLOR_BG);
-    drawPlaylist(display);
+    drawRightPanel(display);
   } while (display->display.nextPage());
 }
 
 void MusicScreen::updatePlaybackInfo(DisplayDriver *display) {
   using namespace MusicLayout;
-  display->display.setPartialWindow(0, SYS_BAR_H, PANEL_LEFT_W - 1, LAYOUT_H);
+  setAlignedPartialWindow(display, 0, SYS_BAR_H, PANEL_LEFT_W - 1, LAYOUT_H);
   display->display.firstPage();
   do {
     display->display.fillScreen(COLOR_BG);
@@ -453,8 +554,8 @@ void MusicScreen::updatePlaybackInfo(DisplayDriver *display) {
 
 void MusicScreen::updateFooterInfo(DisplayDriver *display) {
   using namespace MusicLayout;
-  display->display.setPartialWindow(0, SCREEN_H - FOOTER_H + 1, SCREEN_W,
-                                    FOOTER_H - 1);
+  setAlignedPartialWindow(display, 0, SCREEN_H - FOOTER_H + 1, SCREEN_W,
+                          FOOTER_H - 1);
   display->display.firstPage();
   do {
     display->display.fillScreen(COLOR_BG);
