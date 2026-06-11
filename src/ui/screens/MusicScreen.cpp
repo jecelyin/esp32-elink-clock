@@ -21,8 +21,10 @@ constexpr uint16_t PLAY = 'E';
 constexpr uint16_t PAUSE = 'D';
 constexpr uint16_t NEXT = 'H';
 constexpr uint16_t PAGE_UP = 'O';
-constexpr uint16_t PAGE_DOWN = 'L';
-constexpr uint16_t LOOP = 'W';
+constexpr uint16_t PAGE_DOWN = 'P';
+// open_iconic_all_2x 的 repeat glyph 实际位于扩展编码 204。
+// 这里直接使用数值编码，避免受 char 符号位影响导致取字形失败。
+constexpr uint16_t LOOP = 204;
 } // namespace MusicGlyphs
 
 MusicScreen::MusicScreen(MusicManager *music, StatusBar *statusBar,
@@ -328,8 +330,10 @@ const uint8_t *MusicScreen::getButtonFont(int buttonIndex) const {
       buttonIndex == BTN_NEXT) {
     return u8g2_font_open_iconic_play_2x_t;
   }
-  if (buttonIndex == BTN_LOOP || buttonIndex == BTN_PAGE_UP ||
-      buttonIndex == BTN_PAGE_DOWN) {
+  if (buttonIndex == BTN_LOOP) {
+    return u8g2_font_open_iconic_all_2x_t;
+  }
+  if (buttonIndex == BTN_PAGE_UP || buttonIndex == BTN_PAGE_DOWN) {
     return u8g2_font_open_iconic_arrow_2x_t;
   }
   return u8g2_font_helvB10_tf;
@@ -416,10 +420,11 @@ void MusicScreen::drawButtonGlyph(DisplayDriver *display, const UIButton &btn,
 void MusicScreen::drawLoopButton(DisplayDriver *display, const UIButton &btn,
                                  bool focused) {
   // 关键逻辑：循环按钮的三态统一复用同一个 loop 图标，
+  // 其中基础图标改为 open_iconic_all_2x 的 repeat glyph，
   // 再用小号字体叠加 “1” 或 “/”，保证整个按钮仍然是字体方案，
   // 同时避免退回 ALL/ONE/OFF 这类文本。
-  drawButtonGlyph(display, btn, u8g2_font_open_iconic_arrow_2x_t,
-                  MusicGlyphs::LOOP, focused);
+  drawButtonGlyph(display, btn, getButtonFont(BTN_LOOP), MusicGlyphs::LOOP,
+                  focused);
 
   if (music->getLoopMode() == LOOP_ONE) {
     drawButtonLabel(display, btn, "1", u8g2_font_5x8_tf, focused, 8, 7);
