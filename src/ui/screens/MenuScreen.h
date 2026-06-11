@@ -9,20 +9,22 @@ public:
   MenuScreen(StatusBar *statusBar) : statusBar(statusBar) {
     menuIndex = 0;
     lastMenuIndex = 0;
-    items[0] = {SCREEN_HOME, "Home", u8g2_font_open_iconic_embedded_4x_t, 'D'};
-    items[1] = {SCREEN_ALARM, "Alarm", u8g2_font_open_iconic_embedded_4x_t,
-                'A'};
-    items[2] = {SCREEN_MUSIC, "Music", u8g2_font_open_iconic_play_4x_t, 'C'};
-    items[3] = {SCREEN_RADIO, "Radio", u8g2_font_open_iconic_embedded_4x_t,
-                'F'};
-    items[4] = {SCREEN_WEATHER, "Weather", u8g2_font_open_iconic_weather_4x_t,
-                '@'};
-    items[5] = {SCREEN_SETTINGS, "Settings",
-                u8g2_font_open_iconic_embedded_4x_t, 'B'};
-    items[6] = {SCREEN_TIMER, "Timer", u8g2_font_open_iconic_embedded_4x_t,
-                'E'};
-    items[7] = {SCREEN_NETWORK_CONFIG, "Config",
-                u8g2_font_open_iconic_embedded_4x_t, 'F'};
+    items[0] =
+        MenuItem{SCREEN_HOME, "Home", u8g2_font_open_iconic_embedded_4x_t, 'D'};
+    items[1] = MenuItem{SCREEN_ALARM, "Alarm",
+                        u8g2_font_open_iconic_embedded_4x_t, 'A'};
+    items[2] =
+        MenuItem{SCREEN_MUSIC, "Music", u8g2_font_open_iconic_play_4x_t, 'C'};
+    items[3] = MenuItem{SCREEN_RADIO, "Radio",
+                        u8g2_font_open_iconic_embedded_4x_t, 'F'};
+    items[4] = MenuItem{SCREEN_WEATHER, "Weather",
+                        u8g2_font_open_iconic_weather_4x_t, '@'};
+    items[5] = MenuItem{SCREEN_SETTINGS, "Settings",
+                        u8g2_font_open_iconic_embedded_4x_t, 'B'};
+    items[6] = MenuItem{SCREEN_TIMER, "Timer",
+                        u8g2_font_open_iconic_embedded_4x_t, 'E'};
+    items[7] = MenuItem{SCREEN_NETWORK_CONFIG, "Config",
+                        u8g2_font_open_iconic_embedded_4x_t, 'F'};
     firstDraw = true;
   }
 

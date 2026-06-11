@@ -6,6 +6,7 @@
 #include "drivers/RtcDriver.h"
 #include "drivers/SDCardDriver.h"
 #include "drivers/SensorDriver.h"
+#include "drivers/SharedSPIBus.h"
 #include "managers/AlarmManager.h"
 #include "managers/ConfigManager.h"
 #include "managers/ConnectionManager.h"
@@ -202,10 +203,7 @@ void setup() {
   configurePowerSaving();
 
   pinMode(EPD_BUSY, INPUT); // EPD BUSY is usually input
-  pinMode(SD_EN, OUTPUT);
-  pinMode(SD_CS, OUTPUT);
-  digitalWrite(SD_EN, SD_PWD_OFF);
-  digitalWrite(SD_CS, HIGH);
+  SharedSPIBus::begin();
 
   // Audio & Power
   pinMode(CODEC_EN, OUTPUT);
@@ -225,10 +223,10 @@ void setup() {
   configManager.begin();
   Serial.println("Config Manager Init Success");
 
+  // 关键逻辑：共享 SPI 总线必须先由 SharedSPIBus 统一完成引脚映射，再交给
+  // GxEPD2 做屏幕握手；否则 SD 卡和屏幕会在同一组 GPIO 上互相覆盖总线归属。
   // sdCardDriver.begin();
   displayDriver.init();
-  // 必须在 DisplayDriver init 之后调用
-  SPI.begin(EPD_SCK, SPI_MISO, EPD_MOSI);
 
   displayDriver.clear(); // Ensure screen is white before partial updates
 

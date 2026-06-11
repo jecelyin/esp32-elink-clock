@@ -17,7 +17,6 @@ class SDCardDriver
 {
 public:
     SDCardDriver();
-    ~SDCardDriver();
     bool begin();
     void end();
     fs::SDFS getFS();
@@ -33,5 +32,4 @@ public:
     void writeFile(const char *path, const char *message);
 
 private:
-    SPIClass *spi;
 };

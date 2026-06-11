@@ -162,14 +162,14 @@ void RadioDriver::debugRadioInfo() {
 void RadioDriver::getRadioInfo(RDA5807M_Info *info) {
   if (info == nullptr)
     return;
-  *info = {false, 0, 0, false, false, false, false};
+  *info = RDA5807M_Info{false, 0, 0, false, false, false, false};
   runWithRadioBusLock("getRadioInfo", [&]() { radio.getRadioInfo(info); });
 }
 
 void RadioDriver::getAudioInfo(RDA5807M_AudioInfo *info) {
   if (info == nullptr)
     return;
-  *info = {0, false, false, false};
+  *info = RDA5807M_AudioInfo{0, false, false, false};
   runWithRadioBusLock("getAudioInfo", [&]() { radio.getAudioInfo(info); });
 }
 

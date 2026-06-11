@@ -1,40 +1,35 @@
 #include "SDCardDriver.h"
+#include "SharedSPIBus.h"
 #include "config.h"
 #include <vector>
 
-SDCardDriver::SDCardDriver() { spi = new SPIClass(HSPI); }
-
-SDCardDriver::~SDCardDriver() { delete spi; }
+SDCardDriver::SDCardDriver() {}
 
 bool SDCardDriver::begin() {
-  pinMode(SD_EN, OUTPUT);
-  digitalWrite(SD_EN, SD_PWD_ON);
-  delay(20); // 给 SD 卡更长的稳定时间
-
   Serial.println("Mounting SD card...");
-  spi->begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  if (!SD.begin(SD_CS, *spi)) {
+  SharedSPIBus::prepareSDCard();
+  if (!SD.begin(SD_CS, SharedSPIBus::bus(), SPI_SPEED)) {
     Serial.println("Card Mount Failed");
-    digitalWrite(SD_EN, SD_PWD_OFF); // 挂载失败立即切断电源
+    SharedSPIBus::releaseSDCard();
     return false;
   }
   uint8_t cardType = SD.cardType();
 
   if (cardType == CARD_NONE) {
     Serial.println("No SD card attached");
-    SD.end();                        // 确保释放资源
-    digitalWrite(SD_EN, SD_PWD_OFF); // 未检测到卡也切断电源
+    SD.end();
+    SharedSPIBus::releaseSDCard();
     return false;
   }
 
+  digitalWrite(SD_CS, HIGH);
   Serial.println("SD card mounted successfully.");
   return true;
 }
 
 void SDCardDriver::end() {
   SD.end();
-  spi->end();
-  digitalWrite(SD_EN, SD_PWD_OFF);
+  SharedSPIBus::releaseSDCard();
 }
 
 fs::SDFS SDCardDriver::getFS() { return SD; }

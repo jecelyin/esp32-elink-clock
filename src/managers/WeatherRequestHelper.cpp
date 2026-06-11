@@ -52,7 +52,11 @@ bool deserializePayload(const String &encoding,
 }
 
 bool readResponsePayload(HTTPClient &http, std::vector<uint8_t> &payload) {
-  NetworkClient *stream = http.getStreamPtr();
+  // 兼容不同 Arduino-ESP32 内核：
+  // 某些版本 getStreamPtr() 返回 WiFiClient*，某些版本内部改成了
+  // NetworkClient*。两者都继承自 Client，因此这里统一收敛到 Client*，
+  // 避免因为平台升级/降级导致编译直接中断。
+  Client *stream = http.getStreamPtr();
   if (stream == nullptr) {
     Serial.println("Weather stream is null");
     return false;

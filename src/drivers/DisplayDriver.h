@@ -3,19 +3,12 @@
 #include "config.h"
 #include <GxEPD2_BW.h>
 #include <U8g2_for_Adafruit_GFX.h>
-// #define USE_GxEPD2_420_Z96
-#define USE_GxEPD2_420_SSD1619A
 
-#ifdef USE_GxEPD2_420_Z96
-#include "GxEPD2_420_Z96.h"
-#define EPD2_DRV GxEPD2_420_Z96
-#elifdef USE_GxEPD2_420_SSD1619A
+// 关键逻辑：当前硬件已经确认是 SSD1619A，显示入口固定到对应驱动，
+// 避免旧 Z96/SSD1619 适配在编译期被误选导致屏幕完全无响应。
+#define USE_GxEPD2_420_SSD1619A
 #include "GxEPD2_420_SSD1619A.h"
 #define EPD2_DRV GxEPD2_420_SSD1619A
-#else
-#include "GxEPD2_420_SSD1619.h"
-#define EPD2_DRV GxEPD2_420_SSD1619
-#endif
 
 // Select the display class. 4.2" 400x300 b/w
 // GxEPD2_420 display(GxEPD2::GDEW042T2, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);

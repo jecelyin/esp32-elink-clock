@@ -1,41 +1,50 @@
 #include "DisplayDriver.h"
+#include "SharedSPIBus.h"
 
-// Constructor: Initialize the display object with pin definitions
-// GxEPD2_420(int16_t cs, int16_t dc, int16_t rst, int16_t busy)
+namespace {
+void prepareDisplayTransfer() {
+  // 关键逻辑：屏幕与 SD 卡共用 SPI，总线访问前必须先释放其他片选；
+  // 否则上一次 SD 卡访问可能让屏幕初始化或局部刷新收不到正确命令。
+  SharedSPIBus::prepareDisplay();
+}
+} // namespace
+
+// 构造屏幕对象，参数顺序为 CS、DC、RST、BUSY。
 DisplayDriver::DisplayDriver()
     : display(EPD2_DRV(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY)) {}
 
 void DisplayDriver::init() {
-
   SPISettings spisettings(4000000, MSBFIRST, SPI_MODE0);
-  display.epd2.selectSPI(SPI, spisettings);
-  // explicitly, GxEPD2 usually handles it if standard pins
-  // display.init(115200);
+  prepareDisplayTransfer();
+  display.epd2.selectSPI(SharedSPIBus::bus(), spisettings);
   display.init(0, true, 10, true);
-  display.setRotation(0); // Adjust as needed
+  // 关键逻辑：UI 坐标保持正常方向，左右镜像在 SSD1619A RAM 写入层完成；
+  // 不使用 GxEPD2 mirror()，因为它不会同步镜像局刷窗口坐标。
+  display.setRotation(2); // 0, 90, 180 or 270 degrees
 
   u8g2Fonts.begin(display);
-  u8g2Fonts.setFontMode(1); // Transparent
+  u8g2Fonts.setFontMode(1);
   u8g2Fonts.setFontDirection(0);
   u8g2Fonts.setForegroundColor(GxEPD_BLACK);
   u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
 }
 
 void DisplayDriver::clear() {
-  display.setFullWindow();
-  display.firstPage();
-  display.fillScreen(GxEPD_WHITE);
-  display.nextPage();
+  prepareDisplayTransfer();
+  // 关键逻辑：SSD1619A 清屏按参考工程直接执行一次全刷清屏；
+  // 走分页绘制会触发 GxEPD2 的二阶段缓存同步，导致启动时多余刷新。
+  display.clearScreen(0xFF);
   powerOff();
 }
 
 void DisplayDriver::update() {
-  // This might be used for partial updates or triggering a refresh
+  prepareDisplayTransfer();
   display.display();
   powerOff();
 }
 
 void DisplayDriver::showMessage(const char *msg) {
+  prepareDisplayTransfer();
   Serial.print("Display Message: ");
   Serial.println(msg);
   display.setFullWindow();
@@ -50,21 +59,17 @@ void DisplayDriver::showMessage(const char *msg) {
     u8g2Fonts.setCursor(x, y);
     u8g2Fonts.print(msg);
   } while (display.nextPage());
-  display.display();
   powerOff();
 }
 
 void DisplayDriver::showStatus(const char *msg, int line) {
-  // Line height 24px, start at y=40 to leave room for title if any, or just
-  // start from top Let's assume line 0 is at y=20
+  prepareDisplayTransfer();
   int16_t lineHeight = 24;
   int16_t y = 30 + (line * lineHeight);
   int16_t h = lineHeight;
 
-  // Set partial window for this line
-  // We wipe the full width of the screen at this line height
   display.setPartialWindow(0, y - lineHeight + 4, display.width(),
-                           h); // adjusting y to be baseline
+                           h);
 
   display.firstPage();
   do {
@@ -75,12 +80,7 @@ void DisplayDriver::showStatus(const char *msg, int line) {
     u8g2Fonts.setCursor(10, y);
     u8g2Fonts.print(msg);
   } while (display.nextPage());
-  // display.display() is automatic with GxEPD2 loops usually, but for partial
-  // we might need to be careful GxEPD2 example uses distinct loop. We don't
-  // need explicit display.display() call after the loop for GxEPD2 helper
-  // methods if they handle it. Actually, standard GxEPD2 paged loop handles
-  // transmission.
   powerOff();
 }
 
-void DisplayDriver::powerOff() { display.hibernate(); }
+void DisplayDriver::powerOff() { display.powerOff(); }

@@ -37,24 +37,29 @@ void MusicScreen::initLayout() {
 
   // Left Panel Buttons (Prev, Play, Next)
   int controlY = SYS_BAR_H + (LAYOUT_H / 2) + 20;
-  buttons[BTN_PREV] = {25, controlY, 30, 30, "<<"};    // Prev
-  buttons[BTN_PLAY] = {65, controlY - 5, 40, 40, ">"}; // Play/Pause
-  buttons[BTN_NEXT] = {115, controlY, 30, 30, ">>"};   // Next
+  buttons[BTN_PREV] = UIButton{25, controlY, 30, 30, "<<"};    // Prev
+  buttons[BTN_PLAY] = UIButton{65, controlY - 5, 40, 40, ">"}; // Play/Pause
+  buttons[BTN_NEXT] = UIButton{115, controlY, 30, 30, ">>"};   // Next
 
   // Footer Tools
   int footerY = SCREEN_H - FOOTER_H;
-  buttons[BTN_LOOP] = {SCREEN_W - 120, footerY + 5, 30, 30, "L"};   // Loop Mode
-  buttons[BTN_VOL_DEC] = {SCREEN_W - 80, footerY + 5, 20, 30, "-"}; // Vol Dec
-  buttons[BTN_VOL_INC] = {SCREEN_W - 30, footerY + 5, 20, 30, "+"}; // Vol Inc
+  buttons[BTN_LOOP] =
+      UIButton{SCREEN_W - 120, footerY + 5, 30, 30, "L"}; // Loop Mode
+  buttons[BTN_VOL_DEC] =
+      UIButton{SCREEN_W - 80, footerY + 5, 20, 30, "-"}; // Vol Dec
+  buttons[BTN_VOL_INC] =
+      UIButton{SCREEN_W - 30, footerY + 5, 20, 30, "+"}; // Vol Inc
 
   // Right Panel Buttons (Playlist area and Pagination)
-  buttons[BTN_LIST] = {PANEL_LEFT_W, SYS_BAR_H, PANEL_RIGHT_W, LAYOUT_H - 36,
-                       "List"}; // Playlist selection
-  buttons[BTN_PAGE_UP] = {PANEL_LEFT_W, SCREEN_H - FOOTER_H - 36,
-                          PANEL_RIGHT_W / 2, 36, "^"}; // Page Up
-  buttons[BTN_PAGE_DOWN] = {PANEL_LEFT_W + PANEL_RIGHT_W / 2,
-                            SCREEN_H - FOOTER_H - 36, PANEL_RIGHT_W / 2, 36,
-                            "v"}; // Page Down
+  buttons[BTN_LIST] =
+      UIButton{PANEL_LEFT_W, SYS_BAR_H, PANEL_RIGHT_W, LAYOUT_H - 36,
+               "List"}; // Playlist selection
+  buttons[BTN_PAGE_UP] =
+      UIButton{PANEL_LEFT_W, SCREEN_H - FOOTER_H - 36, PANEL_RIGHT_W / 2, 36,
+               "^"}; // Page Up
+  buttons[BTN_PAGE_DOWN] =
+      UIButton{PANEL_LEFT_W + PANEL_RIGHT_W / 2, SCREEN_H - FOOTER_H - 36,
+               PANEL_RIGHT_W / 2, 36, "v"}; // Page Down
 }
 
 void MusicScreen::init() {}

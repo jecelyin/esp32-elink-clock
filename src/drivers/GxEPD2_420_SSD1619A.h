@@ -29,8 +29,21 @@ class GxEPD2_420_SSD1619A : public GxEPD2_EPD
     void writeScreenBuffer(uint8_t value = 0xFF); // init controller memory (default white)
     // write to controller memory, without screen refresh; x and w should be multiple of 8
     void writeImage(const uint8_t bitmap[], int16_t x, int16_t y, int16_t w, int16_t h, bool invert = false, bool mirror_y = false, bool pgm = false);
+    void writeImageForFullRefresh(const uint8_t bitmap[], int16_t x,
+                                  int16_t y, int16_t w, int16_t h,
+                                  bool invert = false,
+                                  bool mirror_y = false,
+                                  bool pgm = false);
     void writeImagePart(const uint8_t bitmap[], int16_t x_part, int16_t y_part, int16_t w_bitmap, int16_t h_bitmap,
                         int16_t x, int16_t y, int16_t w, int16_t h, bool invert = false, bool mirror_y = false, bool pgm = false);
+    void writeImageAgain(const uint8_t bitmap[], int16_t x, int16_t y,
+                         int16_t w, int16_t h, bool invert = false,
+                         bool mirror_y = false, bool pgm = false);
+    void writeImagePartAgain(const uint8_t bitmap[], int16_t x_part,
+                             int16_t y_part, int16_t w_bitmap,
+                             int16_t h_bitmap, int16_t x, int16_t y,
+                             int16_t w, int16_t h, bool invert = false,
+                             bool mirror_y = false, bool pgm = false);
     void writeImage(const uint8_t* black, const uint8_t* color, int16_t x, int16_t y, int16_t w, int16_t h, bool invert = false, bool mirror_y = false, bool pgm = false);
     void writeImagePart(const uint8_t* black, const uint8_t* color, int16_t x_part, int16_t y_part, int16_t w_bitmap, int16_t h_bitmap,
                         int16_t x, int16_t y, int16_t w, int16_t h, bool invert = false, bool mirror_y = false, bool pgm = false);
@@ -56,8 +69,27 @@ class GxEPD2_420_SSD1619A : public GxEPD2_EPD
     // Note: This changes the LUT loaded during the next partial refresh.
     void setGrayscale(uint8_t gray);
   private:
+    struct ImageTransferSpec {
+      int16_t sourceWidthBytes;
+      int16_t sourceHeight;
+      int16_t baseXBytes;
+      int16_t baseY;
+      int16_t outputBytes;
+      int16_t outputRows;
+      bool invert;
+      bool mirrorY;
+      bool pgm;
+    };
     void _writeScreenBuffer(uint8_t value);
+    void _writeFullScreenBuffer(uint8_t value);
+    void _writeImageData(const uint8_t bitmap[], int16_t x, int16_t y,
+                         int16_t w, int16_t h, bool invert,
+                         bool mirror_y, bool pgm);
+    void _writeMirroredXImageData(const uint8_t bitmap[],
+                                  const ImageTransferSpec &spec);
+    void _writeRepeatedData(uint8_t value, uint32_t count);
     void _setPartialRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+    bool _waitUntilIdle(const char *comment, uint32_t timeoutMs);
     void _PowerOn();
     void _PowerOff();
     void _InitDisplay();

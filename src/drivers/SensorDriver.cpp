@@ -5,11 +5,22 @@
 #include <Wire.h>
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
+#include <esp_idf_version.h>
 
 namespace {
 // 分压比（实测：电池4.07V时，分压点2.0V => 4.07 / 2.0 = 2.035）
 constexpr float DIVIDER_RATIO = 2.035f; // 读到的是分压，需要还原
 constexpr uint32_t SENSOR_ERROR_LOG_INTERVAL_MS = 10000UL;
+
+adc_atten_t getBatteryAdcAttenuation() {
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 5
+  // IDF 5.x 将满量程电池采样档位命名为 12dB。
+  return ADC_ATTEN_DB_12;
+#else
+  // IDF 4.x 仍使用 11dB 命名，但对应的就是旧核心可用的最高采样档位。
+  return ADC_ATTEN_DB_11;
+#endif
+}
 } // namespace
 
 SensorDriver::SensorDriver() {}
@@ -107,11 +118,12 @@ float SensorDriver::getBatteryVoltage() {
   // 关键逻辑：ESP32-audioI2S 当前依赖 legacy I2S/ADC 栈，不能混用
   // adc_oneshot 新驱动，否则启动阶段会触发 ADC driver_ng 冲突并重启。
 #define BAT_ADC_CHANNEL ADC1_CHANNEL_6
+  adc_atten_t attenuation = getBatteryAdcAttenuation();
   adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten(BAT_ADC_CHANNEL, ADC_ATTEN_DB_12);
+  adc1_config_channel_atten(BAT_ADC_CHANNEL, attenuation);
 
   esp_adc_cal_characteristics_t adcChars;
-  esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_12, 1100,
+  esp_adc_cal_characterize(ADC_UNIT_1, attenuation, ADC_WIDTH_BIT_12, 1100,
                            &adcChars);
 
   adc1_get_raw(BAT_ADC_CHANNEL);

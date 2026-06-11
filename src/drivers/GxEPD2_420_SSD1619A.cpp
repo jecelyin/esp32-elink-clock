@@ -11,7 +11,32 @@
 // Library: https://github.com/ZinggJM/GxEPD2
 
 #include "GxEPD2_420_SSD1619A.h"
-#include <esp_debug_helpers.h>
+
+namespace {
+constexpr uint32_t FULL_BUSY_TIMEOUT_MS = 16000;
+constexpr uint32_t PARTIAL_BUSY_TIMEOUT_MS = 8000;
+constexpr uint32_t POWER_BUSY_TIMEOUT_MS = 4000;
+constexpr uint32_t BUSY_POLL_INTERVAL_MS = 2;
+
+uint8_t readBitmapByte(const uint8_t bitmap[], int16_t idx, bool pgm)
+{
+  if (pgm) {
+#if defined(__AVR) || defined(ESP8266) || defined(ESP32)
+    return pgm_read_byte(&bitmap[idx]);
+#else
+    return bitmap[idx];
+#endif
+  }
+  return bitmap[idx];
+}
+
+uint8_t reverseBits(uint8_t value)
+{
+  value = ((value & 0xF0) >> 4) | ((value & 0x0F) << 4);
+  value = ((value & 0xCC) >> 2) | ((value & 0x33) << 2);
+  return ((value & 0xAA) >> 1) | ((value & 0x55) << 1);
+}
+} // namespace
 
 GxEPD2_420_SSD1619A::GxEPD2_420_SSD1619A(int16_t cs, int16_t dc, int16_t rst, int16_t busy) :
   GxEPD2_EPD(cs, dc, rst, busy, HIGH, 10000000, WIDTH, HEIGHT, panel, hasColor, hasPartialUpdate, hasFastPartialUpdate)
@@ -21,38 +46,14 @@ GxEPD2_420_SSD1619A::GxEPD2_420_SSD1619A(int16_t cs, int16_t dc, int16_t rst, in
 
 void GxEPD2_420_SSD1619A::clearScreen(uint8_t value)
 {
-  _initial_write = false; // initial full screen buffer clean done
-  if (_initial_refresh)
-  {
-    _Init_Full();
-    _setPartialRamArea(0, 0, WIDTH, HEIGHT);
-    _writeCommand(0x24);
-    for (uint32_t i = 0; i < uint32_t(WIDTH) * uint32_t(HEIGHT) / 8; i++)
-    {
-      _writeData(value);
-    }
-    _Update_Full();
-    _initial_refresh = false; // initial full update done
-  }
-  else
-  {
-    if (!_using_partial_mode) _Init_Part();
-    _setPartialRamArea(0, 0, WIDTH, HEIGHT);
-    _writeCommand(0x24);
-    for (uint32_t i = 0; i < uint32_t(WIDTH) * uint32_t(HEIGHT) / 8; i++)
-    {
-      _writeData(value);
-    }
-    _Update_Part();
-  }
-  if (!_using_partial_mode) _Init_Part();
-  _setPartialRamArea(0, 0, WIDTH, HEIGHT);
-  _writeCommand(0x24);
-  for (uint32_t i = 0; i < uint32_t(WIDTH) * uint32_t(HEIGHT) / 8; i++)
-  {
-    _writeData(value);
-  }
-  _Update_Part();
+  // 关键逻辑：参考工程清屏只做一次全刷，刷新完成后再写一次 RAM
+  // 保持控制器缓存一致，但不再次触发局刷。
+  _Init_Full();
+  _writeFullScreenBuffer(value);
+  _Update_Full();
+  _initial_write = false;
+  _initial_refresh = false;
+  _writeFullScreenBuffer(value);
 }
 
 void GxEPD2_420_SSD1619A::writeScreenBuffer(uint8_t value)
@@ -66,12 +67,45 @@ void GxEPD2_420_SSD1619A::writeScreenBuffer(uint8_t value)
 void GxEPD2_420_SSD1619A::_writeScreenBuffer(uint8_t value)
 {
   if (!_using_partial_mode) _Init_Part();
+  _writeFullScreenBuffer(value);
+}
+
+void GxEPD2_420_SSD1619A::_writeFullScreenBuffer(uint8_t value)
+{
   _setPartialRamArea(0, 0, WIDTH, HEIGHT);
   _writeCommand(0x24);
+  _writeRepeatedData(value, uint32_t(WIDTH) * uint32_t(HEIGHT) / 8);
+}
+
+void GxEPD2_420_SSD1619A::_writeRepeatedData(uint8_t value, uint32_t count)
+{
   _startTransfer();
-  for (uint32_t i = 0; i < uint32_t(WIDTH) * uint32_t(HEIGHT) / 8; i++)
+  for (uint32_t i = 0; i < count; i++)
   {
     _transfer(value);
+  }
+  _endTransfer();
+}
+
+void GxEPD2_420_SSD1619A::_writeMirroredXImageData(
+    const uint8_t bitmap[], const ImageTransferSpec &spec)
+{
+  // 关键逻辑：左右镜像不能只反算 RAM 窗口；SSD1619A 按 X 递增接收字节，
+  // 所以每行必须从逻辑右侧字节开始写，并反转字节内 bit 顺序。
+  // 这样全刷和任意局刷窗口都会在物理屏上同步左右翻转。
+  _startTransfer();
+  for (int16_t i = 0; i < spec.outputRows; i++)
+  {
+    int16_t row = spec.mirrorY ? spec.sourceHeight - 1 - (spec.baseY + i)
+                               : spec.baseY + i;
+    int16_t rowBase = row * spec.sourceWidthBytes;
+    for (int16_t j = 0; j < spec.outputBytes; j++)
+    {
+      int16_t col = spec.baseXBytes + spec.outputBytes - 1 - j;
+      uint8_t data = readBitmapByte(bitmap, rowBase + col, spec.pgm);
+      if (spec.invert) data = ~data;
+      _transfer(reverseBits(data));
+    }
   }
   _endTransfer();
 }
@@ -80,6 +114,25 @@ void GxEPD2_420_SSD1619A::writeImage(const uint8_t bitmap[], int16_t x, int16_t 
 {
   if (_initial_write) writeScreenBuffer(); // initial full screen buffer clean
   delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+  if (!_using_partial_mode) _Init_Part();
+  _writeImageData(bitmap, x, y, w, h, invert, mirror_y, pgm);
+  delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+}
+
+void GxEPD2_420_SSD1619A::writeImageForFullRefresh(
+    const uint8_t bitmap[], int16_t x, int16_t y, int16_t w, int16_t h,
+    bool invert, bool mirror_y, bool pgm)
+{
+  if (_initial_write) _initial_write = false;
+  if (_using_partial_mode || _hibernating || !_power_is_on) _Init_Full();
+  _writeImageData(bitmap, x, y, w, h, invert, mirror_y, pgm);
+}
+
+void GxEPD2_420_SSD1619A::_writeImageData(const uint8_t bitmap[], int16_t x,
+                                          int16_t y, int16_t w, int16_t h,
+                                          bool invert, bool mirror_y,
+                                          bool pgm)
+{
   int16_t wb = (w + 7) / 8; // width bytes, bitmaps are padded
   x -= x % 8; // byte boundary
   w = wb * 8; // byte boundary
@@ -92,39 +145,15 @@ void GxEPD2_420_SSD1619A::writeImage(const uint8_t bitmap[], int16_t x, int16_t 
   w1 -= dx;
   h1 -= dy;
   if ((w1 <= 0) || (h1 <= 0)) return;
-  if (!_using_partial_mode) _Init_Part();
   _setPartialRamArea(x1, y1, w1, h1);
   _writeCommand(0x24);
-  _startTransfer();
-  for (int16_t i = 0; i < h1; i++)
-  {
-    for (int16_t j = 0; j < w1 / 8; j++)
-    {
-      uint8_t data;
-      // use wb, h of bitmap for index!
-      int16_t idx = mirror_y ? j + dx / 8 + ((h - 1 - (i + dy))) * wb : j + dx / 8 + (i + dy) * wb;
-      if (pgm)
-      {
-#if defined(__AVR) || defined(ESP8266) || defined(ESP32)
-        data = pgm_read_byte(&bitmap[idx]);
-#else
-        data = bitmap[idx];
-#endif
-      }
-      else
-      {
-        data = bitmap[idx];
-      }
-      if (invert) data = ~data;
-      _transfer(data);
-    }
-  }
-  _endTransfer();
-  delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+  ImageTransferSpec spec = {wb, h, int16_t(dx / 8), dy, int16_t(w1 / 8),
+                            h1, invert, mirror_y, pgm};
+  _writeMirroredXImageData(bitmap, spec);
 }
 
 void GxEPD2_420_SSD1619A::writeImagePart(const uint8_t bitmap[], int16_t x_part, int16_t y_part, int16_t w_bitmap, int16_t h_bitmap,
-                                int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
+	                                int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
 {
   if (_initial_write) writeScreenBuffer(); // initial full screen buffer clean
   delay(1); // yield() to avoid WDT on ESP8266 and ESP32
@@ -149,32 +178,35 @@ void GxEPD2_420_SSD1619A::writeImagePart(const uint8_t bitmap[], int16_t x_part,
   if (!_using_partial_mode) _Init_Part();
   _setPartialRamArea(x1, y1, w1, h1);
   _writeCommand(0x24);
-  _startTransfer();
-  for (int16_t i = 0; i < h1; i++)
-  {
-    for (int16_t j = 0; j < w1 / 8; j++)
-    {
-      uint8_t data;
-      // use wb_bitmap, h_bitmap of bitmap for index!
-      int16_t idx = mirror_y ? x_part / 8 + j + dx / 8 + ((h_bitmap - 1 - (y_part + i + dy))) * wb_bitmap : x_part / 8 + j + dx / 8 + (y_part + i + dy) * wb_bitmap;
-      if (pgm)
-      {
-#if defined(__AVR) || defined(ESP8266) || defined(ESP32)
-        data = pgm_read_byte(&bitmap[idx]);
-#else
-        data = bitmap[idx];
-#endif
-      }
-      else
-      {
-        data = bitmap[idx];
-      }
-      if (invert) data = ~data;
-      _transfer(data);
-    }
-  }
-  _endTransfer();
+  ImageTransferSpec spec = {wb_bitmap, h_bitmap, int16_t(x_part / 8 + dx / 8),
+                            int16_t(y_part + dy), int16_t(w1 / 8), h1,
+                            invert, mirror_y, pgm};
+  _writeMirroredXImageData(bitmap, spec);
   delay(1); // yield() to avoid WDT on ESP8266 and ESP32
+}
+
+void GxEPD2_420_SSD1619A::writeImageAgain(const uint8_t bitmap[], int16_t x,
+                                          int16_t y, int16_t w, int16_t h,
+                                          bool invert, bool mirror_y, bool pgm)
+{
+  // 关键逻辑：刷新后的缓存同步只写 RAM，不应重新执行局刷初始化；
+  // 参考工程在 EPD_Update 后也会再次写入图像缓存但不再次刷新。
+  bool previousPartialMode = _using_partial_mode;
+  if (!_hibernating) _using_partial_mode = true;
+  writeImage(bitmap, x, y, w, h, invert, mirror_y, pgm);
+  _using_partial_mode = previousPartialMode;
+}
+
+void GxEPD2_420_SSD1619A::writeImagePartAgain(
+    const uint8_t bitmap[], int16_t x_part, int16_t y_part, int16_t w_bitmap,
+    int16_t h_bitmap, int16_t x, int16_t y, int16_t w, int16_t h, bool invert,
+    bool mirror_y, bool pgm)
+{
+  bool previousPartialMode = _using_partial_mode;
+  if (!_hibernating) _using_partial_mode = true;
+  writeImagePart(bitmap, x_part, y_part, w_bitmap, h_bitmap, x, y, w, h,
+                 invert, mirror_y, pgm);
+  _using_partial_mode = previousPartialMode;
 }
 
 void GxEPD2_420_SSD1619A::writeImage(const uint8_t* black, const uint8_t* color, int16_t x, int16_t y, int16_t w, int16_t h, bool invert, bool mirror_y, bool pgm)
@@ -244,7 +276,6 @@ void GxEPD2_420_SSD1619A::refresh(bool partial_update_mode)
   if (partial_update_mode) refresh(0, 0, WIDTH, HEIGHT);
   else
   {
-    if (_using_partial_mode) _Init_Full();
     _Update_Full();
     _initial_refresh = false; // initial full update done
   }
@@ -278,60 +309,79 @@ void GxEPD2_420_SSD1619A::powerOff(void)
 void GxEPD2_420_SSD1619A::hibernate()
 {
   _PowerOff();
-  if (_rst >= 0)
-  {
-    _writeCommand(0x10); // deep sleep mode
-    _writeData(0x1);     // enter deep sleep
-    _hibernating = true;
-  }
 }
 
 void GxEPD2_420_SSD1619A::_setPartialRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
-  _writeCommand(0x11); // set ram entry mode
-  _writeData(0x03);    // x increase, y increase : normal mode
+  uint16_t physicalX = WIDTH - (x + w);
+  uint16_t physicalXEnd = physicalX + w - 1;
+  uint16_t yStart = HEIGHT - 1 - y;
+  uint16_t yEnd = HEIGHT - (y + h);
+
+  // 关键逻辑：SSD1619A 参考工程使用 0x01，表示 X 递增、Y 递减；
+  // RAM 窗口和指针必须同步做 Y 翻转，否则内容会错位或不可见。
+  // 当前面板物理方向还需要左右镜像，因此只在控制器 RAM 层反算 X 窗口；
+  // UI 层坐标保持正常，局刷窗口与实际写入区域才能一起镜像。
+  _writeCommand(0x11);
+  _writeData(0x01);
   _writeCommand(0x44);
-  _writeData(x / 8);
-  _writeData((x + w - 1) / 8);
+  _writeData(physicalX / 8);
+  _writeData(physicalXEnd / 8);
   _writeCommand(0x45);
-  _writeData(y % 256);
-  _writeData(y / 256);
-  _writeData((y + h - 1) % 256);
-  _writeData((y + h - 1) / 256);
+  _writeData(yStart % 256);
+  _writeData(yStart / 256);
+  _writeData(yEnd % 256);
+  _writeData(yEnd / 256);
   _writeCommand(0x4e);
-  _writeData(x / 8);
+  _writeData(physicalX / 8);
   _writeCommand(0x4f);
-  _writeData(y % 256);
-  _writeData(y / 256);
+  _writeData(yStart % 256);
+  _writeData(yStart / 256);
+}
+
+bool GxEPD2_420_SSD1619A::_waitUntilIdle(const char *comment,
+                                         uint32_t timeoutMs)
+{
+  if (_busy < 0) {
+    delay(timeoutMs);
+    return true;
+  }
+
+  uint32_t startMs = millis();
+  while (digitalRead(_busy) != LOW) {
+    delay(BUSY_POLL_INTERVAL_MS);
+    if (millis() - startMs > timeoutMs) {
+      Serial.print(comment);
+      Serial.println(" Busy Timeout!");
+      return false;
+    }
+    yield();
+  }
+  return true;
 }
 
 void GxEPD2_420_SSD1619A::_PowerOn()
 {
-  Serial.println("GxEPD2_420_SSD1619A::_PowerOn");
-  if (!_power_is_on)
-  {
-    _writeCommand(0x22);
-    _writeData(0xc0);
-    _writeCommand(0x20);
-    _waitWhileBusy("_PowerOn", power_on_time);
-  }
+  // SSD1619A 的 0x22 更新控制由初始化阶段写入，刷新时只发 0x20。
+  // 这里保留状态位，避免旧逻辑用 0xC0 覆盖参考工程的 0xC7。
   _power_is_on = true;
 }
 
 void GxEPD2_420_SSD1619A::_PowerOff()
 {
-  Serial.println("GxEPD2_420_SSD1619A::_PowerOff");
-  _writeCommand(0x22);
-  _writeData(0xc3);
-  _writeCommand(0x20);
-  _waitWhileBusy("_PowerOff", power_off_time);
+  if (_hibernating) return;
+  _waitUntilIdle("_PowerOff", POWER_BUSY_TIMEOUT_MS);
+  _writeCommand(0x10);
+  _writeData(0x01);
   _power_is_on = false;
   _using_partial_mode = false;
+  _hibernating = true;
 }
 
 void GxEPD2_420_SSD1619A::_InitDisplay()
 {
-  // if (_hibernating) _reset();
+  // 关键逻辑：参考工程每次初始化都用 RST 唤醒控制器；进入 deep sleep 后
+  // 也必须通过 reset 清除休眠状态，否则后续命令不会被可靠接收。
   _reset();
   _writeCommand(0x74);
   _writeData(0x54);
@@ -373,7 +423,7 @@ void GxEPD2_420_SSD1619A::_InitDisplay()
   _writeData(0x40);
   _writeCommand(0x22);
   _writeData(0xC7);
-  _setPartialRamArea(0, 0, WIDTH, HEIGHT);
+  _power_is_on = true;
 }
 
 const uint8_t GxEPD2_420_SSD1619A::LUTDefault_full[] PROGMEM =
@@ -455,8 +505,6 @@ static const uint8_t LUTDefault_part_16gray[] = {
 
 void GxEPD2_420_SSD1619A::_Init_Full()
 {
-  Serial.println("Full Init");
-  // esp_backtrace_print(100);
   _InitDisplay();
   _writeCommandDataPGM(LUTDefault_full, sizeof(LUTDefault_full));
   _PowerOn();
@@ -465,7 +513,6 @@ void GxEPD2_420_SSD1619A::_Init_Full()
 
 void GxEPD2_420_SSD1619A::_Init_Part()
 {
-  Serial.println("Partial Init");
   _InitDisplay();
   _writeCommand(0x21);
   _writeData(0x00);
@@ -487,21 +534,16 @@ void GxEPD2_420_SSD1619A::setGrayscale(uint8_t gray)
 
 void GxEPD2_420_SSD1619A::_Update_Full()
 {
-  Serial.println("Full Update");
-  // esp_backtrace_print(100);
-  _writeCommand(0x22);
-  _writeData(0xc4);
+  // 关键逻辑：参考工程初始化阶段已经写入 0x22=0xC7；
+  // 刷新阶段只发送 0x20，不能再写 0xC4 覆盖更新控制位。
   _writeCommand(0x20);
-  _waitWhileBusy("_Update_Full", full_refresh_time);
-  _writeCommand(0xff);
+  _waitUntilIdle("_Update_Full", FULL_BUSY_TIMEOUT_MS);
+  _initial_refresh = false;
 }
 
 void GxEPD2_420_SSD1619A::_Update_Part()
 {
-  Serial.println("Partial Update");
-  _writeCommand(0x22);
-  _writeData(0x04);
+  // 关键逻辑：局刷同样沿用初始化阶段的 0x22=0xC7，和参考工程一致。
   _writeCommand(0x20);
-  _waitWhileBusy("_Update_Part", partial_refresh_time);
-  _writeCommand(0xff);
+  _waitUntilIdle("_Update_Part", PARTIAL_BUSY_TIMEOUT_MS);
 }
