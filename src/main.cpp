@@ -314,12 +314,13 @@ void networkTask(void *pvParameters) {
       ScreenState state = uiManager.getCurrentState();
       bool weatherNeeded = state == SCREEN_HOME || state == SCREEN_WEATHER;
       bool weatherFresh = millis() - weatherManager.getLastUpdate() < 120000;
-      if (connectionManager.isSyncComplete() &&
+      bool settingsVisible = state == SCREEN_SETTINGS;
+      if (!settingsVisible && connectionManager.isSyncComplete() &&
           (!weatherNeeded || weatherFresh)) {
         Serial.println("Sync Complete, powering off WiFi...");
         connectionManager.enableNetwork(false);
         wifiSessionStart = 0;
-      } else if (state != SCREEN_NETWORK_CONFIG &&
+      } else if (!settingsVisible &&
                  now - wifiSessionStart > WIFI_SYNC_TIMEOUT_MS) {
         Serial.println("WiFi sync timeout, powering off WiFi...");
         connectionManager.enableNetwork(false);

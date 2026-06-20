@@ -1,4 +1,5 @@
 #include "ConnectionManager.h"
+#include "ConfigPortal.h"
 #include <esp_wifi.h>
 #include <WiFiManager.h>
 
@@ -61,7 +62,7 @@ bool ConnectionManager::isSyncComplete() {
 }
 
 void ConnectionManager::startAP() {
-  // WiFi.softAP("ESP32-Clock", "12345678");
+  enableNetwork(true);
 }
 
 void ConnectionManager::flushPendingRtcSync() {
@@ -112,7 +113,8 @@ void ConnectionManager::beginAutoConnect() {
   wifiManager.setConfigPortalTimeout(CONFIG_PORTAL_TIMEOUT_SEC);
   wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SEC);
 
-  if (wifiManager.autoConnect("ESP32-Clock")) {
+  if (wifiManager.autoConnect(ConfigPortal::AP_SSID,
+                              ConfigPortal::AP_PASSWORD)) {
     Serial.println("WiFi connected");
     return;
   }

@@ -3,7 +3,6 @@
 #include "screens/HomeScreen.h"
 #include "screens/MenuScreen.h"
 #include "screens/MusicScreen.h"
-#include "screens/NetworkConfigScreen.h"
 #include "screens/RadioScreen.h"
 #include "screens/SettingsScreen.h"
 #include "screens/TimerScreen.h"
@@ -32,9 +31,8 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   radioScreen = new RadioScreen(radio, statusBar, config);
   musicScreen = new MusicScreen(music, statusBar, config);
   weatherScreen = new WeatherScreen(weather, statusBar);
-  settingsScreen = new SettingsScreen(config, statusBar, battery);
+  settingsScreen = new SettingsScreen(config, statusBar, battery, conn);
   timerScreen = new TimerScreen(statusBar);
-  networkConfigScreen = new NetworkConfigScreen(rtc, conn, statusBar);
 
   // Set UIManager reference
   homeScreen->setUIManager(this);
@@ -45,7 +43,6 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   weatherScreen->setUIManager(this);
   settingsScreen->setUIManager(this);
   timerScreen->setUIManager(this);
-  networkConfigScreen->setUIManager(this);
 
   currentScreenObj = homeScreen;
   currentScreenState = SCREEN_HOME;
@@ -121,9 +118,6 @@ void UIManager::switchScreen(ScreenState state) {
     break;
   case SCREEN_TIMER:
     currentScreenObj = timerScreen;
-    break;
-  case SCREEN_NETWORK_CONFIG:
-    currentScreenObj = networkConfigScreen;
     break;
   }
 

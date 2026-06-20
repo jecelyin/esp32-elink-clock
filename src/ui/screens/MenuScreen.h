@@ -23,8 +23,6 @@ public:
                         u8g2_font_open_iconic_embedded_4x_t, 'B'};
     items[6] = MenuItem{SCREEN_TIMER, "Timer",
                         u8g2_font_open_iconic_embedded_4x_t, 'E'};
-    items[7] = MenuItem{SCREEN_NETWORK_CONFIG, "Config",
-                        u8g2_font_open_iconic_embedded_4x_t, 'F'};
     firstDraw = true;
   }
 
@@ -65,7 +63,7 @@ public:
   }
 
 private:
-  static const int MENU_ITEM_COUNT = 8;
+  static const int MENU_ITEM_COUNT = 7;
   static const int SCREEN_WIDTH = 400;
 
   struct MenuRect {
