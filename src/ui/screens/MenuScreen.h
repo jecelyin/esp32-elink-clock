@@ -34,33 +34,13 @@ public:
   }
 
   void draw(DisplayDriver *display) override {
-    Serial.printf(
-        "MenuScreen::draw firstDraw=%d menuIndex=%d lastMenuIndex=%d\n",
-        firstDraw, menuIndex, lastMenuIndex);
     if (firstDraw) {
-      display->display.setFullWindow();
-      display->display.firstPage();
-      do {
-        display->display.fillScreen(GxEPD_WHITE);
-        statusBar->draw(display, true);
-        for (int i = 0; i < 8; i++) {
-          drawMenuItem(display, i);
-        }
-      } while (display->display.nextPage());
-      display->powerOff();
-
+      drawFull(display);
       firstDraw = false;
     } else {
-      Serial.println("Partial update start");
-      // Partial update for the item that WAS selected (now unselected)
-      updateItem(display, lastMenuIndex);
-
-      // Partial update for the item that IS selected (now selected)
-      updateItem(display, menuIndex);
-      Serial.println("Partial update end");
+      updateChangedItems(display);
     }
 
-    // Update lastMenuIndex for next time
     lastMenuIndex = menuIndex;
   }
 
@@ -71,23 +51,13 @@ public:
 
   bool handleInput(UIKey key) override {
 
-    if (key == UI_KEY_LEFT) { // Left (KEY_LEFT)
-      lastMenuIndex = menuIndex;
-      menuIndex--;
-      if (menuIndex < 0)
-        menuIndex = 7;
-      Serial.printf("Input LEFT: new index=%d\n", menuIndex);
+    if (key == UI_KEY_LEFT) {
+      moveSelection(-1);
       return true;
-    } else if (key == UI_KEY_RIGHT) { // Right (KEY_RIGHT)
-      lastMenuIndex = menuIndex;
-      menuIndex++;
-      if (menuIndex > 7)
-        menuIndex = 0;
-      Serial.printf("Input RIGHT: new index=%d\n", menuIndex);
+    } else if (key == UI_KEY_RIGHT) {
+      moveSelection(1);
       return true;
-    } else if (key == UI_KEY_ENTER) { // Select (KEY_ENTER Short)
-      Serial.printf("Input ENTER: switch to screen id=%d\n",
-                    items[menuIndex].id);
+    } else if (key == UI_KEY_ENTER) {
       uiManager->switchScreen(items[menuIndex].id);
       return false;
     }
@@ -95,28 +65,63 @@ public:
   }
 
 private:
-  void updateItem(DisplayDriver *display, int index) {
-    int x, y, w, h;
-    getMenuItemRect(index, x, y, w, h);
+  static const int MENU_ITEM_COUNT = 8;
+  static const int SCREEN_WIDTH = 400;
 
-    // Align to byte boundaries (8 pixels) for x and w
-    // This is often required for correct partial updates on E-Ink
-    int x_start_aligned = (x / 8) * 8;
-    int x_end = x + w;
-    int x_end_aligned = ((x_end + 7) / 8) * 8;
-    int w_aligned = x_end_aligned - x_start_aligned;
+  struct MenuRect {
+    int x;
+    int y;
+    int w;
+    int h;
+  };
 
-    Serial.printf("updateItem index=%d raw: %d,%d %dx%d aligned: %d,%d %dx%d\n",
-                  index, x, y, w, h, x_start_aligned, y, w_aligned, h);
-
-    display->display.setPartialWindow(x_start_aligned, y, w_aligned, h);
-
+  void drawFull(DisplayDriver *display) {
+    display->display.setFullWindow();
     display->display.firstPage();
     do {
       display->display.fillScreen(GxEPD_WHITE);
-      drawMenuItem(display, index);
+      statusBar->draw(display, true);
+      for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+        drawMenuItem(display, i);
+      }
     } while (display->display.nextPage());
     display->powerOff();
+  }
+
+  void updateChangedItems(DisplayDriver *display) {
+    if (lastMenuIndex == menuIndex)
+      return;
+
+    MenuRect dirty = getDirtyRect();
+    display->display.setPartialWindow(dirty.x, dirty.y, dirty.w, dirty.h);
+    display->display.firstPage();
+    do {
+      display->display.fillScreen(GxEPD_WHITE);
+      drawItemsInRect(display, dirty);
+    } while (display->display.nextPage());
+    display->powerOff();
+  }
+
+  void moveSelection(int delta) {
+    lastMenuIndex = menuIndex;
+    menuIndex = (menuIndex + delta + MENU_ITEM_COUNT) % MENU_ITEM_COUNT;
+  }
+
+  MenuRect getDirtyRect() {
+    MenuRect dirty =
+        mergeRects(getMenuItemRect(lastMenuIndex), getMenuItemRect(menuIndex));
+    alignPartialRect(dirty);
+    return dirty;
+  }
+
+  void drawItemsInRect(DisplayDriver *display, const MenuRect &dirty) {
+    // 关键逻辑：合并后的局刷区域可能跨行，白底重绘会覆盖中间菜单项。
+    // 因此不能只画新旧两个 item，必须把脏区域内相交的 item 全部补回。
+    for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+      if (rectsIntersect(getMenuItemRect(i), dirty)) {
+        drawMenuItem(display, i);
+      }
+    }
   }
 
   void drawMenuItem(DisplayDriver *display, int i) {
@@ -130,12 +135,8 @@ private:
     int x = x_start + col * x_gap;
     int y = y_start + row * y_gap;
 
-    // Debug info
     bool isSelected = (i == menuIndex);
-    Serial.printf("drawMenuItem i=%d menuIndex=%d isSelected=%d x=%d y=%d\n", i,
-                  menuIndex, isSelected, x, y);
 
-    // Draw Selection Box
     if (isSelected) {
       display->display.fillRect(x - 10, y - 45, 100, 80, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
@@ -146,44 +147,54 @@ private:
       display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
     }
 
-    // Draw Icon
-    // Box Specs: x start: x-10, width: 100.
-    // Center X = (x-10) + (100/2) = x + 40.
     int boxCenterX = x + 40;
 
-    // Draw Icon
     display->u8g2Fonts.setFont(items[i].font);
     int iconWidth =
         u8g2_GetGlyphWidth(&(display->u8g2Fonts.u8g2), items[i].icon);
-    Serial.printf("Icon: code=%d width=%d\n", items[i].icon, iconWidth);
 
     display->u8g2Fonts.drawGlyph(boxCenterX - (iconWidth / 2), y,
                                  items[i].icon);
 
-    // Draw Label
     display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
     int labelWidth = display->u8g2Fonts.getUTF8Width(items[i].label);
-    Serial.printf("Label: %s width=%d\n", items[i].label, labelWidth);
 
     display->u8g2Fonts.setCursor(boxCenterX - (labelWidth / 2), y + 22);
     display->u8g2Fonts.print(items[i].label);
 
-    // Reset Colors
     display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
     display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
   }
 
-  void getMenuItemRect(int index, int &x, int &y, int &w, int &h) {
+  MenuRect getMenuItemRect(int index) {
     int col = index % 3;
     int row = index / 3;
 
     int center_x = 40 + col * 120;
     int center_y = 75 + row * 85;
 
-    x = center_x - 10;
-    y = center_y - 45;
-    w = 100;
-    h = 80;
+    return MenuRect{center_x - 10, center_y - 45, 100, 80};
+  }
+
+  MenuRect mergeRects(const MenuRect &a, const MenuRect &b) {
+    int left = min(a.x, b.x);
+    int top = min(a.y, b.y);
+    int right = max(a.x + a.w, b.x + b.w);
+    int bottom = max(a.y + a.h, b.y + b.h);
+    return MenuRect{left, top, right - left, bottom - top};
+  }
+
+  void alignPartialRect(MenuRect &rect) {
+    // 关键逻辑：电子墨水屏局刷 X 坐标和宽度需要按 8 像素字节边界对齐。
+    int alignedX = (rect.x / 8) * 8;
+    int alignedRight = ((rect.x + rect.w + 7) / 8) * 8;
+    rect.x = max(0, alignedX);
+    rect.w = min(SCREEN_WIDTH, alignedRight) - rect.x;
+  }
+
+  bool rectsIntersect(const MenuRect &a, const MenuRect &b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h &&
+           a.y + a.h > b.y;
   }
 
   struct MenuItem {
@@ -192,7 +203,7 @@ private:
     const uint8_t *font;
     uint16_t icon;
   };
-  MenuItem items[8];
+  MenuItem items[MENU_ITEM_COUNT];
   int menuIndex;
   int lastMenuIndex;
   StatusBar *statusBar;
