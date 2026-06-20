@@ -2,9 +2,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-Button::Button(uint8_t pin, ButtonEvent shortPressEvent, bool supportsLongPress)
+Button::Button(uint8_t pin, ButtonEvent shortPressEvent, bool supportsLongPress,
+               uint16_t shortPressRepeatGapMs)
     : pin(pin), shortPressEvent(shortPressEvent),
-      supportsLongPress(supportsLongPress) {}
+      supportsLongPress(supportsLongPress),
+      shortPressRepeatGapMs(shortPressRepeatGapMs) {}
 
 void Button::begin() {
   pinMode(pin, INPUT_PULLUP);
@@ -19,6 +21,7 @@ void Button::begin() {
   irqLastState = initialState;
   irqLastChangeTime = lastDebounceTime;
   irqPressStartTime = initialState == LOW ? lastDebounceTime : 0;
+  irqLastQueuedShortTime = 0;
 
   attachInterruptArg(digitalPinToInterrupt(pin), handleInterruptThunk, this,
                      CHANGE);
@@ -150,19 +153,28 @@ void IRAM_ATTR Button::handleInterrupt() {
 
   // 关键逻辑：释放中断只负责锁存短按；长按只在主循环确认“当前仍按住”
   // 时触发，避免 e-ink 刷新或睡眠唤醒把普通短按拖成误判长按。
-  queueShortPressFromInterrupt();
+  queueShortPressFromInterrupt(now);
 }
 
-void IRAM_ATTR Button::queueShortPressFromInterrupt() {
+void IRAM_ATTR Button::queueShortPressFromInterrupt(uint32_t now) {
+  // 关键逻辑：真实连按和释放回弹都表现为多次 HIGH 释放沿。
+  // 这里按键级别限制最小短按间隔，防止 ENTER 的一次释放被排成两次事件；
+  // left/right 的间隔更短，仍然支持快速切换时排队。
+  if (irqLastQueuedShortTime != 0 &&
+      now - irqLastQueuedShortTime < shortPressRepeatGapMs) {
+    return;
+  }
+
   if (pendingShortPressCount < MAX_PENDING_EVENTS) {
     pendingShortPressCount++;
+    irqLastQueuedShortTime = now;
   }
 }
 
 InputDriver::InputDriver()
-    : enterButton(KEY_ENTER, BTN_ENTER_SHORT, true),
-      leftButton(KEY_LEFT, BTN_LEFT_CLICK),
-      rightButton(KEY_RIGHT, BTN_RIGHT_CLICK) {}
+    : enterButton(KEY_ENTER, BTN_ENTER_SHORT, true, 450),
+      leftButton(KEY_LEFT, BTN_LEFT_CLICK, false, 120),
+      rightButton(KEY_RIGHT, BTN_RIGHT_CLICK, false, 120) {}
 
 void InputDriver::begin() {
   enterButton.begin();

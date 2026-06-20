@@ -15,7 +15,7 @@ enum ButtonEvent {
 class Button {
 public:
   Button(uint8_t pin, ButtonEvent shortPressEvent,
-         bool supportsLongPress = false);
+         bool supportsLongPress = false, uint16_t shortPressRepeatGapMs = 120);
   void begin();
   ButtonEvent update();
   void syncPressedState(unsigned long now);
@@ -23,7 +23,7 @@ public:
 private:
   static void IRAM_ATTR handleInterruptThunk(void *arg);
   void IRAM_ATTR handleInterrupt();
-  void IRAM_ATTR queueShortPressFromInterrupt();
+  void IRAM_ATTR queueShortPressFromInterrupt(uint32_t now);
 
   ButtonEvent consumePendingEvent();
   ButtonEvent detectLongPress(int physicalState, unsigned long now);
@@ -34,6 +34,7 @@ private:
   uint8_t pin;
   ButtonEvent shortPressEvent;
   bool supportsLongPress;
+  uint16_t shortPressRepeatGapMs;
   int lastPhysicalState = HIGH;
   int stableState = HIGH;
   unsigned long lastDebounceTime = 0;
@@ -43,6 +44,7 @@ private:
   volatile int irqLastState = HIGH;
   volatile uint32_t irqLastChangeTime = 0;
   volatile uint32_t irqPressStartTime = 0;
+  volatile uint32_t irqLastQueuedShortTime = 0;
   volatile uint8_t pendingShortPressCount = 0;
   volatile bool irqLongHandled = false;
 
