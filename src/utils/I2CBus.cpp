@@ -136,6 +136,15 @@ bool powerDownSharedBus(uint32_t timeoutMs) {
   return true;
 }
 
+bool probeDevice(uint8_t address, uint32_t timeoutMs) {
+  Guard guard(timeoutMs);
+  if (!guard.isLocked())
+    return false;
+
+  Wire.beginTransmission(address);
+  return Wire.endTransmission(true) == 0;
+}
+
 Guard::Guard(uint32_t timeoutMs) { locked = lock(timeoutMs); }
 
 Guard::~Guard() {

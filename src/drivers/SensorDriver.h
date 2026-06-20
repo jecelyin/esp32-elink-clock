@@ -7,17 +7,14 @@ public:
   SensorDriver();
   bool init();
   bool readData(float &temp, float &hum);
-  int getBatteryLevel();
 
   // 硬件自检逻辑 (仅逻辑，不包含显示)
-  bool checkHardware();
   bool checkDevice(uint8_t address);
 private:
   bool initOnce();
   bool readSensorOnce(float &temp, float &hum);
   bool retryRead(float &temp, float &hum);
   bool useCachedData(float &temp, float &hum) const;
-  float getBatteryVoltage();
   void markReadSuccess(float temp, float hum);
   void logFailure(const char *operation);
 private:

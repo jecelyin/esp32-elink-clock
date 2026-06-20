@@ -1,5 +1,6 @@
 #include "config.h"
 #include "drivers/AudioDriver.h"
+#include "drivers/BatteryDriver.h"
 #include "drivers/DisplayDriver.h"
 #include "drivers/InputDriver.h"
 #include "drivers/RadioDriver.h"
@@ -12,6 +13,7 @@
 #include "managers/ConnectionManager.h"
 #include "managers/WeatherManager.h"
 #include "ui/UIManager.h"
+#include "utils/HardwareCheck.h"
 #include "utils/I2CBus.h"
 #include "utils/SleepLogger.h"
 #include <Arduino.h>
@@ -25,6 +27,7 @@
 DisplayDriver displayDriver;
 RtcDriver rtcDriver;
 SensorDriver sensorDriver;
+BatteryDriver batteryDriver;
 RadioDriver radioDriver;
 AudioDriver audioDriver;
 InputDriver inputDriver;
@@ -37,8 +40,8 @@ AlarmManager alarmManager;
 MusicManager musicManager(&audioDriver, &sdCardDriver, &configManager);
 
 UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
-                    &connectionManager, &alarmManager, &radioDriver,
-                    &audioDriver, &musicManager, &configManager);
+                    &batteryDriver, &connectionManager, &alarmManager,
+                    &radioDriver, &audioDriver, &musicManager, &configManager);
 
 // #include <nvs_flash.h>
 
@@ -53,6 +56,14 @@ constexpr uint32_t ACTIVE_LOOP_DELAY_MS = 50UL;
 uint32_t g_lastButtonWakeMs = 0;
 uint32_t g_lastUserActivityMs = 0;
 
+void startSerialDebug() {
+#if ENABLE_SERIAL_DEBUG
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("System Starting with Power Optimization...");
+#endif
+}
+
 void configurePowerSaving() {
   setCpuFrequencyMhz(80);
   btStop();
@@ -63,6 +74,132 @@ void configurePowerSaving() {
                                .light_sleep_enable = false};
   esp_pm_configure(&pm_config);
 #endif
+}
+
+void configureBootPins() {
+  pinMode(EPD_BUSY, INPUT);
+  SharedSPIBus::begin();
+
+  pinMode(CODEC_EN, OUTPUT);
+  pinMode(AMP_EN, OUTPUT);
+  pinMode(RADIO_EN, OUTPUT);
+
+  digitalWrite(AMP_EN, LOW);
+  digitalWrite(CODEC_EN, LOW);
+  digitalWrite(RADIO_EN, LOW);
+}
+
+void initBootDrivers() {
+  I2CBus::begin();
+  delay(100);
+  inputDriver.begin();
+  configManager.begin();
+  Serial.println("Config Manager Init Success");
+  batteryDriver.begin();
+  displayDriver.init();
+  displayDriver.clear();
+}
+
+bool isHardwareCheckCurrent() {
+  return configManager.config.hw_checked &&
+         configManager.config.hw_check_version >= HardwareCheck::REQUIRED_VERSION;
+}
+
+void showStartupDeviceResult(const HardwareCheck::Device &device, bool ok,
+                             uint8_t line) {
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "%s: %s", device.name, ok ? "OK" : "FAIL");
+  displayDriver.showStatus(buffer, line);
+}
+
+bool checkStartupDevice(const HardwareCheck::Device &device, uint8_t line) {
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "Checking %s...", device.name);
+  displayDriver.showStatus(buffer, line);
+  bool ok = HardwareCheck::checkDevice(device, &batteryDriver);
+  showStartupDeviceResult(device, ok, line);
+  delay(200);
+  return ok;
+}
+
+bool runStartupDeviceChecks() {
+  bool allOk = true;
+  for (uint8_t i = 0; i < HardwareCheck::DEVICE_COUNT; i++) {
+    const HardwareCheck::Device &device = HardwareCheck::DEVICES[i];
+    allOk = checkStartupDevice(device, i + 1) && allOk;
+  }
+  return allOk;
+}
+
+void finishStartupHardwareCheck(bool allOk) {
+  if (allOk) {
+    displayDriver.showStatus("Hardware Check OK", 0);
+    configManager.config.hw_checked = true;
+    configManager.config.hw_check_version = HardwareCheck::REQUIRED_VERSION;
+    configManager.save();
+    delay(1000);
+    return;
+  }
+
+  displayDriver.showStatus("Hardware Check Failed!", 0);
+  while (1) {
+    delay(10);
+  }
+}
+
+void runStartupHardwareCheckIfNeeded() {
+  if (isHardwareCheckCurrent())
+    return;
+
+  displayDriver.showStatus("Checking Hardware...", 0);
+  HardwareCheck::setPowerEnabled(true);
+  bool allOk = runStartupDeviceChecks();
+  HardwareCheck::setPowerEnabled(false);
+  finishStartupHardwareCheck(allOk);
+}
+
+void initRtcSensorAndStorage() {
+  if (!rtcDriver.init()) {
+    Serial.println("RTC Init Failed");
+  } else {
+    Serial.println("RTC Init Success");
+  }
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+  } else {
+    Serial.println("SPIFFS Mount Success");
+  }
+
+  if (!sensorDriver.init()) {
+    Serial.println("Sensor Init Failed");
+  } else {
+    Serial.println("Sensor Init Success");
+  }
+}
+
+void initOptionalDrivers() {
+  if (!batteryDriver.init()) {
+    Serial.println("Battery Gauge Init Failed, ADC fallback enabled");
+  } else {
+    Serial.println("Battery Gauge Init Success");
+  }
+
+  radioDriver.init();
+  Serial.println("Radio Init Success");
+  Serial.println("Audio Driver Lazy Init Enabled");
+}
+
+void initManagers() {
+  connectionManager.begin(&configManager, &rtcDriver);
+  Serial.println("Connection Manager Init Success");
+  alarmManager.begin();
+  Serial.println("Alarm Manager Init Success");
+  weatherManager.begin(&configManager);
+  Serial.println("Weather Manager Init Success");
+  Serial.println("UI Manager Init Starting...");
+  uiManager.init();
+  Serial.println("UI Manager Init Success");
 }
 
 bool isButtonHeld() {
@@ -195,120 +332,14 @@ void networkTask(void *pvParameters) {
 }
 
 void setup() {
-#if ENABLE_SERIAL_DEBUG
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("System Starting with Power Optimization...");
-#endif
+  startSerialDebug();
   configurePowerSaving();
-
-  pinMode(EPD_BUSY, INPUT); // EPD BUSY is usually input
-  SharedSPIBus::begin();
-
-  // Audio & Power
-  pinMode(CODEC_EN, OUTPUT);
-  pinMode(AMP_EN, OUTPUT);
-  pinMode(RADIO_EN, OUTPUT);
-
-  digitalWrite(AMP_EN, LOW); // Keep Amp off initially
-  digitalWrite(CODEC_EN, LOW);
-  digitalWrite(RADIO_EN, LOW);
-
-  I2CBus::begin();
-
-  delay(100); // Let power stabilize
-  // Init Drivers
-  inputDriver.begin();
-  // sdCardDriver.begin();
-  configManager.begin();
-  Serial.println("Config Manager Init Success");
-
-  // 关键逻辑：共享 SPI 总线必须先由 SharedSPIBus 统一完成引脚映射，再交给
-  // GxEPD2 做屏幕握手；否则 SD 卡和屏幕会在同一组 GPIO 上互相覆盖总线归属。
-  // sdCardDriver.begin();
-  displayDriver.init();
-
-  displayDriver.clear(); // Ensure screen is white before partial updates
-
-  // 硬件自检逻辑：分离显示逻辑
-  if (!configManager.config.hw_checked) {
-    displayDriver.showStatus("Checking Hardware...", 0);
-    digitalWrite(CODEC_EN, HIGH); // Enable Codec for I2C
-    digitalWrite(RADIO_EN, HIGH);
-    struct I2CDevice {
-      const char *name;
-      uint8_t address;
-    };
-    I2CDevice devices[] = {{"RTC (RX8010SJ)", RX8010_I2C_ADDR},
-                           {"Sensor (SHT30)", SHT30_I2C_ADDR},
-                           {"Audio (ES8311)", ES8311_ADDRESS},
-                           {"Radio (RDA5807)", M5807_ADDR_FULL_ACCESS}};
-
-    bool allOk = true;
-    for (int i = 0; i < 4; i++) {
-      char buffer[64];
-      sprintf(buffer, "Checking %s...", devices[i].name);
-      displayDriver.showStatus(buffer, i + 1);
-
-      if (sensorDriver.checkDevice(devices[i].address)) {
-        sprintf(buffer, "%s: OK", devices[i].name);
-      } else {
-        sprintf(buffer, "%s: FAIL", devices[i].name);
-        allOk = false;
-      }
-      displayDriver.showStatus(buffer, i + 1);
-      delay(200);
-    }
-
-    if (allOk) {
-      displayDriver.showStatus("Hardware Check OK", 0);
-      configManager.config.hw_checked = true;
-      configManager.save();
-      delay(1000);
-    } else {
-      displayDriver.showStatus("Hardware Check Failed!", 0);
-      while (1) {
-        delay(10);
-      }
-    }
-    digitalWrite(RADIO_EN, LOW);
-  }
-
-  if (!rtcDriver.init()) {
-    Serial.println("RTC Init Failed");
-  } else {
-    Serial.println("RTC Init Success");
-  }
-
-  if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS Mount Failed");
-  } else {
-    Serial.println("SPIFFS Mount Success");
-  }
-
-  if (!sensorDriver.init()) {
-    Serial.println("Sensor Init Failed");
-  } else {
-    Serial.println("Sensor Init Success");
-  }
-
-  radioDriver.init();
-  Serial.println("Radio Init Success");
-
-  Serial.println("Audio Driver Lazy Init Enabled");
-
-  connectionManager.begin(&configManager, &rtcDriver);
-  Serial.println("Connection Manager Init Success");
-
-  alarmManager.begin();
-  Serial.println("Alarm Manager Init Success");
-
-  weatherManager.begin(&configManager);
-  Serial.println("Weather Manager Init Success");
-
-  Serial.println("UI Manager Init Starting...");
-  uiManager.init();
-  Serial.println("UI Manager Init Success");
+  configureBootPins();
+  initBootDrivers();
+  runStartupHardwareCheckIfNeeded();
+  initRtcSensorAndStorage();
+  initOptionalDrivers();
+  initManagers();
 
   // Create background network task on Core 0 (shared with WiFi protocol stack)
   // This physically isolates network logic from the main UI/Hardware thread on

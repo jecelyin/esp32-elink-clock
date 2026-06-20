@@ -5,6 +5,7 @@ ConfigManager::ConfigManager() {
   config.volume = 10;
   config.time_format_24 = true;
   config.hw_checked = false;
+  config.hw_check_version = 0;
   for (int i = 0; i < 8; i++) {
     config.radio_presets[i] = 0;
   }
@@ -21,9 +22,10 @@ void ConfigManager::load() {
   config.volume = prefs.getUChar("vol", 10);
   config.time_format_24 = prefs.getBool("fmt24", true);
   config.hw_checked = prefs.getBool("hwck", false);
+  config.hw_check_version = prefs.getUChar("hwv", 0);
   for (int i = 0; i < 8; i++) {
     char key[16];
-    sprintf(key, "radio_p%d", i);
+    snprintf(key, sizeof(key), "radio_p%d", i);
     config.radio_presets[i] = prefs.getUShort(key, 0);
   }
 }
@@ -34,9 +36,10 @@ void ConfigManager::save() {
   prefs.putUChar("vol", config.volume);
   prefs.putBool("fmt24", config.time_format_24);
   prefs.putBool("hwck", config.hw_checked);
+  prefs.putUChar("hwv", config.hw_check_version);
   for (int i = 0; i < 8; i++) {
     char key[16];
-    sprintf(key, "radio_p%d", i);
+    snprintf(key, sizeof(key), "radio_p%d", i);
     prefs.putUShort(key, config.radio_presets[i]);
   }
 }

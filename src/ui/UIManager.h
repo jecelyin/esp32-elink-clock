@@ -3,6 +3,7 @@
 #include "../drivers/DisplayDriver.h"
 #include "../drivers/RtcDriver.h"
 #include "../drivers/SensorDriver.h"
+#include "../drivers/BatteryDriver.h"
 #include "../managers/ConnectionManager.h"
 #include "../managers/WeatherManager.h"
 
@@ -41,9 +42,9 @@ enum ScreenState {
 class UIManager {
 public:
   UIManager(DisplayDriver *disp, RtcDriver *rtc, WeatherManager *weather,
-            SensorDriver *sensor, ConnectionManager *conn, AlarmManager *alarm,
-            RadioDriver *radio, AudioDriver *audio, MusicManager *music,
-            ConfigManager *config);
+            SensorDriver *sensor, BatteryDriver *battery,
+            ConnectionManager *conn, AlarmManager *alarm, RadioDriver *radio,
+            AudioDriver *audio, MusicManager *music, ConfigManager *config);
   void init();
   void update();
   void handleInput(UIKey key);
@@ -75,6 +76,7 @@ private:
   RtcDriver *rtc;
   WeatherManager *weather;
   SensorDriver *sensor;
+  BatteryDriver *battery;
   ConnectionManager *conn;
   AlarmManager *alarmMgr;
   RadioDriver *radio;

@@ -4,14 +4,13 @@
 
 #include "../../drivers/DisplayDriver.h"
 #include "../../drivers/RtcDriver.h"
+#include "../../drivers/BatteryDriver.h"
 #include "../../managers/ConnectionManager.h"
-
-#include "../../drivers/SensorDriver.h"
 
 class StatusBar {
 public:
-  StatusBar(ConnectionManager *conn, RtcDriver *rtc, SensorDriver *sensor)
-      : conn(conn), rtc(rtc), sensor(sensor) {}
+  StatusBar(ConnectionManager *conn, RtcDriver *rtc, BatteryDriver *battery)
+      : conn(conn), rtc(rtc), battery(battery) {}
 
   void draw(DisplayDriver *display, bool showTime) {
     auto &epd = display->display;
@@ -19,7 +18,7 @@ public:
     DateTime now = rtc->getTime();
     bool wifiConnected = conn->isConnected();
 
-    syncBatteryLevel();
+    syncBatteryInfo();
     prepareCanvas(epd, u8g2);
     drawConnection(u8g2, wifiConnected);
 
@@ -49,7 +48,7 @@ public:
       return true;
     }
 
-    return shouldRefreshBatteryLevel();
+    return shouldRefreshBatteryInfo();
   }
 
   void refreshPartial(DisplayDriver *display, bool showTime) {
@@ -63,17 +62,17 @@ public:
   }
 
 private:
-  void syncBatteryLevel() {
-    if (!shouldRefreshBatteryLevel()) {
+  void syncBatteryInfo() {
+    if (!shouldRefreshBatteryInfo()) {
       return;
     }
 
-    lastBattLevel = sensor->getBatteryLevel();
+    lastBatteryInfo = battery->readInfo();
     lastBattUpdate = millis();
   }
 
-  bool shouldRefreshBatteryLevel() const {
-    return lastBattLevel == -1 || millis() - lastBattUpdate >= 60000UL;
+  bool shouldRefreshBatteryInfo() const {
+    return !lastBatteryInfo.dataValid || millis() - lastBattUpdate >= 60000UL;
   }
 
   void prepareCanvas(GxEPD2_BW<EPD2_DRV, EPD2_DRV::HEIGHT> &epd,
@@ -104,16 +103,20 @@ private:
 
   void drawBattery(GxEPD2_BW<EPD2_DRV, EPD2_DRV::HEIGHT> &epd,
                    U8G2_FOR_ADAFRUIT_GFX &u8g2) {
-    int battLevel = lastBattLevel;
+    int battLevel = lastBatteryInfo.levelPercent;
     int bodyX = 350;
     int bodyY = 6;
     int bodyW = 16;
     int bodyH = 10;
 
     u8g2.setFont(u8g2_font_helvB08_tr);
+    if (lastBatteryInfo.alert) {
+      u8g2.setCursor(340, 15);
+      u8g2.print("!");
+    }
+
     u8g2.setCursor(370, 15);
-    u8g2.print(battLevel);
-    u8g2.print("%");
+    printBatteryPercent(u8g2, battLevel);
 
     epd.drawRect(bodyX, bodyY, bodyW, bodyH, GxEPD_WHITE);
     epd.fillRect(bodyX + bodyW, bodyY + 3, 2, 4, GxEPD_WHITE);
@@ -125,6 +128,16 @@ private:
       }
       epd.fillRect(bodyX + 2, bodyY + 2, fillWidth, bodyH - 4, GxEPD_WHITE);
     }
+  }
+
+  void printBatteryPercent(U8G2_FOR_ADAFRUIT_GFX &u8g2, int battLevel) {
+    if (battLevel < 0) {
+      u8g2.print("--%");
+      return;
+    }
+
+    u8g2.print(battLevel);
+    u8g2.print("%");
   }
 
   void restoreCanvas(U8G2_FOR_ADAFRUIT_GFX &u8g2) {
@@ -145,8 +158,8 @@ private:
 
   ConnectionManager *conn;
   RtcDriver *rtc;
-  SensorDriver *sensor;
-  int lastBattLevel = -1;
+  BatteryDriver *battery;
+  BatteryInfo lastBatteryInfo;
   uint32_t lastBattUpdate = 0;
   bool hasRendered = false;
   int lastRenderedMinute = -1;

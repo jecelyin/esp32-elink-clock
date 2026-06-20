@@ -12,14 +12,15 @@
 
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
                      WeatherManager *weather, SensorDriver *sensor,
-                     ConnectionManager *conn, AlarmManager *alarm,
-                     RadioDriver *radio, AudioDriver *audio,
-                     MusicManager *music, ConfigManager *config)
-    : display(disp), rtc(rtc), weather(weather), sensor(sensor), conn(conn),
-      alarmMgr(alarm), radio(radio), audio(audio), music(music),
-      config(config) {
+                     BatteryDriver *battery, ConnectionManager *conn,
+                     AlarmManager *alarm, RadioDriver *radio,
+                     AudioDriver *audio, MusicManager *music,
+                     ConfigManager *config)
+    : display(disp), rtc(rtc), weather(weather), sensor(sensor),
+      battery(battery), conn(conn), alarmMgr(alarm), radio(radio), audio(audio),
+      music(music), config(config) {
 
-  statusBar = new StatusBar(conn, rtc, sensor);
+  statusBar = new StatusBar(conn, rtc, battery);
   todoMgr = new TodoManager();
 
   webMgr = new WebManager(todoMgr);
@@ -31,7 +32,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   radioScreen = new RadioScreen(radio, statusBar, config);
   musicScreen = new MusicScreen(music, statusBar, config);
   weatherScreen = new WeatherScreen(weather, statusBar);
-  settingsScreen = new SettingsScreen(config, statusBar, sensor);
+  settingsScreen = new SettingsScreen(config, statusBar, battery);
   timerScreen = new TimerScreen(statusBar);
   networkConfigScreen = new NetworkConfigScreen(rtc, conn, statusBar);
 
@@ -45,8 +46,6 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   settingsScreen->setUIManager(this);
   timerScreen->setUIManager(this);
   networkConfigScreen->setUIManager(this);
-
-  settingsScreen->setUIManager(this);
 
   currentScreenObj = homeScreen;
   currentScreenState = SCREEN_HOME;

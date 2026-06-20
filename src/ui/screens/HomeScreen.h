@@ -326,7 +326,7 @@ private:
     u8g2.print(dateStr);
 
     // Weekday
-    char *weekdayStrs[] = {"日", "一", "二", "三", "四", "五", "六"};
+    const char *weekdayStrs[] = {"日", "一", "二", "三", "四", "五", "六"};
     char weekdayStr[7];
     sprintf(weekdayStr, "周%s", weekdayStrs[now.week]);
     int w = u8g2.getUTF8Width(weekdayStr);

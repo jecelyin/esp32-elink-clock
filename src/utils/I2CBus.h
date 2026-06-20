@@ -9,6 +9,7 @@ bool lock(uint32_t timeoutMs = 200);
 void unlock();
 bool recover();
 bool powerDownSharedBus(uint32_t timeoutMs = 200);
+bool probeDevice(uint8_t address, uint32_t timeoutMs = 200);
 
 class Guard {
 public:

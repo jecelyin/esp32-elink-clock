@@ -10,6 +10,7 @@ struct AppConfig {
   bool time_format_24;
   uint16_t radio_presets[8];
   bool hw_checked; // 硬件自检状态
+  uint8_t hw_check_version; // 硬件自检清单版本
   // Add more config items as needed
 };
 
