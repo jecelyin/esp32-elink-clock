@@ -8,17 +8,23 @@ enum ButtonEvent {
   BTN_NONE = 0,
   BTN_ENTER_SHORT,
   BTN_ENTER_LONG,
-  BTN_LEFT_CLICK,
-  BTN_RIGHT_CLICK
+  BTN_LEFT_SHORT,
+  BTN_LEFT_LONG,
+  BTN_RIGHT_SHORT,
+  BTN_RIGHT_LONG
 };
 
 class Button {
 public:
-  Button(uint8_t pin, ButtonEvent shortPressEvent,
-         bool supportsLongPress = false, uint16_t shortPressRepeatGapMs = 120);
+  Button(uint8_t pin, ButtonEvent shortPressEvent, ButtonEvent longPressEvent,
+         uint16_t shortPressRepeatGapMs = 120,
+         uint16_t longPressRepeatGapMs = 0);
   void begin();
   ButtonEvent update();
   void syncPressedState(unsigned long now);
+  bool hasPendingShortPress();
+  void clearPendingShortPresses();
+  bool isPressed();
 
 private:
   static void IRAM_ATTR handleInterruptThunk(void *arg);
@@ -34,12 +40,14 @@ private:
 
   uint8_t pin;
   ButtonEvent shortPressEvent;
-  bool supportsLongPress;
+  ButtonEvent longPressEvent;
   uint16_t shortPressRepeatGapMs;
+  uint16_t longPressRepeatGapMs;
   int lastPhysicalState = HIGH;
   int stableState = HIGH;
   unsigned long lastDebounceTime = 0;
   unsigned long pressStartTime = 0;
+  unsigned long lastLongPressEventTime = 0;
   bool longPressed = false;
 
   volatile int irqLastState = HIGH;
@@ -61,6 +69,8 @@ public:
   void begin();
   ButtonEvent loop();
   void syncWakePressedButtons();
+  void clearPendingEnterShortPress();
+  void clearPendingEnterShortPressIfDirectionActive();
 
 private:
   Button enterButton;

@@ -49,10 +49,10 @@ public:
 
   bool handleInput(UIKey key) override {
 
-    if (key == UI_KEY_LEFT) {
+    if (key == UI_KEY_LEFT || key == UI_KEY_LEFT_LONG) {
       moveSelection(-1);
       return true;
-    } else if (key == UI_KEY_RIGHT) {
+    } else if (key == UI_KEY_RIGHT || key == UI_KEY_RIGHT_LONG) {
       moveSelection(1);
       return true;
     } else if (key == UI_KEY_ENTER) {

@@ -8,7 +8,10 @@ enum UIKey {
   UI_KEY_NONE = 0,
   UI_KEY_ENTER = 1,
   UI_KEY_LEFT = 2,
-  UI_KEY_RIGHT = 3
+  UI_KEY_RIGHT = 3,
+  UI_KEY_ENTER_LONG = 4,
+  UI_KEY_LEFT_LONG = 5,
+  UI_KEY_RIGHT_LONG = 6
 };
 
 class Screen {

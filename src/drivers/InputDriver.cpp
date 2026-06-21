@@ -2,11 +2,14 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-Button::Button(uint8_t pin, ButtonEvent shortPressEvent, bool supportsLongPress,
-               uint16_t shortPressRepeatGapMs)
+Button::Button(uint8_t pin, ButtonEvent shortPressEvent,
+               ButtonEvent longPressEvent,
+               uint16_t shortPressRepeatGapMs,
+               uint16_t longPressRepeatGapMs)
     : pin(pin), shortPressEvent(shortPressEvent),
-      supportsLongPress(supportsLongPress),
-      shortPressRepeatGapMs(shortPressRepeatGapMs) {}
+      longPressEvent(longPressEvent),
+      shortPressRepeatGapMs(shortPressRepeatGapMs),
+      longPressRepeatGapMs(longPressRepeatGapMs) {}
 
 void Button::begin() {
   pinMode(pin, INPUT_PULLUP);
@@ -38,6 +41,7 @@ void Button::syncPressedState(unsigned long now) {
   stableState = LOW;
   lastPhysicalState = LOW;
   pressStartTime = now;
+  lastLongPressEventTime = 0;
   longPressed = false;
   lastDebounceTime = now;
   syncInterruptPressedState(now);
@@ -54,6 +58,24 @@ ButtonEvent Button::update() {
   updatePolledState(physicalState, now);
   return detectLongPress(physicalState, now);
 }
+
+bool Button::hasPendingShortPress() {
+  bool hasPending = false;
+
+  noInterrupts();
+  hasPending = pendingShortPressCount > 0;
+  interrupts();
+
+  return hasPending;
+}
+
+void Button::clearPendingShortPresses() {
+  noInterrupts();
+  pendingShortPressCount = 0;
+  interrupts();
+}
+
+bool Button::isPressed() { return digitalRead(pin) == LOW; }
 
 void Button::updatePolledState(int physicalState, unsigned long now) {
   if (physicalState != lastPhysicalState) {
@@ -74,13 +96,24 @@ void Button::updatePolledState(int physicalState, unsigned long now) {
 }
 
 ButtonEvent Button::detectLongPress(int physicalState, unsigned long now) {
-  if (supportsLongPress && physicalState == LOW && stableState == LOW &&
-      !longPressed && (now - pressStartTime > LONG_PRESS_DELAY)) {
+  if (longPressEvent == BTN_NONE || physicalState != LOW ||
+      stableState != LOW) {
+    return BTN_NONE;
+  }
+
+  if (!longPressed && (now - pressStartTime > LONG_PRESS_DELAY)) {
     longPressed = true;
+    lastLongPressEventTime = now;
     noInterrupts();
     irqLongHandled = true;
     interrupts();
-    return BTN_ENTER_LONG;
+    return longPressEvent;
+  }
+
+  if (longPressed && longPressRepeatGapMs > 0 &&
+      now - lastLongPressEventTime >= longPressRepeatGapMs) {
+    lastLongPressEventTime = now;
+    return longPressEvent;
   }
 
   return BTN_NONE;
@@ -94,7 +127,7 @@ ButtonEvent Button::consumePendingEvent() {
   noInterrupts();
   if (pendingLongPressCount > 0) {
     pendingLongPressCount--;
-    event = BTN_ENTER_LONG;
+    event = longPressEvent;
     consumedLongPress = true;
   } else if (pendingShortPressCount > 0) {
     pendingShortPressCount--;
@@ -126,6 +159,7 @@ void Button::syncPolledReleasedState(unsigned long now) {
   stableState = HIGH;
   lastPhysicalState = HIGH;
   pressStartTime = 0;
+  lastLongPressEventTime = 0;
   longPressed = false;
   lastDebounceTime = now;
 }
@@ -166,7 +200,7 @@ void IRAM_ATTR Button::handleInterrupt() {
 }
 
 bool IRAM_ATTR Button::queueLongPressFromInterrupt(uint32_t duration) {
-  if (!supportsLongPress || duration <= LONG_PRESS_DELAY) {
+  if (longPressEvent == BTN_NONE || duration <= LONG_PRESS_DELAY) {
     return false;
   }
 
@@ -195,9 +229,9 @@ void IRAM_ATTR Button::queueShortPressFromInterrupt(uint32_t now) {
 }
 
 InputDriver::InputDriver()
-    : enterButton(KEY_ENTER, BTN_ENTER_SHORT, true, 450),
-      leftButton(KEY_LEFT, BTN_LEFT_CLICK, false, 120),
-      rightButton(KEY_RIGHT, BTN_RIGHT_CLICK, false, 120) {}
+    : enterButton(KEY_ENTER, BTN_ENTER_SHORT, BTN_ENTER_LONG, 450, 0),
+      leftButton(KEY_LEFT, BTN_LEFT_SHORT, BTN_LEFT_LONG, 120, 260),
+      rightButton(KEY_RIGHT, BTN_RIGHT_SHORT, BTN_RIGHT_LONG, 120, 260) {}
 
 void InputDriver::begin() {
   enterButton.begin();
@@ -210,6 +244,20 @@ void InputDriver::syncWakePressedButtons() {
   enterButton.syncPressedState(now);
   leftButton.syncPressedState(now);
   rightButton.syncPressedState(now);
+}
+
+void InputDriver::clearPendingEnterShortPress() {
+  enterButton.clearPendingShortPresses();
+}
+
+void InputDriver::clearPendingEnterShortPressIfDirectionActive() {
+  // 关键逻辑：菜单页默认焦点是 Home，方向键抖动或硬件串扰混入 ENTER
+  // 短按时，会被误判为“确认 Home”并返回首页。方向键已排队或仍在按住
+  // 都说明当前动作是切换 item，此时只清理 ENTER 短按，保留 ENTER 长按。
+  if (leftButton.hasPendingShortPress() || rightButton.hasPendingShortPress() ||
+      leftButton.isPressed() || rightButton.isPressed()) {
+    clearPendingEnterShortPress();
+  }
 }
 
 ButtonEvent InputDriver::loop() {

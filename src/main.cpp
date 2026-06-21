@@ -213,6 +213,42 @@ bool isWithinGracePeriod(uint32_t lastMs, uint32_t graceMs) {
 
 void markUserActivity() { g_lastUserActivityMs = millis(); }
 
+bool isMenuDirectionInput(ScreenState state, UIKey key) {
+  return state == SCREEN_MENU &&
+         (key == UI_KEY_LEFT || key == UI_KEY_RIGHT ||
+          key == UI_KEY_LEFT_LONG || key == UI_KEY_RIGHT_LONG);
+}
+
+UIKey mapButtonEventToUIKey(ButtonEvent btn) {
+  switch (btn) {
+  case BTN_ENTER_SHORT:
+    return UI_KEY_ENTER;
+  case BTN_ENTER_LONG:
+    return UI_KEY_ENTER_LONG;
+  case BTN_LEFT_SHORT:
+    return UI_KEY_LEFT;
+  case BTN_LEFT_LONG:
+    return UI_KEY_LEFT_LONG;
+  case BTN_RIGHT_SHORT:
+    return UI_KEY_RIGHT;
+  case BTN_RIGHT_LONG:
+    return UI_KEY_RIGHT_LONG;
+  default:
+    return UI_KEY_NONE;
+  }
+}
+
+void clearMenuEnterNoiseAfterDirection(ScreenState state, UIKey key) {
+  if (!isMenuDirectionInput(state, key)) {
+    return;
+  }
+
+  // 关键逻辑：菜单页方向键会触发电子墨水屏局刷，局刷期间若 ENTER
+  // 短按被中断锁存混入，下一轮会直接确认默认 Home 项并回到首页。
+  // 方向键处理完成后清掉 ENTER 短按，只保留明确的后续按键和长按手势。
+  inputDriver.clearPendingEnterShortPress();
+}
+
 uint32_t getAlarmWakeDelayMs(uint32_t nowMs) {
   if (alarmManager.isRinging()) {
     return ALARM_IDLE_CHECK_INTERVAL_MS;
@@ -371,6 +407,9 @@ void loop() {
 
   // Handle Input
   t_start = millis();
+  if (uiManager.getCurrentState() == SCREEN_MENU) {
+    inputDriver.clearPendingEnterShortPressIfDirectionActive();
+  }
   ButtonEvent btn = inputDriver.loop();
   // Serial.printf("Input loop: %ums\n", millis() - t_start);
 
@@ -378,20 +417,11 @@ void loop() {
     markUserActivity();
     Serial.print("Button Event: ");
     Serial.println((int)btn);
-    if (btn == BTN_ENTER_LONG) {
-      uiManager.onLongPressEnter();
-    } else {
-      // Map other buttons to UI Manager inputs
-      UIKey key = UI_KEY_NONE;
-      if (btn == BTN_ENTER_SHORT)
-        key = UI_KEY_ENTER;
-      if (btn == BTN_LEFT_CLICK)
-        key = UI_KEY_LEFT;
-      if (btn == BTN_RIGHT_CLICK)
-        key = UI_KEY_RIGHT;
-
-      if (key != UI_KEY_NONE)
-        uiManager.handleInput(key);
+    UIKey key = mapButtonEventToUIKey(btn);
+    if (key != UI_KEY_NONE) {
+      ScreenState stateBeforeInput = uiManager.getCurrentState();
+      uiManager.handleInput(key);
+      clearMenuEnterNoiseAfterDirection(stateBeforeInput, key);
     }
   }
 

@@ -75,6 +75,11 @@ void UIManager::update() {
 }
 
 void UIManager::handleInput(UIKey key) {
+  if (key == UI_KEY_ENTER_LONG) {
+    onLongPressEnter();
+    return;
+  }
+
   if (currentScreenObj) {
     if (currentScreenObj->handleInput(key)) {
       currentScreenObj->draw(display);
@@ -83,10 +88,12 @@ void UIManager::handleInput(UIKey key) {
 }
 
 void UIManager::onLongPressEnter() {
-  if (currentScreenObj) {
-    if (currentScreenObj->onLongPress()) {
-      currentScreenObj->draw(display);
-    }
+  if (!currentScreenObj) {
+    return;
+  }
+
+  if (currentScreenObj->onLongPress()) {
+    currentScreenObj->draw(display);
   }
 }
 
