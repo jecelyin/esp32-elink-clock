@@ -62,7 +62,21 @@ bool ConnectionManager::isSyncComplete() {
 }
 
 void ConnectionManager::startAP() {
-  enableNetwork(true);
+  if (!networkEnabled)
+    powerOnNetwork();
+
+  configurePortal(true);
+  if (wifiManager.getConfigPortalActive())
+    return;
+
+  // 关键逻辑：设置页需要立即出现 ESP32-Clock 热点，不能走
+  // autoConnect() 的“先连已保存 WiFi，失败后再开 AP”路径。
+  firstConnectAttempted = true;
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  wifiManager.startConfigPortal(ConfigPortal::AP_SSID,
+                                ConfigPortal::AP_PASSWORD);
+  Serial.println("WiFi Config Portal forced from Settings");
 }
 
 void ConnectionManager::flushPendingRtcSync() {
@@ -109,9 +123,7 @@ void ConnectionManager::beginAutoConnect() {
     return;
 
   firstConnectAttempted = true;
-  wifiManager.setConfigPortalBlocking(false);
-  wifiManager.setConfigPortalTimeout(CONFIG_PORTAL_TIMEOUT_SEC);
-  wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SEC);
+  configurePortal(false);
 
   if (wifiManager.autoConnect(ConfigPortal::AP_SSID,
                               ConfigPortal::AP_PASSWORD)) {
@@ -120,6 +132,12 @@ void ConnectionManager::beginAutoConnect() {
   }
 
   Serial.println("WiFi Config Portal started");
+}
+
+void ConnectionManager::configurePortal(bool manual) {
+  wifiManager.setConfigPortalBlocking(false);
+  wifiManager.setConfigPortalTimeout(manual ? 0 : CONFIG_PORTAL_TIMEOUT_SEC);
+  wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SEC);
 }
 
 uint32_t ConnectionManager::getRtcSyncRetryInterval() const {

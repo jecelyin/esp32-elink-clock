@@ -22,6 +22,7 @@ public:
 
 private:
   void beginAutoConnect();
+  void configurePortal(bool manual);
   uint32_t getRtcSyncRetryInterval() const;
   void powerOffNetwork();
   void powerOnNetwork();

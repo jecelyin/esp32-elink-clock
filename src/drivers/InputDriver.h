@@ -24,6 +24,7 @@ private:
   static void IRAM_ATTR handleInterruptThunk(void *arg);
   void IRAM_ATTR handleInterrupt();
   void IRAM_ATTR queueShortPressFromInterrupt(uint32_t now);
+  bool IRAM_ATTR queueLongPressFromInterrupt(uint32_t duration);
 
   ButtonEvent consumePendingEvent();
   ButtonEvent detectLongPress(int physicalState, unsigned long now);
@@ -46,6 +47,7 @@ private:
   volatile uint32_t irqPressStartTime = 0;
   volatile uint32_t irqLastQueuedShortTime = 0;
   volatile uint8_t pendingShortPressCount = 0;
+  volatile uint8_t pendingLongPressCount = 0;
   volatile bool irqLongHandled = false;
 
   static const uint8_t MAX_PENDING_EVENTS = 8;

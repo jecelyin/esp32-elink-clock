@@ -21,7 +21,7 @@ public:
     // 关键逻辑：设置页已经承接原 Config 页职责，进入页面时必须主动打开
     // WiFiManager 门户，否则屏幕上的二维码和网关地址可能对应不上真实 AP。
     if (conn)
-      conn->enableNetwork(true);
+      conn->startAP();
   }
 
   void draw(DisplayDriver *display) override {

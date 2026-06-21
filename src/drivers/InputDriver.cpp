@@ -89,16 +89,21 @@ ButtonEvent Button::detectLongPress(int physicalState, unsigned long now) {
 ButtonEvent Button::consumePendingEvent() {
   ButtonEvent event = BTN_NONE;
   bool consumedShortPress = false;
+  bool consumedLongPress = false;
 
   noInterrupts();
-  if (pendingShortPressCount > 0) {
+  if (pendingLongPressCount > 0) {
+    pendingLongPressCount--;
+    event = BTN_ENTER_LONG;
+    consumedLongPress = true;
+  } else if (pendingShortPressCount > 0) {
     pendingShortPressCount--;
     event = shortPressEvent;
     consumedShortPress = true;
   }
   interrupts();
 
-  if (consumedShortPress) {
+  if (consumedShortPress || consumedLongPress) {
     syncPolledReleasedState(millis());
   }
 
@@ -115,8 +120,8 @@ void Button::syncInterruptPressedState(unsigned long now) {
 }
 
 void Button::syncPolledReleasedState(unsigned long now) {
-  // 关键逻辑：短按事件来自“释放沿”，消费事件时必须同步轮询状态为已释放。
-  // 否则处理短按触发屏幕刷新后，旧的 LOW 状态可能跨过 500ms 阈值，
+  // 关键逻辑：释放沿锁存的事件被消费后，必须同步轮询状态为已释放。
+  // 否则处理按键触发屏幕刷新后，旧的 LOW 状态可能跨过 500ms 阈值，
   // 下一轮就会被误判成长按。
   stableState = HIGH;
   lastPhysicalState = HIGH;
@@ -151,9 +156,27 @@ void IRAM_ATTR Button::handleInterrupt() {
     return;
   }
 
-  // 关键逻辑：释放中断只负责锁存短按；长按只在主循环确认“当前仍按住”
-  // 时触发，避免 e-ink 刷新或睡眠唤醒把普通短按拖成误判长按。
+  if (queueLongPressFromInterrupt(duration)) {
+    return;
+  }
+
+  // 关键逻辑：真实按住时间不足长按阈值时，释放沿只锁存短按；
+  // 长按兜底已在上方按物理时长处理，避免短按被错误升级。
   queueShortPressFromInterrupt(now);
+}
+
+bool IRAM_ATTR Button::queueLongPressFromInterrupt(uint32_t duration) {
+  if (!supportsLongPress || duration <= LONG_PRESS_DELAY) {
+    return false;
+  }
+
+  // 关键逻辑：设置页启动配网 AP 和电子墨水屏全刷都可能让主循环错过
+  // “仍按住”的 500ms 窗口；释放沿记录的是物理按住时长，可安全兜底长按。
+  if (pendingLongPressCount < MAX_PENDING_EVENTS) {
+    pendingLongPressCount++;
+  }
+  irqLongHandled = true;
+  return true;
 }
 
 void IRAM_ATTR Button::queueShortPressFromInterrupt(uint32_t now) {
