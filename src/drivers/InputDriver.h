@@ -18,7 +18,8 @@ class Button {
 public:
   Button(uint8_t pin, ButtonEvent shortPressEvent, ButtonEvent longPressEvent,
          uint16_t shortPressRepeatGapMs = 120,
-         uint16_t longPressRepeatGapMs = 0);
+         uint16_t longPressRepeatGapMs = 0,
+         bool queueLongPressOnRelease = true);
   void begin();
   ButtonEvent update();
   void syncPressedState(unsigned long now);
@@ -30,7 +31,7 @@ public:
 private:
   static void IRAM_ATTR handleInterruptThunk(void *arg);
   void IRAM_ATTR handleInterrupt();
-  void IRAM_ATTR queueShortPressFromInterrupt(uint32_t now);
+  void IRAM_ATTR queueShortPressFromInterrupt(uint32_t now, uint32_t duration);
   bool IRAM_ATTR queueLongPressFromInterrupt(uint32_t duration);
 
   ButtonEvent consumePendingEvent();
@@ -46,6 +47,7 @@ private:
   ButtonEvent longPressEvent;
   uint16_t shortPressRepeatGapMs;
   uint16_t longPressRepeatGapMs;
+  bool queueLongPressOnRelease;
   int lastPhysicalState = HIGH;
   int stableState = HIGH;
   unsigned long lastDebounceTime = 0;
@@ -58,6 +60,8 @@ private:
   volatile uint32_t irqLastChangeTime = 0;
   volatile uint32_t irqPressStartTime = 0;
   volatile uint32_t irqLastQueuedShortTime = 0;
+  volatile uint32_t lastQueuedShortDuration = 0;
+  volatile uint32_t lastQueuedLongDuration = 0;
   volatile uint8_t pendingShortPressCount = 0;
   volatile uint8_t pendingLongPressCount = 0;
   volatile bool irqLongHandled = false;
@@ -65,7 +69,8 @@ private:
 
   static const uint8_t MAX_PENDING_EVENTS = 8;
   static const unsigned long DEBOUNCE_DELAY = 50;
-  static const unsigned long LONG_PRESS_DELAY = 500;
+  static const unsigned long TAP_TIMEOUT = 120;
+  static const unsigned long LONG_PRESS_TIMEOUT = 600;
 };
 
 class InputDriver {

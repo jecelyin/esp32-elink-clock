@@ -501,8 +501,14 @@ void RadioScreen::drawButtons(DisplayDriver *display, bool partial) {
   }
 }
 
-bool RadioScreen::handleInput(UIKey key) {
+bool RadioScreen::onInput(UIKey key) {
   bool needsRedraw = true;
+  int oldFocusedControl = focusedControl;
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][input] key=%d focus=%d freq=%u vol=%d\n", key,
+                focusedControl, radio ? radio->getFrequency() : 0,
+                config ? config->config.volume : -1);
+#endif
   if (key == UI_KEY_LEFT) {
     focusedControl = (focusedControl - 1 + BUTTON_COUNT) % BUTTON_COUNT;
   } else if (key == UI_KEY_RIGHT) {
@@ -529,6 +535,10 @@ bool RadioScreen::handleInput(UIKey key) {
       loadPreset(focusedControl - CONTROL_PRESET_START);
     }
   }
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][result] key=%d focus=%d->%d redraw=%d\n", key,
+                oldFocusedControl, focusedControl, needsRedraw);
+#endif
   return needsRedraw;
 }
 

@@ -22,6 +22,31 @@ UIKey normalizeNavigationKey(UIKey key) {
   }
   return key;
 }
+
+const char *screenStateLabel(ScreenState state) {
+  switch (state) {
+  case SCREEN_HOME:
+    return "HOME";
+  case SCREEN_MENU:
+    return "MENU";
+  case SCREEN_CALENDAR:
+    return "CALENDAR";
+  case SCREEN_ALARM:
+    return "ALARM";
+  case SCREEN_RADIO:
+    return "RADIO";
+  case SCREEN_MUSIC:
+    return "MUSIC";
+  case SCREEN_WEATHER:
+    return "WEATHER";
+  case SCREEN_SETTINGS:
+    return "SETTINGS";
+  case SCREEN_TIMER:
+    return "TIMER";
+  default:
+    return "UNKNOWN";
+  }
+}
 } // namespace
 
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
@@ -74,8 +99,11 @@ void UIManager::init() {
 }
 
 void UIManager::update() {
-  if (currentScreenObj)
+  if (currentScreenObj) {
+    drawing = true;
     currentScreenObj->update();
+    drawing = false;
+  }
 
   if (statusBar && display) {
     // 关键逻辑：首页顶部状态栏不显示时间，其余页面显示时间。
@@ -83,7 +111,9 @@ void UIManager::update() {
     // 从而修复“离开首页后顶部时间/联网状态不更新”的问题。
     bool showTimeInStatusBar = currentScreenState != SCREEN_HOME;
     if (statusBar->needsRefresh(showTimeInStatusBar)) {
+      drawing = true;
       statusBar->refreshPartial(display, showTimeInStatusBar);
+      drawing = false;
     }
   }
 
@@ -91,30 +121,52 @@ void UIManager::update() {
     webMgr->loop();
 }
 
-void UIManager::handleInput(UIKey key) {
-  UIKey normalizedKey = normalizeNavigationKey(key);
-  if (normalizedKey == UI_KEY_ENTER_LONG) {
-    onLongPressEnter();
-    return;
+bool UIManager::canAcceptInput() const { return !drawing; }
+
+bool UIManager::onInput(UIKey key) {
+  if (!canAcceptInput() || currentScreenObj == nullptr) {
+    return false;
   }
 
-  if (currentScreenObj) {
-    if (currentScreenObj->handleInput(normalizedKey)) {
-      currentScreenObj->draw(display);
-    }
+  UIKey normalizedKey = normalizeNavigationKey(key);
+  if (normalizedKey == UI_KEY_ENTER_LONG) {
+#if ENABLE_SERIAL_DEBUG
+    Serial.printf("[UI][global-long-enter] screen=%s\n",
+                  screenStateLabel(currentScreenState));
+#endif
+    onLongPressEnter();
+    return true;
   }
+
+  Screen *screenBefore = currentScreenObj;
+  ScreenState stateBefore = currentScreenState;
+  if (!currentScreenObj->onInput(normalizedKey)) {
+    return false;
+  }
+
+  if (shouldDrawAfterInput(screenBefore, stateBefore)) {
+    drawCurrentScreen();
+  }
+  return true;
 }
 
 void UIManager::onLongPressEnter() {
   // 关键逻辑：ENTER 长按是全局“返回菜单”手势，不交给页面自定义；
   // 否则 Menu 页、Alarm 页等页面容易把长按复用成不同业务动作。
   if (currentScreenState == SCREEN_MENU) {
+#if ENABLE_SERIAL_DEBUG
+    Serial.println("[UI][global-long-enter] ignored on MENU");
+#endif
     return;
   }
   switchScreen(SCREEN_MENU);
 }
 
 void UIManager::switchScreen(ScreenState state) {
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[UI][switch] %s -> %s\n",
+                screenStateLabel(currentScreenState), screenStateLabel(state));
+#endif
   if (currentScreenObj)
     currentScreenObj->exit();
 
@@ -152,8 +204,27 @@ void UIManager::switchScreen(ScreenState state) {
 
   if (currentScreenObj) {
     currentScreenObj->enter();
-    currentScreenObj->draw(display);
+    drawCurrentScreen();
   }
+}
+
+void UIManager::drawCurrentScreen() {
+  if (currentScreenObj == nullptr) {
+    return;
+  }
+
+  drawing = true;
+  currentScreenObj->draw(display);
+  drawing = false;
+}
+
+bool UIManager::shouldDrawAfterInput(Screen *screenBefore,
+                                     ScreenState stateBefore) const {
+  if (screenBefore != currentScreenObj || stateBefore != currentScreenState) {
+    return false;
+  }
+
+  return currentScreenObj != nullptr && currentScreenObj->shouldDrawAfterInput();
 }
 
 uint32_t UIManager::getIdleSleepIntervalMs() const {

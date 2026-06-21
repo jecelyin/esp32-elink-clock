@@ -11,7 +11,8 @@ public:
   void init() override;
   void enter() override;
   void draw(DisplayDriver *display) override;
-  bool handleInput(UIKey key) override;
+  bool onInput(UIKey key) override;
+  bool shouldDrawAfterInput() const override { return false; }
 
 private:
   enum AlarmScreenMode { MODE_LIST = 0, MODE_EDITOR = 1 };

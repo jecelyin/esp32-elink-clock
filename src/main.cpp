@@ -218,6 +218,69 @@ bool isDirectionInput(UIKey key) {
          key == UI_KEY_LEFT_LONG || key == UI_KEY_RIGHT_LONG;
 }
 
+const char *buttonEventName(ButtonEvent btn) {
+  switch (btn) {
+  case BTN_ENTER_SHORT:
+    return "ENTER_SHORT";
+  case BTN_ENTER_LONG:
+    return "ENTER_LONG";
+  case BTN_LEFT_SHORT:
+    return "LEFT_SHORT";
+  case BTN_LEFT_LONG:
+    return "LEFT_LONG";
+  case BTN_RIGHT_SHORT:
+    return "RIGHT_SHORT";
+  case BTN_RIGHT_LONG:
+    return "RIGHT_LONG";
+  default:
+    return "NONE";
+  }
+}
+
+const char *uiKeyName(UIKey key) {
+  switch (key) {
+  case UI_KEY_ENTER:
+    return "ENTER";
+  case UI_KEY_LEFT:
+    return "LEFT";
+  case UI_KEY_RIGHT:
+    return "RIGHT";
+  case UI_KEY_ENTER_LONG:
+    return "ENTER_LONG";
+  case UI_KEY_LEFT_LONG:
+    return "LEFT_LONG";
+  case UI_KEY_RIGHT_LONG:
+    return "RIGHT_LONG";
+  default:
+    return "NONE";
+  }
+}
+
+const char *screenStateName(ScreenState state) {
+  switch (state) {
+  case SCREEN_HOME:
+    return "HOME";
+  case SCREEN_MENU:
+    return "MENU";
+  case SCREEN_CALENDAR:
+    return "CALENDAR";
+  case SCREEN_ALARM:
+    return "ALARM";
+  case SCREEN_RADIO:
+    return "RADIO";
+  case SCREEN_MUSIC:
+    return "MUSIC";
+  case SCREEN_WEATHER:
+    return "WEATHER";
+  case SCREEN_SETTINGS:
+    return "SETTINGS";
+  case SCREEN_TIMER:
+    return "TIMER";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 UIKey mapButtonEventToUIKey(ButtonEvent btn) {
   switch (btn) {
   case BTN_ENTER_SHORT:
@@ -249,6 +312,10 @@ void clearEnterNoiseAfterDirection(UIKey key) {
 }
 
 void handleInputEvents() {
+  if (!uiManager.canAcceptInput()) {
+    return;
+  }
+
   inputDriver.clearPendingEnterPressesIfDirectionActive();
   ButtonEvent btn = inputDriver.loop();
   if (btn == BTN_NONE) {
@@ -256,18 +323,30 @@ void handleInputEvents() {
   }
 
   markUserActivity();
-  Serial.print("Button Event: ");
-  Serial.println((int)btn);
   UIKey key = mapButtonEventToUIKey(btn);
   if (key == UI_KEY_NONE) {
     return;
   }
+  ScreenState beforeState = uiManager.getCurrentState();
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Input][dispatch] btn=%s(%d) key=%s(%d) screen=%s\n",
+                buttonEventName(btn), btn, uiKeyName(key), key,
+                screenStateName(beforeState));
+#endif
   if (key == UI_KEY_ENTER_LONG) {
     // 关键逻辑：ENTER 长按进入菜单后，物理释放仍属于同一次手势。
     // 先屏蔽到释放稳定，避免菜单全刷期间的释放抖动被当成短 ENTER。
     inputDriver.suppressEnterUntilReleased();
   }
-  uiManager.handleInput(key);
+  bool accepted = uiManager.onInput(key);
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Input][result] accepted=%d screen=%s->%s\n", accepted,
+                screenStateName(beforeState),
+                screenStateName(uiManager.getCurrentState()));
+#endif
+  if (!accepted) {
+    return;
+  }
   clearEnterNoiseAfterDirection(key);
 }
 

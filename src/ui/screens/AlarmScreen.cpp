@@ -32,17 +32,18 @@ void AlarmScreen::draw(DisplayDriver *display) {
   display->powerOff();
 }
 
-bool AlarmScreen::handleInput(UIKey key) {
-  bool needsRefresh = false;
+bool AlarmScreen::onInput(UIKey key) {
+  ScreenState stateBefore = uiManager->getCurrentState();
+  bool handled = false;
   if (mode == MODE_EDITOR) {
-    needsRefresh = handleEditorInput(key);
+    handled = handleEditorInput(key);
   } else {
-    needsRefresh = handleListInput(key);
+    handled = handleListInput(key);
   }
-  if (needsRefresh) {
+  if (handled && stateBefore == uiManager->getCurrentState()) {
     refreshContentPartial();
   }
-  return false;
+  return handled;
 }
 
 void AlarmScreen::adjustCurrentValue(int delta) {
@@ -192,7 +193,7 @@ bool AlarmScreen::handleListInput(UIKey key) {
   }
   if (listFocus == getBackIndex()) {
     uiManager->switchScreen(SCREEN_MENU);
-    return false;
+    return true;
   }
   openEditorForFocus();
   return true;

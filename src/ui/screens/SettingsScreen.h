@@ -34,12 +34,14 @@ public:
     display->powerOff();
   }
 
-  bool handleInput(UIKey key) override {
+  bool onInput(UIKey key) override {
     if (key == UI_KEY_ENTER) {
       runManualHardwareCheck();
+      return true;
     }
     return false;
   }
+  bool shouldDrawAfterInput() const override { return false; }
 
 private:
   void drawPage(DisplayDriver *displayDrv, const BatteryInfo &info) {

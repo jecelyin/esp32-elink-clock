@@ -444,7 +444,7 @@ void MusicScreen::setAlignedPartialWindow(DisplayDriver *display, int x, int y,
   display->display.setPartialWindow(alignedX, y, alignedRight - alignedX, h);
 }
 
-bool MusicScreen::handleInput(UIKey key) {
+bool MusicScreen::onInput(UIKey key) {
   int oldFocused = focusedControl;
   if (key == UI_KEY_LEFT) {
     focusedControl = (focusedControl - 1 + BUTTON_COUNT) % BUTTON_COUNT;

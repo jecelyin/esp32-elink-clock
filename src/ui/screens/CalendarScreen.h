@@ -15,7 +15,7 @@ public:
   void enter() override;
   void update() override;
   void draw(DisplayDriver *displayDrv) override;
-  bool handleInput(UIKey key) override;
+  bool onInput(UIKey key) override;
 
 private:
   struct DateParts {

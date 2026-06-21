@@ -58,7 +58,7 @@ void CalendarScreen::draw(DisplayDriver *displayDrv) {
   lastRenderedDateKey = getDateKey(today);
 }
 
-bool CalendarScreen::handleInput(UIKey key) {
+bool CalendarScreen::onInput(UIKey key) {
   if (key == UI_KEY_LEFT) {
     shiftViewedMonth(-1);
     return true;

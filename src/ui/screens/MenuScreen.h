@@ -45,7 +45,11 @@ public:
     lastMenuIndex = menuIndex;
   }
 
-  bool handleInput(UIKey key) override {
+  bool onInput(UIKey key) override {
+#if ENABLE_SERIAL_DEBUG
+    Serial.printf("[Menu][input] key=%d index=%d target=%d label=%s\n", key,
+                  menuIndex, items[menuIndex].id, items[menuIndex].label);
+#endif
 
     if (key == UI_KEY_LEFT) {
       moveSelection(-1);
@@ -54,8 +58,12 @@ public:
       moveSelection(1);
       return true;
     } else if (key == UI_KEY_ENTER) {
+#if ENABLE_SERIAL_DEBUG
+      Serial.printf("[Menu][select] index=%d target=%d label=%s\n", menuIndex,
+                    items[menuIndex].id, items[menuIndex].label);
+#endif
       uiManager->switchScreen(items[menuIndex].id);
-      return false;
+      return true;
     }
     return false;
   }

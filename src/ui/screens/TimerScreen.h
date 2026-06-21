@@ -48,7 +48,7 @@ public:
         isActive = false;
       }
       // Redraw will be triggered by UIManager or we can call draw here
-      // But UIManager usually calls draw if handleInput returns true OR
+      // But UIManager usually calls draw if onInput returns true OR
       // if Screen::update calls a redraw.
       // In this project, screens tend to handle their own partials in update or
       // draw. Let's call draw(display) immediately for time updates if active.
@@ -101,7 +101,7 @@ public:
     }
   }
 
-  bool handleInput(UIKey key) override {
+  bool onInput(UIKey key) override {
     if (key == UI_KEY_LEFT) {
       focusIndex--;
       if (focusIndex < 0)

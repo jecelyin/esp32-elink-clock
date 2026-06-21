@@ -47,7 +47,8 @@ public:
             AudioDriver *audio, MusicManager *music, ConfigManager *config);
   void init();
   void update();
-  void handleInput(UIKey key);
+  bool onInput(UIKey key);
+  bool canAcceptInput() const;
   void onLongPressEnter();
   void switchScreen(ScreenState state);
   uint32_t getIdleSleepIntervalMs() const;
@@ -58,6 +59,7 @@ public:
 private:
   DisplayDriver *display;
   ScreenState currentScreenState;
+  bool drawing = false;
 
   // Screens
   HomeScreen *homeScreen;
@@ -86,4 +88,8 @@ private:
   StatusBar *statusBar;
   TodoManager *todoMgr;
   WebManager *webMgr;
+
+  void drawCurrentScreen();
+  bool shouldDrawAfterInput(Screen *screenBefore,
+                            ScreenState stateBefore) const;
 };

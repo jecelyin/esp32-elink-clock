@@ -154,7 +154,7 @@ public:
     display->powerOff();
   }
 
-  bool handleInput(UIKey key) override {
+  bool onInput(UIKey key) override {
     // 关键逻辑：天气页是信息页，没有可执行焦点；
     // 短 ENTER 不做返回，退出页面统一使用 ENTER 长按。
     return false;
