@@ -262,6 +262,11 @@ void handleInputEvents() {
   if (key == UI_KEY_NONE) {
     return;
   }
+  if (key == UI_KEY_ENTER_LONG) {
+    // 关键逻辑：ENTER 长按进入菜单后，物理释放仍属于同一次手势。
+    // 先屏蔽到释放稳定，避免菜单全刷期间的释放抖动被当成短 ENTER。
+    inputDriver.suppressEnterUntilReleased();
+  }
   uiManager.handleInput(key);
   clearEnterNoiseAfterDirection(key);
 }

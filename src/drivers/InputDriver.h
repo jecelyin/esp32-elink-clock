@@ -22,6 +22,7 @@ public:
   void begin();
   ButtonEvent update();
   void syncPressedState(unsigned long now);
+  void suppressUntilReleased();
   bool hasPendingPress();
   void clearPendingPresses();
   bool isPressed();
@@ -33,7 +34,9 @@ private:
   bool IRAM_ATTR queueLongPressFromInterrupt(uint32_t duration);
 
   ButtonEvent consumePendingEvent();
+  bool consumeSuppressedRelease(int physicalState, unsigned long now);
   ButtonEvent detectLongPress(int physicalState, unsigned long now);
+  void clearPendingCounts();
   void syncInterruptPressedState(unsigned long now);
   void syncPolledReleasedState(unsigned long now);
   void updatePolledState(int physicalState, unsigned long now);
@@ -48,6 +51,7 @@ private:
   unsigned long lastDebounceTime = 0;
   unsigned long pressStartTime = 0;
   unsigned long lastLongPressEventTime = 0;
+  unsigned long suppressedReleaseStartTime = 0;
   bool longPressed = false;
 
   volatile int irqLastState = HIGH;
@@ -57,6 +61,7 @@ private:
   volatile uint8_t pendingShortPressCount = 0;
   volatile uint8_t pendingLongPressCount = 0;
   volatile bool irqLongHandled = false;
+  volatile bool suppressedUntilRelease = false;
 
   static const uint8_t MAX_PENDING_EVENTS = 8;
   static const unsigned long DEBOUNCE_DELAY = 50;
@@ -69,6 +74,7 @@ public:
   void begin();
   ButtonEvent loop();
   void syncWakePressedButtons();
+  void suppressEnterUntilReleased();
   void clearPendingEnterPresses();
   void clearPendingEnterPressesIfDirectionActive();
 

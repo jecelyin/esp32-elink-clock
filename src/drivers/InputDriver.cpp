@@ -48,15 +48,30 @@ void Button::syncPressedState(unsigned long now) {
 }
 
 ButtonEvent Button::update() {
+  int physicalState = digitalRead(pin);
+  unsigned long now = millis();
+  if (consumeSuppressedRelease(physicalState, now)) {
+    return BTN_NONE;
+  }
+
   ButtonEvent pendingEvent = consumePendingEvent();
   if (pendingEvent != BTN_NONE) {
     return pendingEvent;
   }
 
-  int physicalState = digitalRead(pin);
-  unsigned long now = millis();
   updatePolledState(physicalState, now);
   return detectLongPress(physicalState, now);
+}
+
+void Button::suppressUntilReleased() {
+  // 关键逻辑：ENTER 长按被业务消费后，后续释放沿只代表结束本次手势。
+  // 如果不屏蔽，释放抖动可能被中断队列记录成短按，菜单页会立刻确认 Home。
+  noInterrupts();
+  clearPendingCounts();
+  suppressedUntilRelease = true;
+  irqLongHandled = true;
+  interrupts();
+  suppressedReleaseStartTime = 0;
 }
 
 bool Button::hasPendingPress() {
@@ -71,8 +86,7 @@ bool Button::hasPendingPress() {
 
 void Button::clearPendingPresses() {
   noInterrupts();
-  pendingShortPressCount = 0;
-  pendingLongPressCount = 0;
+  clearPendingCounts();
   interrupts();
   syncPolledReleasedState(millis());
 }
@@ -145,6 +159,49 @@ ButtonEvent Button::consumePendingEvent() {
   return event;
 }
 
+bool Button::consumeSuppressedRelease(int physicalState, unsigned long now) {
+  bool suppressing = false;
+
+  noInterrupts();
+  suppressing = suppressedUntilRelease;
+  if (suppressing) {
+    clearPendingCounts();
+  }
+  interrupts();
+
+  if (!suppressing) {
+    return false;
+  }
+
+  if (physicalState == LOW) {
+    suppressedReleaseStartTime = 0;
+    lastPhysicalState = LOW;
+    stableState = LOW;
+    return true;
+  }
+
+  if (suppressedReleaseStartTime == 0) {
+    suppressedReleaseStartTime = now;
+    return true;
+  }
+
+  if (now - suppressedReleaseStartTime <= DEBOUNCE_DELAY) {
+    return true;
+  }
+
+  noInterrupts();
+  suppressedUntilRelease = false;
+  irqLongHandled = true;
+  interrupts();
+  syncPolledReleasedState(now);
+  return true;
+}
+
+void Button::clearPendingCounts() {
+  pendingShortPressCount = 0;
+  pendingLongPressCount = 0;
+}
+
 void Button::syncInterruptPressedState(unsigned long now) {
   noInterrupts();
   irqLastState = LOW;
@@ -181,6 +238,12 @@ void IRAM_ATTR Button::handleInterrupt() {
 
   irqLastChangeTime = now;
   irqLastState = physicalState;
+  if (suppressedUntilRelease) {
+    irqPressStartTime = physicalState == LOW ? now : 0;
+    irqLongHandled = true;
+    return;
+  }
+
   if (physicalState == LOW) {
     irqPressStartTime = now;
     irqLongHandled = false;
@@ -246,6 +309,10 @@ void InputDriver::syncWakePressedButtons() {
   enterButton.syncPressedState(now);
   leftButton.syncPressedState(now);
   rightButton.syncPressedState(now);
+}
+
+void InputDriver::suppressEnterUntilReleased() {
+  enterButton.suppressUntilReleased();
 }
 
 void InputDriver::clearPendingEnterPresses() {
