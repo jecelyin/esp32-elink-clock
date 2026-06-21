@@ -67,6 +67,19 @@ String AlarmManager::getHolidayStatusText(uint16_t fullYear) const {
   return holidayCalendar.getStatusText(fullYear);
 }
 
+HolidayDayType AlarmManager::getHolidayDayType(const DateTime &date) {
+  return holidayCalendar.getDayType(date);
+}
+
+String AlarmManager::getHolidayName(const DateTime &date) {
+  return holidayCalendar.getHolidayName(date);
+}
+
+HolidayCountdown AlarmManager::getNextHolidayCountdown(const DateTime &date,
+                                                       uint16_t maxDays) {
+  return holidayCalendar.getNextHolidayCountdown(date, maxDays);
+}
+
 AlarmConfig AlarmManager::getAlarm(size_t index) const {
   if (!isIndexValid(index)) {
     return buildDefaultAlarm();

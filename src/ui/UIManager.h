@@ -9,6 +9,7 @@
 
 #include "Screen.h"
 class AlarmScreen;
+class CalendarScreen;
 class HomeScreen;
 class MenuScreen;
 class MusicScreen;
@@ -29,6 +30,7 @@ class TimerScreen;
 enum ScreenState {
   SCREEN_HOME,
   SCREEN_MENU,
+  SCREEN_CALENDAR,
   SCREEN_ALARM,
   SCREEN_RADIO,
   SCREEN_MUSIC,
@@ -60,6 +62,7 @@ private:
   // Screens
   HomeScreen *homeScreen;
   MenuScreen *menuScreen;
+  CalendarScreen *calendarScreen;
   AlarmScreen *alarmScreen;
   RadioScreen *radioScreen;
   MusicScreen *musicScreen;

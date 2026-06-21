@@ -14,6 +14,10 @@ public:
   bool addAlarm(const AlarmConfig &alarm);
   AlarmConfig buildDefaultAlarm() const;
   void check(const DateTime &now);
+  HolidayDayType getHolidayDayType(const DateTime &date);
+  String getHolidayName(const DateTime &date);
+  HolidayCountdown getNextHolidayCountdown(const DateTime &date,
+                                           uint16_t maxDays);
   String getHolidayStatusText(uint16_t fullYear) const;
   AlarmConfig getAlarm(size_t index) const;
   size_t getAlarmCount() const;

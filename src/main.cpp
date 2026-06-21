@@ -358,6 +358,7 @@ void networkTask(void *pvParameters) {
 
       // Only update weather on Home or Weather screens
       if (uiManager.getCurrentState() == SCREEN_HOME ||
+          uiManager.getCurrentState() == SCREEN_CALENDAR ||
           uiManager.getCurrentState() == SCREEN_WEATHER) {
         weatherManager.update();
       }
@@ -365,7 +366,8 @@ void networkTask(void *pvParameters) {
       // 同步完成后关闭 WiFi 以省电
       // 判断条件：NTP 已同步；在首页/天气页时还要求天气刚更新
       ScreenState state = uiManager.getCurrentState();
-      bool weatherNeeded = state == SCREEN_HOME || state == SCREEN_WEATHER;
+      bool weatherNeeded = state == SCREEN_HOME || state == SCREEN_CALENDAR ||
+                           state == SCREEN_WEATHER;
       bool weatherFresh = millis() - weatherManager.getLastUpdate() < 120000;
       bool settingsVisible = state == SCREEN_SETTINGS;
       if (!settingsVisible && connectionManager.isSyncComplete() &&

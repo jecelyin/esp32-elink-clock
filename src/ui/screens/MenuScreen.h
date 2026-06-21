@@ -11,17 +11,19 @@ public:
     lastMenuIndex = 0;
     items[0] =
         MenuItem{SCREEN_HOME, "Home", u8g2_font_open_iconic_embedded_4x_t, 'D'};
-    items[1] = MenuItem{SCREEN_ALARM, "Alarm",
+    items[1] = MenuItem{SCREEN_CALENDAR, "Calendar",
+                        u8g2_font_open_iconic_embedded_4x_t, 'C'};
+    items[2] = MenuItem{SCREEN_ALARM, "Alarm",
                         u8g2_font_open_iconic_embedded_4x_t, 'A'};
-    items[2] =
+    items[3] =
         MenuItem{SCREEN_MUSIC, "Music", u8g2_font_open_iconic_play_4x_t, 'C'};
-    items[3] = MenuItem{SCREEN_RADIO, "Radio",
+    items[4] = MenuItem{SCREEN_RADIO, "Radio",
                         u8g2_font_open_iconic_embedded_4x_t, 'F'};
-    items[4] = MenuItem{SCREEN_WEATHER, "Weather",
+    items[5] = MenuItem{SCREEN_WEATHER, "Weather",
                         u8g2_font_open_iconic_weather_4x_t, '@'};
-    items[5] = MenuItem{SCREEN_SETTINGS, "Settings",
+    items[6] = MenuItem{SCREEN_SETTINGS, "Settings",
                         u8g2_font_open_iconic_embedded_4x_t, 'B'};
-    items[6] = MenuItem{SCREEN_TIMER, "Timer",
+    items[7] = MenuItem{SCREEN_TIMER, "Timer",
                         u8g2_font_open_iconic_embedded_4x_t, 'E'};
     firstDraw = true;
   }
@@ -58,7 +60,7 @@ public:
   }
 
 private:
-  static const int MENU_ITEM_COUNT = 7;
+  static const int MENU_ITEM_COUNT = 8;
   static const int SCREEN_WIDTH = 400;
 
   struct MenuRect {

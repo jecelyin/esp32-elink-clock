@@ -1,5 +1,6 @@
 #include "UIManager.h"
 #include "screens/AlarmScreen.h"
+#include "screens/CalendarScreen.h"
 #include "screens/HomeScreen.h"
 #include "screens/MenuScreen.h"
 #include "screens/MusicScreen.h"
@@ -41,6 +42,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   // Create Screens
   homeScreen = new HomeScreen(rtc, weather, sensor, statusBar, todoMgr, conn);
   menuScreen = new MenuScreen(statusBar);
+  calendarScreen = new CalendarScreen(rtc, statusBar, alarmMgr, weather);
   alarmScreen = new AlarmScreen(alarmMgr, statusBar);
   radioScreen = new RadioScreen(radio, statusBar, config);
   musicScreen = new MusicScreen(music, statusBar, config);
@@ -51,6 +53,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
   // Set UIManager reference
   homeScreen->setUIManager(this);
   menuScreen->setUIManager(this);
+  calendarScreen->setUIManager(this);
   alarmScreen->setUIManager(this);
   radioScreen->setUIManager(this);
   musicScreen->setUIManager(this);
@@ -121,6 +124,9 @@ void UIManager::switchScreen(ScreenState state) {
     break;
   case SCREEN_MENU:
     currentScreenObj = menuScreen;
+    break;
+  case SCREEN_CALENDAR:
+    currentScreenObj = calendarScreen;
     break;
   case SCREEN_ALARM:
     currentScreenObj = alarmScreen;
