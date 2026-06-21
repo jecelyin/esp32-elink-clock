@@ -392,6 +392,33 @@ void networkTask(void *pvParameters) {
   }
 }
 
+bool isScreenUsingSharedAudioPower(ScreenState state) {
+  return state == SCREEN_MUSIC || state == SCREEN_RADIO;
+}
+
+void manageAudioPower(ScreenState state) {
+  if (alarmManager.isRinging() || audioDriver.isPlaying()) {
+    digitalWrite(CODEC_EN, HIGH);
+    return;
+  }
+
+  if (isScreenUsingSharedAudioPower(state)) {
+    return;
+  }
+
+  // 关键逻辑：audioDriver.end() 会关闭 AMP_EN 和共享 I2C 电源域。
+  // 收音机使用同一个功放和 I2C 总线，不能在收音机页把它当作闲置音频关闭。
+  audioDriver.end();
+}
+
+void manageRadioPower(ScreenState state) {
+  if (state == SCREEN_RADIO) {
+    return;
+  }
+
+  digitalWrite(RADIO_EN, LOW);
+}
+
 void setup() {
   startSerialDebug();
   configurePowerSaving();
@@ -432,19 +459,9 @@ void loop() {
   handleInputEvents();
   // Serial.printf("Input loop: %ums\n", millis() - t_start);
 
-  // 外设电源动态管理
-  if (!alarmManager.isRinging() && !audioDriver.isPlaying()) {
-    if (uiManager.getCurrentState() != SCREEN_MUSIC)
-      audioDriver.end();
-  } else {
-    digitalWrite(CODEC_EN, HIGH);
-    // digitalWrite(AMP_EN, HIGH); // 由音频驱动自行控制更佳
-  }
-
-  // 仅在收音机界面且处于活动状态时开启收音机电源
-  if (uiManager.getCurrentState() != SCREEN_RADIO) {
-    digitalWrite(RADIO_EN, LOW);
-  }
+  ScreenState currentState = uiManager.getCurrentState();
+  manageAudioPower(currentState);
+  manageRadioPower(currentState);
 
   idleOrLightSleep();
 }
