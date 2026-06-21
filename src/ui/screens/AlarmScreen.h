@@ -12,7 +12,6 @@ public:
   void enter() override;
   void draw(DisplayDriver *display) override;
   bool handleInput(UIKey key) override;
-  bool onLongPress() override;
 
 private:
   enum AlarmScreenMode { MODE_LIST = 0, MODE_EDITOR = 1 };
@@ -27,6 +26,7 @@ private:
   static const int ACTION_SAVE = 12;
   static const int ACTION_CANCEL = 13;
   static const int ACTION_DELETE = 14;
+  static const int ACTION_TOGGLE_ENABLED = 15;
   static const int VISIBLE_ROWS = 4;
 
   AlarmManager *alarmMgr;
@@ -37,11 +37,11 @@ private:
   int editFocus;
   int listFocus;
   int listScroll;
-  bool adjustingValue;
   bool creatingAlarm;
   size_t editingIndex;
 
   void adjustCurrentValue(int delta);
+  void applyRepeatSelection();
   void beginCreate();
   void beginEdit(size_t index);
   void clampListFocus();
@@ -67,6 +67,8 @@ private:
   String getListRowTitle(int itemIndex) const;
   String getTimeText(const AlarmConfig &alarm) const;
   uint8_t getWeekdayBit(int dayFocus) const;
+  void handleDeleteAction();
+  bool handleEditorEnter();
   void drawCheckbox(DisplayDriver *display, int x, int y, bool checked,
                     bool focused);
   bool handleEditorInput(UIKey key);

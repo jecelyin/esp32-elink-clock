@@ -37,16 +37,7 @@ public:
   bool handleInput(UIKey key) override {
     if (key == UI_KEY_ENTER) {
       runManualHardwareCheck();
-    } else if (key == UI_KEY_LEFT) {
-      uiManager->switchScreen(SCREEN_MENU);
     }
-    return false;
-  }
-
-  bool onLongPress() override {
-    // 关键逻辑：长按由 UIManager 单独分发，设置页需要自己处理返回。
-    if (uiManager)
-      uiManager->switchScreen(SCREEN_MENU);
     return false;
   }
 

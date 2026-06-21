@@ -532,24 +532,6 @@ bool RadioScreen::handleInput(UIKey key) {
   return needsRedraw;
 }
 
-bool RadioScreen::onLongPress() {
-  if (focusedControl >= CONTROL_PRESET_START &&
-      focusedControl < BUTTON_COUNT) {
-    savePreset(focusedControl - CONTROL_PRESET_START);
-    return true; // Update UI to show saved state or just refresh
-  } else {
-    if (uiManager)
-      uiManager->switchScreen(SCREEN_MENU);
-    return false; // Switch screen handles draw
-  }
-}
-
-void RadioScreen::savePreset(int index) {
-  uint16_t freq = radio->getFrequency();
-  config->config.radio_presets[index] = freq;
-  config->save();
-}
-
 void RadioScreen::loadPreset(int index) {
   uint16_t freq = config->config.radio_presets[index];
   if (freq > 0)

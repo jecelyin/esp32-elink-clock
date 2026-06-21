@@ -119,13 +119,26 @@ public:
     return false;
   }
 
-  bool onLongPress() override {
-    if (uiManager)
-      uiManager->switchScreen(SCREEN_MENU);
-    return false;
+private:
+  struct PartialRect {
+    int x;
+    int y;
+    int w;
+    int h;
+  };
+
+  static const int SCREEN_W = 400;
+
+  static PartialRect getTimeRect() { return PartialRect{0, 64, SCREEN_W, 106}; }
+
+  static PartialRect getModeTextRect() {
+    return PartialRect{0, 44, SCREEN_W, 24};
   }
 
-private:
+  static PartialRect getStatusTextRect() {
+    return PartialRect{0, 170, SCREEN_W, 30};
+  }
+
   void updateLastState() {
     lastTimeLeft = timeLeft;
     lastIsActive = isActive;
@@ -155,16 +168,23 @@ private:
 
   // --- Partial Update Methods ---
 
-  void updateTimeDisplay() {
-    // Large time area: center (aligned to 8-pixel boundaries)
-    // x: 48 (multiple of 8), w: 304 (multiple of 8), y: 80, h: 100
-    displayDrv->display.setPartialWindow(48, 80, 304, 100);
+  void refreshPartialArea(const PartialRect &rect,
+                          void (TimerScreen::*drawContent)()) {
+    displayDrv->display.setPartialWindow(rect.x, rect.y, rect.w, rect.h);
     displayDrv->display.firstPage();
     do {
-      displayDrv->display.fillRect(48, 80, 304, 100, GxEPD_WHITE);
-      drawLargeTime();
+      displayDrv->display.fillRect(rect.x, rect.y, rect.w, rect.h,
+                                   GxEPD_WHITE);
+      (this->*drawContent)();
     } while (displayDrv->display.nextPage());
     displayDrv->powerOff();
+  }
+
+  void updateTimeDisplay() {
+    // 关键逻辑：92 号数字基线在 160，顶部会高于旧窗口 y=80；
+    // 同时窗口底部必须停在底部文案之前，避免每秒刷新擦掉“学习中”。
+    PartialRect rect = getTimeRect();
+    refreshPartialArea(rect, &TimerScreen::drawLargeTime);
   }
 
   void updateProgressBar() {
@@ -179,15 +199,12 @@ private:
   }
 
   void updatePhrase() {
-    // Phrase area top: x: 80, w: 240, y: 40, h: 40
-    // Phrase area bottom: x: 80, w: 240, y: 180, h: 25
-    displayDrv->display.setPartialWindow(80, 40, 240, 165); // Covers both areas
-    displayDrv->display.firstPage();
-    do {
-      displayDrv->display.fillRect(80, 40, 240, 165, GxEPD_WHITE);
-      drawPhrase();
-    } while (displayDrv->display.nextPage());
-    displayDrv->powerOff();
+    // 关键逻辑：顶部模式文案和底部状态文案不能用一个跨越时间数字的
+    // 大窗口刷新，否则开始/暂停时会把中间的大数字清掉一截。
+    PartialRect modeRect = getModeTextRect();
+    PartialRect statusRect = getStatusTextRect();
+    refreshPartialArea(modeRect, &TimerScreen::drawModeText);
+    refreshPartialArea(statusRect, &TimerScreen::drawStatusText);
   }
 
   void refreshButton(int index) {
@@ -210,6 +227,11 @@ private:
   // --- Drawing Primitives ---
 
   void drawPhrase() {
+    drawModeText();
+    drawStatusText();
+  }
+
+  void drawModeText() {
     auto &u8g2 = displayDrv->u8g2Fonts;
     u8g2.setFont(u8g2_font_helvB10_tf);
     u8g2.setForegroundColor(GxEPD_BLACK);
@@ -218,14 +240,21 @@ private:
     bool isBreak = (mode == MODE_10M);
     const char *modeText = isBreak ? "课间休息" : "深度专注";
     int tw = u8g2.getUTF8Width(modeText);
-    u8g2.setCursor((400 - tw) / 2, 60);
+    u8g2.setCursor((SCREEN_W - tw) / 2, 60);
     u8g2.print(modeText);
+  }
 
+  void drawStatusText() {
+    auto &u8g2 = displayDrv->u8g2Fonts;
+    u8g2.setForegroundColor(GxEPD_BLACK);
+    u8g2.setBackgroundColor(GxEPD_WHITE);
+
+    bool isBreak = (mode == MODE_10M);
     u8g2.setFont(u8g2_font_wqy12_t_gb2312);
     const char *phrase =
         isActive ? (isBreak ? "放松大脑..." : "沉浸学习中...") : "准备好了吗？";
     int pw = u8g2.getUTF8Width(phrase);
-    u8g2.setCursor((400 - pw) / 2, 185);
+    u8g2.setCursor((SCREEN_W - pw) / 2, 185);
     u8g2.print(phrase);
   }
 
@@ -237,15 +266,15 @@ private:
     int secs = timeLeft % 60;
 
     if (hrs > 0) {
-      sprintf(timeStr, "%d:%02d:%02d", hrs, mins, secs);
+      snprintf(timeStr, sizeof(timeStr), "%d:%02d:%02d", hrs, mins, secs);
       u8g2.setFont(u8g2_font_logisoso62_tn);
     } else {
-      sprintf(timeStr, "%02d:%02d", mins, secs);
+      snprintf(timeStr, sizeof(timeStr), "%02d:%02d", mins, secs);
       u8g2.setFont(u8g2_font_logisoso92_tn);
     }
 
     int tw = u8g2.getUTF8Width(timeStr);
-    u8g2.setCursor((400 - tw) / 2, 160);
+    u8g2.setCursor((SCREEN_W - tw) / 2, 160);
     u8g2.print(timeStr);
   }
 

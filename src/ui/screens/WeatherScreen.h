@@ -155,18 +155,8 @@ public:
   }
 
   bool handleInput(UIKey key) override {
-    if (key == UI_KEY_ENTER) { // Menu/Back
-      if (uiManager)
-        uiManager->switchScreen(SCREEN_MENU);
-    }
-    return false;
-  }
-
-  bool onLongPress() override {
-    // 关键逻辑：主循环会把 ENTER 长按单独分发到 onLongPress()，
-    // 天气页如果不显式处理，这个手势就不会触发返回菜单。
-    if (uiManager)
-      uiManager->switchScreen(SCREEN_MENU);
+    // 关键逻辑：天气页是信息页，没有可执行焦点；
+    // 短 ENTER 不做返回，退出页面统一使用 ENTER 长按。
     return false;
   }
 

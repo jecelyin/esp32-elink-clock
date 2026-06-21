@@ -26,7 +26,6 @@ public:
   virtual uint32_t getIdleSleepIntervalMs() const { return 3600000UL; }
   virtual void draw(DisplayDriver *display) = 0;
   virtual bool handleInput(UIKey key) = 0;
-  virtual bool onLongPress() { return false; }
 
   void setUIManager(UIManager *mgr) { uiManager = mgr; }
 

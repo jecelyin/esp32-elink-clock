@@ -22,8 +22,8 @@ public:
   void begin();
   ButtonEvent update();
   void syncPressedState(unsigned long now);
-  bool hasPendingShortPress();
-  void clearPendingShortPresses();
+  bool hasPendingPress();
+  void clearPendingPresses();
   bool isPressed();
 
 private:
@@ -69,8 +69,8 @@ public:
   void begin();
   ButtonEvent loop();
   void syncWakePressedButtons();
-  void clearPendingEnterShortPress();
-  void clearPendingEnterShortPressIfDirectionActive();
+  void clearPendingEnterPresses();
+  void clearPendingEnterPressesIfDirectionActive();
 
 private:
   Button enterButton;

@@ -129,18 +129,10 @@ public:
   }
 
   bool handleInput(UIKey key) override {
-    if (key == UI_KEY_ENTER) {
-      if (uiManager)
-        uiManager->switchScreen(SCREEN_MENU);
-    }
+    // 关键逻辑：首页没有可移动光标，短 ENTER 不承担退出职责；
+    // 退出/进入菜单统一交给 ENTER 长按，避免和其它页面手势不一致。
     return false;
   }
-  bool onLongPress() override {
-    if (uiManager)
-      uiManager->switchScreen(SCREEN_MENU);
-    return false;
-  }
-
 private:
   RtcDriver *rtc;
   WeatherManager *weather;

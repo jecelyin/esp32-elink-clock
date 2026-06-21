@@ -4,7 +4,7 @@
 AlarmScreen::AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar)
     : alarmMgr(alarmMgr), statusBar(statusBar), mode(MODE_LIST),
       helperText(""), editFocus(FOCUS_HOUR), listFocus(0), listScroll(0),
-      adjustingValue(false), creatingAlarm(false), editingIndex(0) {
+      creatingAlarm(false), editingIndex(0) {
   resetListState();
   resetEditorState();
 }
@@ -45,20 +45,6 @@ bool AlarmScreen::handleInput(UIKey key) {
   return false;
 }
 
-bool AlarmScreen::onLongPress() {
-  if (mode == MODE_LIST && isAlarmIndex(listFocus)) {
-    openEditorForFocus();
-    refreshContentPartial();
-    return false;
-  }
-  if (mode == MODE_EDITOR && !adjustingValue) {
-    if (commitDraft()) {
-      refreshContentPartial();
-    }
-  }
-  return false;
-}
-
 void AlarmScreen::adjustCurrentValue(int delta) {
   if (editFocus == FOCUS_HOUR) {
     draftAlarm.hour = (draftAlarm.hour + delta + 24) % 24;
@@ -69,13 +55,26 @@ void AlarmScreen::adjustCurrentValue(int delta) {
   }
 }
 
+void AlarmScreen::applyRepeatSelection() {
+  if (editFocus == FOCUS_REPEAT_DAILY) {
+    draftAlarm.repeatType = ALARM_REPEAT_DAILY;
+  } else if (editFocus == FOCUS_REPEAT_WEEKLY) {
+    draftAlarm.repeatType = ALARM_REPEAT_WEEKLY;
+  } else {
+    draftAlarm.repeatType = ALARM_REPEAT_WORKDAY;
+  }
+  helperText = draftAlarm.repeatType == ALARM_REPEAT_WORKDAY
+                   ? "法定休息日会跳过，补班日会响铃"
+                   : "规则已切换";
+}
+
 void AlarmScreen::beginCreate() {
   resetEditorState();
   creatingAlarm = true;
   editingIndex = alarmMgr->getAlarmCount();
   draftAlarm = alarmMgr->buildDefaultAlarm();
   setRepeatFocus();
-  helperText = "回车进入调节，长按可直接保存";
+  helperText = "回车选择字段，长按退出";
   mode = MODE_EDITOR;
 }
 
@@ -85,7 +84,7 @@ void AlarmScreen::beginEdit(size_t index) {
   editingIndex = index;
   draftAlarm = alarmMgr->getAlarm(index);
   setRepeatFocus();
-  helperText = "回车进入调节，长按可直接保存";
+  helperText = "回车选择字段，长按退出";
   mode = MODE_EDITOR;
 }
 
@@ -124,63 +123,53 @@ bool AlarmScreen::commitDraft() {
     listFocus = static_cast<int>(editingIndex);
   }
 
-  helperText = "回车开关，长按编辑";
+  helperText = "回车编辑当前项，长按退出";
   mode = MODE_LIST;
-  adjustingValue = false;
   clampListFocus();
   return true;
 }
 
 bool AlarmScreen::handleEditorInput(UIKey key) {
-  if (adjustingValue) {
-    if (key == UI_KEY_LEFT)
-      adjustCurrentValue(-1);
-    if (key == UI_KEY_RIGHT)
-      adjustCurrentValue(1);
-    if (key == UI_KEY_ENTER)
-      adjustingValue = false;
-    helperText = adjustingValue ? "左右调节当前字段，回车完成"
-                                : "已退出调节，继续移动焦点";
-    return true;
-  }
-
   if (key == UI_KEY_LEFT)
     moveEditorFocus(-1);
   if (key == UI_KEY_RIGHT)
     moveEditorFocus(1);
+  if (key == UI_KEY_ENTER)
+    return handleEditorEnter();
+  return true;
+}
 
-  if (key == UI_KEY_ENTER &&
-      (editFocus == FOCUS_HOUR || editFocus == FOCUS_MINUTE)) {
-    adjustingValue = true;
-    helperText = "左右调节当前字段，回车完成";
-  } else if (key == UI_KEY_ENTER && isRepeatFocus()) {
-    if (editFocus == FOCUS_REPEAT_DAILY) {
-      draftAlarm.repeatType = ALARM_REPEAT_DAILY;
-    } else if (editFocus == FOCUS_REPEAT_WEEKLY) {
-      draftAlarm.repeatType = ALARM_REPEAT_WEEKLY;
-    } else {
-      draftAlarm.repeatType = ALARM_REPEAT_WORKDAY;
-    }
-    helperText = draftAlarm.repeatType == ALARM_REPEAT_WORKDAY
-                     ? "法定休息日会跳过，补班日会响铃"
-                     : "规则已切换";
-  } else if (key == UI_KEY_ENTER && isEditorDayFocus()) {
+void AlarmScreen::handleDeleteAction() {
+  if (creatingAlarm) {
+    resetListState();
+    return;
+  }
+  alarmMgr->removeAlarm(editingIndex);
+  resetListState();
+  clampListFocus();
+}
+
+bool AlarmScreen::handleEditorEnter() {
+  if (editFocus == FOCUS_HOUR || editFocus == FOCUS_MINUTE) {
+    adjustCurrentValue(1);
+    helperText = editFocus == FOCUS_HOUR ? "小时已加 1" : "分钟已加 1";
+  } else if (isRepeatFocus()) {
+    applyRepeatSelection();
+  } else if (isEditorDayFocus()) {
     if (draftAlarm.repeatType == ALARM_REPEAT_WEEKLY) {
       draftAlarm.weekMask ^= getWeekdayBit(editFocus);
       helperText = "可多选星期，保存前至少保留一天";
     }
-  } else if (key == UI_KEY_ENTER && isSaveFocus()) {
+  } else if (isSaveFocus()) {
     return commitDraft();
-  } else if (key == UI_KEY_ENTER && editFocus == ACTION_CANCEL) {
+  } else if (editFocus == ACTION_CANCEL) {
     resetListState();
-  } else if (key == UI_KEY_ENTER && editFocus == ACTION_DELETE) {
-    if (creatingAlarm) {
-      resetListState();
-    } else {
-      alarmMgr->removeAlarm(editingIndex);
-      resetListState();
-      clampListFocus();
-    }
+  } else if (editFocus == ACTION_DELETE) {
+    handleDeleteAction();
+  } else if (editFocus == ACTION_TOGGLE_ENABLED) {
+    draftAlarm.enabled = !draftAlarm.enabled;
+    helperText = draftAlarm.enabled ? "已启用，回车保存生效"
+                                    : "已停用，回车保存生效";
   }
   return true;
 }
@@ -205,8 +194,7 @@ bool AlarmScreen::handleListInput(UIKey key) {
     uiManager->switchScreen(SCREEN_MENU);
     return false;
   }
-  alarmMgr->toggleEnabled(listFocus);
-  helperText = "回车切换勾选，长按进入编辑";
+  openEditorForFocus();
   return true;
 }
 
@@ -288,9 +276,8 @@ void AlarmScreen::setRepeatFocus() { editFocus = getRepeatFocus(draftAlarm.repea
 
 void AlarmScreen::resetEditorState() {
   draftAlarm = alarmMgr->buildDefaultAlarm();
-  helperText = "回车开关，长按编辑";
+  helperText = "回车编辑，长按退出";
   editFocus = FOCUS_REPEAT_WORKDAY;
-  adjustingValue = false;
   creatingAlarm = false;
   editingIndex = 0;
 }
@@ -298,8 +285,7 @@ void AlarmScreen::resetEditorState() {
 void AlarmScreen::resetListState() {
   mode = MODE_LIST;
   editFocus = FOCUS_REPEAT_WORKDAY;
-  adjustingValue = false;
-  helperText = "回车切换勾选，长按进入编辑";
+  helperText = "回车编辑当前项，长按退出";
   if (!isAlarmIndex(listFocus)) {
     listFocus = 0;
   }

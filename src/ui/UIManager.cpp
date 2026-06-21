@@ -9,6 +9,20 @@
 #include "screens/WeatherScreen.h"
 #include "../utils/WakeTiming.h"
 
+namespace {
+UIKey normalizeNavigationKey(UIKey key) {
+  // 关键逻辑：左右键无论长按还是短按，都只表达“移动光标”。
+  // 统一在分发层归一，避免各页面重复处理长短按分支导致行为漂移。
+  if (key == UI_KEY_LEFT_LONG) {
+    return UI_KEY_LEFT;
+  }
+  if (key == UI_KEY_RIGHT_LONG) {
+    return UI_KEY_RIGHT;
+  }
+  return key;
+}
+} // namespace
+
 UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
                      WeatherManager *weather, SensorDriver *sensor,
                      BatteryDriver *battery, ConnectionManager *conn,
@@ -75,26 +89,26 @@ void UIManager::update() {
 }
 
 void UIManager::handleInput(UIKey key) {
-  if (key == UI_KEY_ENTER_LONG) {
+  UIKey normalizedKey = normalizeNavigationKey(key);
+  if (normalizedKey == UI_KEY_ENTER_LONG) {
     onLongPressEnter();
     return;
   }
 
   if (currentScreenObj) {
-    if (currentScreenObj->handleInput(key)) {
+    if (currentScreenObj->handleInput(normalizedKey)) {
       currentScreenObj->draw(display);
     }
   }
 }
 
 void UIManager::onLongPressEnter() {
-  if (!currentScreenObj) {
+  // 关键逻辑：ENTER 长按是全局“返回菜单”手势，不交给页面自定义；
+  // 否则 Menu 页、Alarm 页等页面容易把长按复用成不同业务动作。
+  if (currentScreenState == SCREEN_MENU) {
     return;
   }
-
-  if (currentScreenObj->onLongPress()) {
-    currentScreenObj->draw(display);
-  }
+  switchScreen(SCREEN_MENU);
 }
 
 void UIManager::switchScreen(ScreenState state) {

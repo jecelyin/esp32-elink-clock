@@ -27,7 +27,6 @@ public:
   void update() override;
   void draw(DisplayDriver *display) override;
   bool handleInput(UIKey key) override;
-  bool onLongPress() override;
 
 private:
   MusicManager *music;

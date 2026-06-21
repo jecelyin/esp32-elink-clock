@@ -486,12 +486,6 @@ bool MusicScreen::handleInput(UIKey key) {
   return (oldFocused != focusedControl || key == UI_KEY_ENTER);
 }
 
-bool MusicScreen::onLongPress() {
-  if (uiManager)
-    uiManager->switchScreen(SCREEN_MENU);
-  return false;
-}
-
 void MusicScreen::updateProgress(DisplayDriver *display) {
   using namespace MusicLayout;
   uint16_t y = SCREEN_H - FOOTER_H + 5;

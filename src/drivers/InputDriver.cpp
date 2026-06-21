@@ -59,20 +59,22 @@ ButtonEvent Button::update() {
   return detectLongPress(physicalState, now);
 }
 
-bool Button::hasPendingShortPress() {
+bool Button::hasPendingPress() {
   bool hasPending = false;
 
   noInterrupts();
-  hasPending = pendingShortPressCount > 0;
+  hasPending = pendingShortPressCount > 0 || pendingLongPressCount > 0;
   interrupts();
 
   return hasPending;
 }
 
-void Button::clearPendingShortPresses() {
+void Button::clearPendingPresses() {
   noInterrupts();
   pendingShortPressCount = 0;
+  pendingLongPressCount = 0;
   interrupts();
+  syncPolledReleasedState(millis());
 }
 
 bool Button::isPressed() { return digitalRead(pin) == LOW; }
@@ -246,17 +248,17 @@ void InputDriver::syncWakePressedButtons() {
   rightButton.syncPressedState(now);
 }
 
-void InputDriver::clearPendingEnterShortPress() {
-  enterButton.clearPendingShortPresses();
+void InputDriver::clearPendingEnterPresses() {
+  enterButton.clearPendingPresses();
 }
 
-void InputDriver::clearPendingEnterShortPressIfDirectionActive() {
-  // 关键逻辑：菜单页默认焦点是 Home，方向键抖动或硬件串扰混入 ENTER
-  // 短按时，会被误判为“确认 Home”并返回首页。方向键已排队或仍在按住
-  // 都说明当前动作是切换 item，此时只清理 ENTER 短按，保留 ENTER 长按。
-  if (leftButton.hasPendingShortPress() || rightButton.hasPendingShortPress() ||
+void InputDriver::clearPendingEnterPressesIfDirectionActive() {
+  // 关键逻辑：LEFT/RIGHT 是全局移动光标手势，硬件串扰混入 ENTER 时
+  // 不能让 ENTER 先于方向键被消费；否则短按会触发当前焦点动作，
+  // 长按会直接返回菜单。方向键已排队或仍按下时，清掉 ENTER 全部待处理事件。
+  if (leftButton.hasPendingPress() || rightButton.hasPendingPress() ||
       leftButton.isPressed() || rightButton.isPressed()) {
-    clearPendingEnterShortPress();
+    clearPendingEnterPresses();
   }
 }
 

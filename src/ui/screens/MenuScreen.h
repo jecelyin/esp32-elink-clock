@@ -42,17 +42,12 @@ public:
     lastMenuIndex = menuIndex;
   }
 
-  bool onLongPress() override {
-    uiManager->switchScreen(SCREEN_HOME);
-    return false;
-  }
-
   bool handleInput(UIKey key) override {
 
-    if (key == UI_KEY_LEFT || key == UI_KEY_LEFT_LONG) {
+    if (key == UI_KEY_LEFT) {
       moveSelection(-1);
       return true;
-    } else if (key == UI_KEY_RIGHT || key == UI_KEY_RIGHT_LONG) {
+    } else if (key == UI_KEY_RIGHT) {
       moveSelection(1);
       return true;
     } else if (key == UI_KEY_ENTER) {

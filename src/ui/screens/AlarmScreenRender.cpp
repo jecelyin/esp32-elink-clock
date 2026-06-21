@@ -19,27 +19,30 @@ void AlarmScreen::drawEditor(DisplayDriver *display) {
 
 void AlarmScreen::drawEditorActions(DisplayDriver *display) {
   String deleteLabel = "删除";
-  const char *labels[] = {"保存", "取消", deleteLabel.c_str()};
-  int focusMap[] = {ACTION_SAVE, ACTION_CANCEL, ACTION_DELETE};
+  const char *toggleLabel = draftAlarm.enabled ? "停用" : "启用";
+  const char *labels[] = {"保存", "取消", deleteLabel.c_str(), toggleLabel};
+  int focusMap[] = {ACTION_SAVE, ACTION_CANCEL, ACTION_DELETE,
+                    ACTION_TOGGLE_ENABLED};
   int actionCount = getEditorActionCount();
   int startX = creatingAlarm ? 76 : 18;
-  int gap = creatingAlarm ? 136 : 126;
+  int buttonW = creatingAlarm ? 112 : 82;
+  int gap = creatingAlarm ? 136 : 94;
 
   for (int i = 0; i < actionCount; ++i) {
     int x = startX + i * gap;
     bool focused = editFocus == focusMap[i];
     if (focused) {
-      display->display.fillRoundRect(x, 254, 112, 30, 8, GxEPD_BLACK);
+      display->display.fillRoundRect(x, 254, buttonW, 30, 8, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
       display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
     } else {
-      display->display.drawRoundRect(x, 254, 112, 30, 8, GxEPD_BLACK);
+      display->display.drawRoundRect(x, 254, buttonW, 30, 8, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
       display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
     }
     display->u8g2Fonts.setFont(u8g2_font_wqy16_t_gb2312);
     int width = display->u8g2Fonts.getUTF8Width(labels[i]);
-    display->u8g2Fonts.setCursor(x + (112 - width) / 2, 275);
+    display->u8g2Fonts.setCursor(x + (buttonW - width) / 2, 275);
     display->u8g2Fonts.print(labels[i]);
   }
   display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
@@ -63,23 +66,13 @@ void AlarmScreen::drawEditorTime(DisplayDriver *display) {
   for (int i = 0; i < 2; ++i) {
     int x = 70 + i * 155;
     bool focused = editFocus == i;
-    bool active = focused && adjustingValue;
     display->display.drawRoundRect(x, 110, 105, 38, 8, GxEPD_BLACK);
     if (focused) {
       display->display.drawRoundRect(x - 3, 107, 111, 44, 10, GxEPD_BLACK);
     }
-    if (active) {
-      display->display.fillRoundRect(x + 2, 112, 101, 34, 8, GxEPD_BLACK);
-      display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
-      display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
-    }
     display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
     display->u8g2Fonts.setCursor(x + 18, 134);
-    display->u8g2Fonts.print(i == 0 ? "小时 左右调节" : "分钟 左右调节");
-    if (active) {
-      display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
-      display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
-    }
+    display->u8g2Fonts.print(i == 0 ? "小时 回车+1" : "分钟 回车+1");
   }
 }
 
@@ -89,7 +82,7 @@ void AlarmScreen::drawEditorTitle(DisplayDriver *display) {
   display->u8g2Fonts.print(creatingAlarm ? "新建闹钟" : "编辑闹钟");
   display->u8g2Fonts.setFont(u8g2_font_helvB08_tr);
   display->u8g2Fonts.setCursor(18, 68);
-  display->u8g2Fonts.print("LONG PRESS TO SAVE");
+  display->u8g2Fonts.print("LONG ENTER TO EXIT");
 }
 
 void AlarmScreen::drawRepeatSelector(DisplayDriver *display) {
@@ -195,16 +188,16 @@ void AlarmScreen::drawListRow(DisplayDriver *display, int itemIndex, int rowInde
     drawCheckbox(display, 344, y + 12, alarmMgr->getAlarm(itemIndex).enabled,
                  focused);
     display->u8g2Fonts.setCursor(150, y + 38);
-    display->u8g2Fonts.print("长按编辑");
+    display->u8g2Fonts.print("回车编辑");
   }
   display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
   display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
 }
 
-int AlarmScreen::getEditorActionCount() const { return creatingAlarm ? 2 : 3; }
+int AlarmScreen::getEditorActionCount() const { return creatingAlarm ? 2 : 4; }
 
 int AlarmScreen::getLastEditorFocus() const {
-  return creatingAlarm ? ACTION_CANCEL : ACTION_DELETE;
+  return creatingAlarm ? ACTION_CANCEL : ACTION_TOGGLE_ENABLED;
 }
 
 int AlarmScreen::getActionRowCount() const { return 2; }

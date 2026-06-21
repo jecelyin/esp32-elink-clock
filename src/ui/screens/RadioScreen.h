@@ -16,7 +16,6 @@ public:
   void update() override;
   void draw(DisplayDriver *display) override;
   bool handleInput(UIKey key) override;
-  bool onLongPress() override;
 
 private:
   RadioDriver *radio;
@@ -63,6 +62,5 @@ private:
   void updateSignal(DisplayDriver *display, int rssi);
   void updateRDS(DisplayDriver *display, const char *text);
 
-  void savePreset(int index);
   void loadPreset(int index);
 };

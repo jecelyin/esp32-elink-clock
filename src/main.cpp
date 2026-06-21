@@ -213,10 +213,9 @@ bool isWithinGracePeriod(uint32_t lastMs, uint32_t graceMs) {
 
 void markUserActivity() { g_lastUserActivityMs = millis(); }
 
-bool isMenuDirectionInput(ScreenState state, UIKey key) {
-  return state == SCREEN_MENU &&
-         (key == UI_KEY_LEFT || key == UI_KEY_RIGHT ||
-          key == UI_KEY_LEFT_LONG || key == UI_KEY_RIGHT_LONG);
+bool isDirectionInput(UIKey key) {
+  return key == UI_KEY_LEFT || key == UI_KEY_RIGHT ||
+         key == UI_KEY_LEFT_LONG || key == UI_KEY_RIGHT_LONG;
 }
 
 UIKey mapButtonEventToUIKey(ButtonEvent btn) {
@@ -238,15 +237,33 @@ UIKey mapButtonEventToUIKey(ButtonEvent btn) {
   }
 }
 
-void clearMenuEnterNoiseAfterDirection(ScreenState state, UIKey key) {
-  if (!isMenuDirectionInput(state, key)) {
+void clearEnterNoiseAfterDirection(UIKey key) {
+  if (!isDirectionInput(key)) {
     return;
   }
 
-  // 关键逻辑：菜单页方向键会触发电子墨水屏局刷，局刷期间若 ENTER
-  // 短按被中断锁存混入，下一轮会直接确认默认 Home 项并回到首页。
-  // 方向键处理完成后清掉 ENTER 短按，只保留明确的后续按键和长按手势。
-  inputDriver.clearPendingEnterShortPress();
+  // 关键逻辑：方向键在所有页面都只负责移动光标。电子墨水屏局刷阻塞期间
+  // 若 ENTER 被硬件串扰锁存，下一轮可能触发当前焦点动作或长按返回菜单；
+  // 因此方向键处理后要清掉 ENTER 的全部待处理事件。
+  inputDriver.clearPendingEnterPresses();
+}
+
+void handleInputEvents() {
+  inputDriver.clearPendingEnterPressesIfDirectionActive();
+  ButtonEvent btn = inputDriver.loop();
+  if (btn == BTN_NONE) {
+    return;
+  }
+
+  markUserActivity();
+  Serial.print("Button Event: ");
+  Serial.println((int)btn);
+  UIKey key = mapButtonEventToUIKey(btn);
+  if (key == UI_KEY_NONE) {
+    return;
+  }
+  uiManager.handleInput(key);
+  clearEnterNoiseAfterDirection(key);
 }
 
 uint32_t getAlarmWakeDelayMs(uint32_t nowMs) {
@@ -405,25 +422,8 @@ void loop() {
     }
   }
 
-  // Handle Input
-  t_start = millis();
-  if (uiManager.getCurrentState() == SCREEN_MENU) {
-    inputDriver.clearPendingEnterShortPressIfDirectionActive();
-  }
-  ButtonEvent btn = inputDriver.loop();
+  handleInputEvents();
   // Serial.printf("Input loop: %ums\n", millis() - t_start);
-
-  if (btn != BTN_NONE) {
-    markUserActivity();
-    Serial.print("Button Event: ");
-    Serial.println((int)btn);
-    UIKey key = mapButtonEventToUIKey(btn);
-    if (key != UI_KEY_NONE) {
-      ScreenState stateBeforeInput = uiManager.getCurrentState();
-      uiManager.handleInput(key);
-      clearMenuEnterNoiseAfterDirection(stateBeforeInput, key);
-    }
-  }
 
   // 外设电源动态管理
   if (!alarmManager.isRinging() && !audioDriver.isPlaying()) {
