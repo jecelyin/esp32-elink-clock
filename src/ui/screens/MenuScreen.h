@@ -11,8 +11,9 @@ public:
     lastMenuIndex = 0;
     items[0] =
         MenuItem{SCREEN_HOME, "Home", u8g2_font_open_iconic_embedded_4x_t, 'D'};
-    items[1] = MenuItem{SCREEN_CALENDAR, "Calendar",
-                        u8g2_font_open_iconic_embedded_4x_t, 'C'};
+    items[1] =
+        MenuItem{SCREEN_CALENDAR, "Calendar", u8g2_font_open_iconic_all_4x_t,
+                 'k'};
     items[2] = MenuItem{SCREEN_ALARM, "Alarm",
                         u8g2_font_open_iconic_embedded_4x_t, 'A'};
     items[3] =
