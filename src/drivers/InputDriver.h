@@ -17,37 +17,24 @@ enum ButtonEvent {
 class Button {
 public:
   Button(uint8_t pin, ButtonEvent shortPressEvent, ButtonEvent longPressEvent,
-         uint16_t shortPressRepeatGapMs = 120,
-         uint16_t longPressRepeatGapMs = 0,
-         bool queueLongPressOnRelease = true);
+         uint16_t longPressRepeatGapMs = 0);
   void begin();
   ButtonEvent update();
   void syncPressedState(unsigned long now);
   void suppressUntilReleased();
-  bool hasPendingPress();
   void clearPendingPresses();
   bool isPressed();
 
 private:
-  static void IRAM_ATTR handleInterruptThunk(void *arg);
-  void IRAM_ATTR handleInterrupt();
-  void IRAM_ATTR queueShortPressFromInterrupt(uint32_t now, uint32_t duration);
-  bool IRAM_ATTR queueLongPressFromInterrupt(uint32_t duration);
-
-  ButtonEvent consumePendingEvent();
   bool consumeSuppressedRelease(int physicalState, unsigned long now);
   ButtonEvent detectLongPress(int physicalState, unsigned long now);
-  void clearPendingCounts();
-  void syncInterruptPressedState(unsigned long now);
   void syncPolledReleasedState(unsigned long now);
-  void updatePolledState(int physicalState, unsigned long now);
+  ButtonEvent updatePolledState(int physicalState, unsigned long now);
 
   uint8_t pin;
   ButtonEvent shortPressEvent;
   ButtonEvent longPressEvent;
-  uint16_t shortPressRepeatGapMs;
   uint16_t longPressRepeatGapMs;
-  bool queueLongPressOnRelease;
   int lastPhysicalState = HIGH;
   int stableState = HIGH;
   unsigned long lastDebounceTime = 0;
@@ -56,18 +43,8 @@ private:
   unsigned long suppressedReleaseStartTime = 0;
   bool longPressed = false;
 
-  volatile int irqLastState = HIGH;
-  volatile uint32_t irqLastChangeTime = 0;
-  volatile uint32_t irqPressStartTime = 0;
-  volatile uint32_t irqLastQueuedShortTime = 0;
-  volatile uint32_t lastQueuedShortDuration = 0;
-  volatile uint32_t lastQueuedLongDuration = 0;
-  volatile uint8_t pendingShortPressCount = 0;
-  volatile uint8_t pendingLongPressCount = 0;
-  volatile bool irqLongHandled = false;
-  volatile bool suppressedUntilRelease = false;
+  bool suppressedUntilRelease = false;
 
-  static const uint8_t MAX_PENDING_EVENTS = 8;
   static const unsigned long DEBOUNCE_DELAY = 50;
   static const unsigned long TAP_TIMEOUT = 120;
   static const unsigned long LONG_PRESS_TIMEOUT = 600;

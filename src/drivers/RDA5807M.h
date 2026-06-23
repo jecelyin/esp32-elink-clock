@@ -63,8 +63,8 @@ public:
   setFrequency(uint16_t newF); // Frequency in 10kHz (e.g. 10110 = 101.1 MHz)
   uint16_t getFrequency();
 
-  void seekUp(bool wrap = true);
-  void seekDown(bool wrap = true);
+  bool seekUp(bool wrap = true);
+  bool seekDown(bool wrap = true);
 
   // ----- RDS -----
   void checkRDS();
@@ -98,6 +98,10 @@ private:
   void _readRegisters();
   void _saveRegisters();             // Saves 02-06
   void _saveRegister(uint8_t regNr); // Helper to save up to regNr
+  bool _seek(bool seekUp, bool wrap);
+  bool _waitSeekComplete(uint16_t *status);
+  void _finishTune();
+  void _finishSeek();
   void _writeReg(uint8_t reg, uint16_t val);
   uint16_t _readReg(uint8_t reg);
 

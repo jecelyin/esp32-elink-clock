@@ -24,6 +24,7 @@
 #define BIT_CTRL_CLK_MODE 4
 #define BIT_CTRL_SEEK 8
 #define BIT_CTRL_SEEKUP 9
+#define BIT_CTRL_SKMODE 7
 #define BIT_CTRL_BASS 12
 #define BIT_CTRL_MONO 13
 #define BIT_CTRL_DMUTE 14
@@ -41,6 +42,7 @@
 #define BIT_VOL_SEEKTH 8
 
 #define BIT_RA_STC 14
+#define BIT_RA_SF_BL 13
 #define MASK_RA_READCHAN 0x03FF
 #define BIT_RB_RSSI 9
 
@@ -190,6 +192,8 @@ void RDA5807M::setFrequency(uint16_t newF) {
       break;
     delay(10);
   }
+  _finishTune();
+  _currentFreq = newF;
 }
 
 uint16_t RDA5807M::getFrequency() {
@@ -202,21 +206,9 @@ uint16_t RDA5807M::getFrequency() {
   return bottom + (channel * 10);
 }
 
-void RDA5807M::seekUp(bool wrap) {
-  registers[REG_CTRL] |= BV(BIT_CTRL_SEEKUP);
-  registers[REG_CTRL] |= BV(BIT_CTRL_SEEK);
-  _writeReg(REG_CTRL, registers[REG_CTRL]);
-  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEK);
-  _writeReg(REG_CTRL, registers[REG_CTRL]);
-}
+bool RDA5807M::seekUp(bool wrap) { return _seek(true, wrap); }
 
-void RDA5807M::seekDown(bool wrap) {
-  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEKUP);
-  registers[REG_CTRL] |= BV(BIT_CTRL_SEEK);
-  _writeReg(REG_CTRL, registers[REG_CTRL]);
-  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEK);
-  _writeReg(REG_CTRL, registers[REG_CTRL]);
-}
+bool RDA5807M::seekDown(bool wrap) { return _seek(false, wrap); }
 
 // ----- RDS -----
 
@@ -288,6 +280,78 @@ void RDA5807M::_saveRegister(uint8_t regNr) {
   _writeReg(regNr, registers[regNr]);
 }
 
+bool RDA5807M::_seek(bool seekUp, bool wrap) {
+  if (seekUp) {
+    registers[REG_CTRL] |= BV(BIT_CTRL_SEEKUP);
+  } else {
+    registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEKUP);
+  }
+
+  // 关键逻辑：RDA5807 的 seek 必须保持 SEEK=1 直到 STC 置位。
+  // 旧实现写完立刻清 SEEK，芯片还没完成搜索就被中断，Scan 会保存无效频点。
+  if (wrap) {
+    registers[REG_CTRL] &= ~BV(BIT_CTRL_SKMODE);
+  } else {
+    registers[REG_CTRL] |= BV(BIT_CTRL_SKMODE);
+  }
+  registers[REG_CTRL] |= BV(BIT_CTRL_SEEK);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
+
+  uint16_t status = 0;
+  bool completed = _waitSeekComplete(&status);
+  bool failed = !completed || (status & BV(BIT_RA_SF_BL));
+  _finishSeek();
+  if (failed) {
+    return false;
+  }
+
+  // 关键逻辑：硬件 seek 只说明芯片找到了 READCHAN；再 tune 一次可以把音频链路
+  // 稳定停在该频点，避免 Scan 保存了频点但后续预设播放不可用。
+  uint16_t foundFreq = getFrequency();
+  setFrequency(foundFreq);
+  return true;
+}
+
+bool RDA5807M::_waitSeekComplete(uint16_t *status) {
+  for (uint8_t i = 0; i < 120; i++) {
+    uint16_t currentStatus = _readReg(REG_RA);
+    if (status != nullptr) {
+      *status = currentStatus;
+    }
+    if (currentStatus & BV(BIT_RA_STC)) {
+      return true;
+    }
+    delay(10);
+  }
+  return false;
+}
+
+void RDA5807M::_finishSeek() {
+  registers[REG_CTRL] &= ~BV(BIT_CTRL_SEEK);
+  _writeReg(REG_CTRL, registers[REG_CTRL]);
+
+  for (uint8_t i = 0; i < 30; i++) {
+    if ((_readReg(REG_RA) & BV(BIT_RA_STC)) == 0) {
+      return;
+    }
+    delay(5);
+  }
+}
+
+void RDA5807M::_finishTune() {
+  // 关键逻辑：Tune 完成后必须清 TUNE，让 STC 回到低电平。
+  // 否则后续硬件 seek 会立即读到残留 STC=1，表现为 Scan 原地结束。
+  registers[REG_CHAN] &= ~BV(BIT_CHAN_TUNE);
+  _writeReg(REG_CHAN, registers[REG_CHAN]);
+
+  for (uint8_t i = 0; i < 30; i++) {
+    if ((_readReg(REG_RA) & BV(BIT_RA_STC)) == 0) {
+      return;
+    }
+    delay(5);
+  }
+}
+
 void RDA5807M::_writeReg(uint8_t reg, uint16_t val) {
   Wire.beginTransmission(I2C_ADDR_IDX);
   Wire.write(reg);
@@ -300,7 +364,7 @@ uint16_t RDA5807M::_readReg(uint8_t reg) {
   Wire.write(reg);
   if (Wire.endTransmission(false) != 0)
     return 0;
-  Wire.requestFrom(I2C_ADDR_IDX, (uint8_t)2);
+  Wire.requestFrom((uint8_t)I2C_ADDR_IDX, (uint8_t)2);
   return _read16();
 }
 

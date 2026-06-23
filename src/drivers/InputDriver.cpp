@@ -4,32 +4,25 @@
 
 Button::Button(uint8_t pin, ButtonEvent shortPressEvent,
                ButtonEvent longPressEvent,
-               uint16_t shortPressRepeatGapMs,
-               uint16_t longPressRepeatGapMs,
-               bool queueLongPressOnRelease)
+               uint16_t longPressRepeatGapMs)
     : pin(pin), shortPressEvent(shortPressEvent),
       longPressEvent(longPressEvent),
-      shortPressRepeatGapMs(shortPressRepeatGapMs),
-      longPressRepeatGapMs(longPressRepeatGapMs),
-      queueLongPressOnRelease(queueLongPressOnRelease) {}
+      longPressRepeatGapMs(longPressRepeatGapMs) {}
 
 void Button::begin() {
   pinMode(pin, INPUT_PULLUP);
 
-  // 关键逻辑：轮询状态机和中断锁存状态必须同时对齐当前电平。
-  // 菜单页电子墨水屏局刷期间主循环会暂停数百毫秒，短按可能完整发生在
-  // 这段阻塞窗口内；中断锁存负责把这些短按先记下来，后续主循环再消费。
+  // 关键逻辑：按键仅使用主循环轮询，避免 GPIO CHANGE 中断在收音机页
+  // 因电源噪声/按键抖动形成中断风暴。
   int initialState = digitalRead(pin);
   lastPhysicalState = initialState;
   stableState = initialState;
   lastDebounceTime = millis();
-  irqLastState = initialState;
-  irqLastChangeTime = lastDebounceTime;
-  irqPressStartTime = initialState == LOW ? lastDebounceTime : 0;
-  irqLastQueuedShortTime = 0;
 
-  attachInterruptArg(digitalPinToInterrupt(pin), handleInterruptThunk, this,
-                     CHANGE);
+  // 关键逻辑：不要在运行期挂 GPIO CHANGE 中断。
+  // Radio 页面打开功放/收音机后，按键线偶发抖动会形成中断风暴；
+  // 实机已出现 Core1 卡在 gpio_intr_service 的 Interrupt WDT。
+  // 主循环 50ms 轮询足够识别按键，light sleep 唤醒另由 gpio_wakeup 负责。
 }
 
 void Button::syncPressedState(unsigned long now) {
@@ -46,7 +39,6 @@ void Button::syncPressedState(unsigned long now) {
   lastLongPressEventTime = 0;
   longPressed = false;
   lastDebounceTime = now;
-  syncInterruptPressedState(now);
 #if ENABLE_SERIAL_DEBUG
   Serial.printf("[Input][wake-sync] pin=%u at=%lums\n", pin, now);
 #endif
@@ -59,61 +51,50 @@ ButtonEvent Button::update() {
     return BTN_NONE;
   }
 
-  ButtonEvent pendingEvent = consumePendingEvent();
-  if (pendingEvent != BTN_NONE) {
-    return pendingEvent;
+  ButtonEvent polledEvent = updatePolledState(physicalState, now);
+  if (polledEvent != BTN_NONE) {
+    return polledEvent;
   }
-
-  updatePolledState(physicalState, now);
   return detectLongPress(physicalState, now);
 }
 
 void Button::suppressUntilReleased() {
   // 关键逻辑：ENTER 长按被业务消费后，后续释放沿只代表结束本次手势。
-  // 如果不屏蔽，释放抖动可能被中断队列记录成短按，菜单页会立刻确认 Home。
-  noInterrupts();
-  clearPendingCounts();
+  // 如果不屏蔽，释放抖动可能被轮询状态机当成短按，菜单页会立刻确认 Home。
   suppressedUntilRelease = true;
-  irqLongHandled = true;
-  interrupts();
   suppressedReleaseStartTime = 0;
 }
 
-bool Button::hasPendingPress() {
-  bool hasPending = false;
-
-  noInterrupts();
-  hasPending = pendingShortPressCount > 0 || pendingLongPressCount > 0;
-  interrupts();
-
-  return hasPending;
-}
-
 void Button::clearPendingPresses() {
-  noInterrupts();
-  clearPendingCounts();
-  interrupts();
   syncPolledReleasedState(millis());
 }
 
 bool Button::isPressed() { return digitalRead(pin) == LOW; }
 
-void Button::updatePolledState(int physicalState, unsigned long now) {
+ButtonEvent Button::updatePolledState(int physicalState, unsigned long now) {
   if (physicalState != lastPhysicalState) {
     lastDebounceTime = now;
   }
 
   if ((now - lastDebounceTime) > DEBOUNCE_DELAY) {
     if (physicalState != stableState) {
+      int previousStableState = stableState;
       stableState = physicalState;
       if (stableState == LOW) {
         pressStartTime = now;
         longPressed = false;
+      } else if (previousStableState == LOW && !longPressed) {
+        uint32_t duration = now - pressStartTime;
+        pressStartTime = 0;
+        if (duration > TAP_TIMEOUT) {
+          return shortPressEvent;
+        }
       }
     }
   }
 
   lastPhysicalState = physicalState;
+  return BTN_NONE;
 }
 
 ButtonEvent Button::detectLongPress(int physicalState, unsigned long now) {
@@ -125,9 +106,6 @@ ButtonEvent Button::detectLongPress(int physicalState, unsigned long now) {
   if (!longPressed && (now - pressStartTime > LONG_PRESS_TIMEOUT)) {
     longPressed = true;
     lastLongPressEventTime = now;
-    noInterrupts();
-    irqLongHandled = true;
-    interrupts();
 #if ENABLE_SERIAL_DEBUG
     Serial.printf("[Input][poll-long] event=%d pin=%u hold=%lums\n",
                   longPressEvent, pin, now - pressStartTime);
@@ -144,53 +122,8 @@ ButtonEvent Button::detectLongPress(int physicalState, unsigned long now) {
   return BTN_NONE;
 }
 
-ButtonEvent Button::consumePendingEvent() {
-  ButtonEvent event = BTN_NONE;
-  bool consumedShortPress = false;
-  bool consumedLongPress = false;
-  uint32_t duration = 0;
-  uint8_t pendingShortAfter = 0;
-  uint8_t pendingLongAfter = 0;
-
-  noInterrupts();
-  if (pendingLongPressCount > 0) {
-    pendingLongPressCount--;
-    event = longPressEvent;
-    consumedLongPress = true;
-    duration = lastQueuedLongDuration;
-  } else if (pendingShortPressCount > 0) {
-    pendingShortPressCount--;
-    event = shortPressEvent;
-    consumedShortPress = true;
-    duration = lastQueuedShortDuration;
-  }
-  pendingShortAfter = pendingShortPressCount;
-  pendingLongAfter = pendingLongPressCount;
-  interrupts();
-
-  if (consumedShortPress || consumedLongPress) {
-#if ENABLE_SERIAL_DEBUG
-    Serial.printf("[Input][consume] event=%d source=irq duration=%lums "
-                  "pendingS=%u pendingL=%u\n",
-                  event, duration, pendingShortAfter, pendingLongAfter);
-#endif
-    syncPolledReleasedState(millis());
-  }
-
-  return event;
-}
-
 bool Button::consumeSuppressedRelease(int physicalState, unsigned long now) {
-  bool suppressing = false;
-
-  noInterrupts();
-  suppressing = suppressedUntilRelease;
-  if (suppressing) {
-    clearPendingCounts();
-  }
-  interrupts();
-
-  if (!suppressing) {
+  if (!suppressedUntilRelease) {
     return false;
   }
 
@@ -210,26 +143,9 @@ bool Button::consumeSuppressedRelease(int physicalState, unsigned long now) {
     return true;
   }
 
-  noInterrupts();
   suppressedUntilRelease = false;
-  irqLongHandled = true;
-  interrupts();
   syncPolledReleasedState(now);
   return true;
-}
-
-void Button::clearPendingCounts() {
-  pendingShortPressCount = 0;
-  pendingLongPressCount = 0;
-}
-
-void Button::syncInterruptPressedState(unsigned long now) {
-  noInterrupts();
-  irqLastState = LOW;
-  irqLastChangeTime = now;
-  irqPressStartTime = now;
-  irqLongHandled = false;
-  interrupts();
 }
 
 void Button::syncPolledReleasedState(unsigned long now) {
@@ -244,84 +160,10 @@ void Button::syncPolledReleasedState(unsigned long now) {
   lastDebounceTime = now;
 }
 
-void IRAM_ATTR Button::handleInterruptThunk(void *arg) {
-  static_cast<Button *>(arg)->handleInterrupt();
-}
-
-void IRAM_ATTR Button::handleInterrupt() {
-  int physicalState = digitalRead(pin);
-  uint32_t now = xTaskGetTickCountFromISR() * portTICK_PERIOD_MS;
-
-  if (physicalState == irqLastState ||
-      now - irqLastChangeTime < DEBOUNCE_DELAY) {
-    return;
-  }
-
-  irqLastChangeTime = now;
-  irqLastState = physicalState;
-  if (suppressedUntilRelease) {
-    irqPressStartTime = physicalState == LOW ? now : 0;
-    irqLongHandled = true;
-    return;
-  }
-
-  if (physicalState == LOW) {
-    irqPressStartTime = now;
-    irqLongHandled = false;
-    return;
-  }
-
-  uint32_t duration = now - irqPressStartTime;
-  if (duration <= TAP_TIMEOUT || irqLongHandled) {
-    return;
-  }
-
-  if (queueLongPressFromInterrupt(duration)) {
-    return;
-  }
-
-  // 关键逻辑：真实按住时间超过短按阈值且不足长按阈值时，释放沿才锁存短按；
-  // 长按兜底已在上方按物理时长处理，避免短按被错误升级。
-  queueShortPressFromInterrupt(now, duration);
-}
-
-bool IRAM_ATTR Button::queueLongPressFromInterrupt(uint32_t duration) {
-  if (!queueLongPressOnRelease || longPressEvent == BTN_NONE ||
-      duration <= LONG_PRESS_TIMEOUT) {
-    return false;
-  }
-
-  // 关键逻辑：释放沿长按兜底只留给非 ENTER 键。
-  // ENTER 是全局返回手势，必须由按住期间的轮询确认，避免短按误返菜单。
-  if (pendingLongPressCount < MAX_PENDING_EVENTS) {
-    pendingLongPressCount++;
-    lastQueuedLongDuration = duration;
-  }
-  irqLongHandled = true;
-  return true;
-}
-
-void IRAM_ATTR Button::queueShortPressFromInterrupt(uint32_t now,
-                                                    uint32_t duration) {
-  // 关键逻辑：真实连按和释放回弹都表现为多次 HIGH 释放沿。
-  // 这里按键级别限制最小短按间隔，防止 ENTER 的一次释放被排成两次事件；
-  // left/right 的间隔更短，仍然支持快速切换时排队。
-  if (irqLastQueuedShortTime != 0 &&
-      now - irqLastQueuedShortTime < shortPressRepeatGapMs) {
-    return;
-  }
-
-  if (pendingShortPressCount < MAX_PENDING_EVENTS) {
-    pendingShortPressCount++;
-    irqLastQueuedShortTime = now;
-    lastQueuedShortDuration = duration;
-  }
-}
-
 InputDriver::InputDriver()
-    : enterButton(KEY_ENTER, BTN_ENTER_SHORT, BTN_ENTER_LONG, 450, 0, false),
-      leftButton(KEY_LEFT, BTN_LEFT_SHORT, BTN_LEFT_LONG, 120, 260),
-      rightButton(KEY_RIGHT, BTN_RIGHT_SHORT, BTN_RIGHT_LONG, 120, 260) {}
+    : enterButton(KEY_ENTER, BTN_ENTER_SHORT, BTN_ENTER_LONG),
+      leftButton(KEY_LEFT, BTN_LEFT_SHORT, BTN_LEFT_LONG, 260),
+      rightButton(KEY_RIGHT, BTN_RIGHT_SHORT, BTN_RIGHT_LONG, 260) {}
 
 void InputDriver::begin() {
   enterButton.begin();
@@ -346,10 +188,8 @@ void InputDriver::clearPendingEnterPresses() {
 
 void InputDriver::clearPendingEnterPressesIfDirectionActive() {
   // 关键逻辑：LEFT/RIGHT 是全局移动光标手势，硬件串扰混入 ENTER 时
-  // 不能让 ENTER 先于方向键被消费；否则短按会触发当前焦点动作，
-  // 长按会直接返回菜单。方向键已排队或仍按下时，清掉 ENTER 全部待处理事件。
-  if (leftButton.hasPendingPress() || rightButton.hasPendingPress() ||
-      leftButton.isPressed() || rightButton.isPressed()) {
+  // 不能让 ENTER 先于方向键被消费；否则短按会触发当前焦点动作。
+  if (leftButton.isPressed() || rightButton.isPressed()) {
     clearPendingEnterPresses();
   }
 }

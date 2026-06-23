@@ -14,9 +14,8 @@ public:
   void setVolume(uint8_t vol);
   uint8_t getVolume();
   void mute(bool m);
-  void seekUp();
-  void seekDown();
   uint16_t getFrequency();
+  uint8_t scanStations(uint16_t *stations, uint8_t maxStations);
   void getFormattedFrequency(char *s, uint8_t length);
   uint16_t getMinFrequency();
   uint16_t getMaxFrequency();
@@ -32,6 +31,8 @@ public:
   }
 
 private:
+  bool seekNextScanStation(uint16_t *freq, RDA5807M_Info *info);
+
   RDA5807M radio;
   RDSParser rdsParser;
   uint16_t lastFrequency;

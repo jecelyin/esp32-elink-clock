@@ -7,6 +7,8 @@ constexpr uint32_t RADIO_I2C_ERROR_LOG_INTERVAL_MS = 3000UL;
 constexpr uint16_t RADIO_DEFAULT_FREQUENCY = 8750;
 constexpr uint16_t RADIO_MIN_FREQUENCY = 8750;
 constexpr uint16_t RADIO_MAX_FREQUENCY = 10800;
+constexpr uint16_t RADIO_SCAN_MIN_GAP = 30;
+constexpr uint8_t RADIO_SCAN_MIN_RSSI = 8;
 uint32_t g_lastRadioI2CErrorLogTime = 0;
 
 void logRadioI2CFailure(const char *operation) {
@@ -48,6 +50,44 @@ uint16_t normalizeFrequency(uint16_t freq) {
     return RADIO_DEFAULT_FREQUENCY;
   }
   return freq;
+}
+
+bool isDistinctStation(uint16_t freq, uint16_t previousFreq) {
+  return previousFreq == 0 || freq >= previousFreq + RADIO_SCAN_MIN_GAP;
+}
+
+bool isSeekStationUsable(uint16_t freq, const RDA5807M_Info &info,
+                         uint16_t previousFreq) {
+  return freq >= RADIO_MIN_FREQUENCY && freq <= RADIO_MAX_FREQUENCY &&
+         info.rssi >= RADIO_SCAN_MIN_RSSI &&
+         isDistinctStation(freq, previousFreq);
+}
+
+void logScanStart() {
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][scan] start min=%u max=%u minRssi=%u\n",
+                RADIO_MIN_FREQUENCY, RADIO_MAX_FREQUENCY, RADIO_SCAN_MIN_RSSI);
+#endif
+}
+
+void logScanSeek(bool seekOk, uint16_t freq, const RDA5807M_Info &info) {
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][scan] seek ok=%d freq=%u rssi=%u tuned=%d stereo=%d\n",
+                seekOk, freq, info.rssi, info.tuned, info.stereo);
+#endif
+}
+
+void logScanStation(uint8_t found, uint16_t freq, const RDA5807M_Info &info) {
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][scan] station #%u freq=%u rssi=%u stereo=%d\n",
+                found, freq, info.rssi, info.stereo);
+#endif
+}
+
+void logScanDone(uint8_t found, uint16_t tunedFreq) {
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][scan] done count=%u tuned=%u\n", found, tunedFreq);
+#endif
 }
 } // namespace
 
@@ -120,19 +160,59 @@ void RadioDriver::mute(bool m) {
   runWithRadioBusLock("mute", [&]() { radio.setMute(m); });
 }
 
-void RadioDriver::seekUp() {
-  runWithRadioBusLock("seekUp", [&]() { radio.seekUp(false); });
-}
-
-void RadioDriver::seekDown() {
-  runWithRadioBusLock("seekDown", [&]() { radio.seekDown(false); });
-}
-
 uint16_t RadioDriver::getFrequency() {
   uint16_t freq = runWithRadioBusLock("getFrequency", lastFrequency,
                                       [&]() { return radio.getFrequency(); });
   lastFrequency = normalizeFrequency(freq);
   return lastFrequency;
+}
+
+uint8_t RadioDriver::scanStations(uint16_t *stations, uint8_t maxStations) {
+  if (stations == nullptr || maxStations == 0) {
+    return 0;
+  }
+
+  uint8_t found = 0;
+  uint16_t origin = getFrequency();
+  logScanStart();
+  setFrequency(RADIO_MIN_FREQUENCY);
+
+  uint16_t lastSeekFreq = RADIO_MIN_FREQUENCY;
+  uint16_t lastSavedFreq = 0;
+  while (found < maxStations) {
+    uint16_t freq = 0;
+    RDA5807M_Info info{false, 0, 0, false, false, false, false};
+    if (!seekNextScanStation(&freq, &info) || freq <= lastSeekFreq ||
+        freq > RADIO_MAX_FREQUENCY) {
+      break;
+    }
+
+    lastFrequency = normalizeFrequency(freq);
+    lastSeekFreq = freq;
+    if (!isSeekStationUsable(freq, info, lastSavedFreq)) {
+      continue;
+    }
+
+    stations[found++] = freq;
+    lastSavedFreq = freq;
+    logScanStation(found, freq, info);
+  }
+
+  setFrequency(found > 0 ? stations[0] : origin);
+  logScanDone(found, found > 0 ? stations[0] : origin);
+  return found;
+}
+
+bool RadioDriver::seekNextScanStation(uint16_t *freq, RDA5807M_Info *info) {
+  bool seekOk = false;
+  bool busOk = runWithRadioBusLock("scanSeekUp", [&]() {
+    seekOk = radio.seekUp(false);
+    *freq = radio.getFrequency();
+    radio.getRadioInfo(info);
+  });
+
+  logScanSeek(seekOk, *freq, *info);
+  return busOk && seekOk;
 }
 
 void RadioDriver::getFormattedFrequency(char *s, uint8_t length) {
