@@ -86,19 +86,16 @@ public:
     uint32_t nowMs = millis();
     DateTime now = rtc->getTime();
 
+    if (refreshHourlyIfNeeded(displayDrv, now)) {
+      return;
+    }
+
     if (now.minute != lastMinute) {
       renderTimePartial(displayDrv);
       lastMinute = now.minute;
     }
 
-    if (weather->data.temp != lastWeatherTemp ||
-        weather->data.weather != lastWeatherStr ||
-        String(weather->data.icon_str) != lastWeatherIcon) {
-      renderWeatherPartial(displayDrv);
-      lastWeatherTemp = weather->data.temp;
-      lastWeatherStr = weather->data.weather;
-      lastWeatherIcon = weather->data.icon_str;
-    }
+    refreshWeatherIfNeeded(displayDrv);
 
     std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
     bool tasksNeedUpdate =
@@ -116,16 +113,7 @@ public:
       lastStatusBarMinute = now.minute;
     }
 
-    if (nowMs - lastSensorCheck >= 60000) {
-      lastSensorCheck = nowMs;
-      float temp, hum;
-      sensor->readData(temp, hum);
-      if (abs(temp - lastTemp) > 0.4 || abs(hum - lastHum) > 1.0) {
-        renderSensorPartial(displayDrv);
-        lastTemp = temp;
-        lastHum = hum;
-      }
-    }
+    refreshSensorIfNeeded(displayDrv, nowMs);
   }
 
   bool onInput(UIKey key) override {
@@ -154,6 +142,43 @@ private:
   int lastTaskCount = -1;
   bool lastWifiState = false;
   int lastStatusBarMinute = -1;
+
+  bool refreshHourlyIfNeeded(DisplayDriver *displayDrv, const DateTime &now) {
+    // 关键逻辑：仅在首页首次检测到整点时执行一次全刷。
+    // 全刷会同步所有区域的状态，因此完成后立即结束本轮更新，避免叠加局刷。
+    if (now.minute != 0 || lastMinute == now.minute) {
+      return false;
+    }
+    draw(displayDrv);
+    return true;
+  }
+
+  void refreshWeatherIfNeeded(DisplayDriver *displayDrv) {
+    if (weather->data.temp == lastWeatherTemp &&
+        weather->data.weather == lastWeatherStr &&
+        String(weather->data.icon_str) == lastWeatherIcon) {
+      return;
+    }
+    renderWeatherPartial(displayDrv);
+    lastWeatherTemp = weather->data.temp;
+    lastWeatherStr = weather->data.weather;
+    lastWeatherIcon = weather->data.icon_str;
+  }
+
+  void refreshSensorIfNeeded(DisplayDriver *displayDrv, uint32_t nowMs) {
+    if (nowMs - lastSensorCheck < 60000) {
+      return;
+    }
+    lastSensorCheck = nowMs;
+    float temp, hum;
+    sensor->readData(temp, hum);
+    if (abs(temp - lastTemp) <= 0.4 && abs(hum - lastHum) <= 1.0) {
+      return;
+    }
+    renderSensorPartial(displayDrv);
+    lastTemp = temp;
+    lastHum = hum;
+  }
 
   void updateState() {
     DateTime now = rtc->getTime();
