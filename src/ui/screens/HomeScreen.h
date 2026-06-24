@@ -122,6 +122,13 @@ public:
     return false;
   }
 private:
+  // 关键逻辑：首页天气区的局部刷新窗口从 x=288 开始，
+  // 因此左移时必须保证图标和文本仍然落在窗口内，避免局刷残影。
+  static constexpr int HOME_WEATHER_ICON_X = 288;
+  static constexpr int HOME_WEATHER_TODAY_LABEL_X = 293;
+  static constexpr int HOME_WEATHER_TOMORROW_LABEL_X = 293;
+  static constexpr int HOME_WEATHER_TEXT_X = 316;
+
   RtcDriver *rtc;
   WeatherManager *weather;
   SensorDriver *sensor;
@@ -139,6 +146,10 @@ private:
   int lastWeatherTemp = -999;
   String lastWeatherStr = "";
   String lastWeatherIcon = "";
+  int lastForecastTempHigh = -999;
+  int lastForecastTempLow = -999;
+  String lastForecastWeatherStr = "";
+  String lastForecastIcon = "";
   int lastTaskCount = -1;
   bool lastWifiState = false;
   int lastStatusBarMinute = -1;
@@ -154,15 +165,11 @@ private:
   }
 
   void refreshWeatherIfNeeded(DisplayDriver *displayDrv) {
-    if (weather->data.temp == lastWeatherTemp &&
-        weather->data.weather == lastWeatherStr &&
-        String(weather->data.icon_str) == lastWeatherIcon) {
+    if (!hasWeatherChanged()) {
       return;
     }
     renderWeatherPartial(displayDrv);
-    lastWeatherTemp = weather->data.temp;
-    lastWeatherStr = weather->data.weather;
-    lastWeatherIcon = weather->data.icon_str;
+    updateWeatherSnapshot();
   }
 
   void refreshSensorIfNeeded(DisplayDriver *displayDrv, uint32_t nowMs) {
@@ -191,13 +198,34 @@ private:
     lastTemp = t;
     lastHum = h;
 
-    lastWeatherTemp = weather->data.temp;
-    lastWeatherStr = weather->data.weather;
-    lastWeatherIcon = weather->data.icon_str;
+    updateWeatherSnapshot();
 
     lastTaskCount = todoMgr->getVisibleTodos(now).size();
     lastWifiState = conn->isConnected();
     lastStatusBarMinute = now.minute;
+  }
+
+  bool hasWeatherChanged() const {
+    // 关键逻辑：首页天气区一次局刷会同时重绘 TODAY 和 TOMORROW。
+    // 如果这里只比较 today 字段，启动阶段“今天先回来、明天后回来”时，
+    // tomorrow 的异步结果就无法触发第二次局刷，界面会一直停留在空值。
+    return weather->data.temp != lastWeatherTemp ||
+           weather->data.weather != lastWeatherStr ||
+           String(weather->data.icon_str) != lastWeatherIcon ||
+           weather->data.forecast_temp_high != lastForecastTempHigh ||
+           weather->data.forecast_temp_low != lastForecastTempLow ||
+           weather->data.forecast_weather != lastForecastWeatherStr ||
+           String(weather->data.forecast_icon_str) != lastForecastIcon;
+  }
+
+  void updateWeatherSnapshot() {
+    lastWeatherTemp = weather->data.temp;
+    lastWeatherStr = weather->data.weather;
+    lastWeatherIcon = weather->data.icon_str;
+    lastForecastTempHigh = weather->data.forecast_temp_high;
+    lastForecastTempLow = weather->data.forecast_temp_low;
+    lastForecastWeatherStr = weather->data.forecast_weather;
+    lastForecastIcon = weather->data.forecast_icon_str;
   }
 
   void renderAll(DisplayDriver *displayDrv) {
@@ -385,14 +413,14 @@ private:
   void drawTodayWeather(DisplayDriver *displayDrv) {
     auto &u8g2 = displayDrv->u8g2Fonts;
     u8g2.setFont(u8g2_font_helvB08_tr);
-    u8g2.setCursor(305, 100);
+    u8g2.setCursor(HOME_WEATHER_TODAY_LABEL_X, 100);
     u8g2.print("TODAY");
 
     u8g2.setFont(u8g2_font_qweather_icon_16);
-    u8g2.drawUTF8(290, 130, weather->data.icon_str);
+    u8g2.drawUTF8(HOME_WEATHER_ICON_X, 130, weather->data.icon_str);
 
     u8g2.setFont(u8g2_font_wqy12_t_gb2312);
-    u8g2.setCursor(325, 124);
+    u8g2.setCursor(HOME_WEATHER_TEXT_X, 124);
     u8g2.print(weather->data.weather);
     u8g2.print(" ");
     u8g2.print(weather->data.temp);
@@ -402,14 +430,14 @@ private:
   void drawTomorrowWeather(DisplayDriver *displayDrv) {
     auto &u8g2 = displayDrv->u8g2Fonts;
     u8g2.setFont(u8g2_font_helvB08_tr);
-    u8g2.setCursor(300, 160);
+    u8g2.setCursor(HOME_WEATHER_TOMORROW_LABEL_X, 160);
     u8g2.print("TOMORROW");
 
     u8g2.setFont(u8g2_font_qweather_icon_16);
-    u8g2.drawUTF8(290, 190, weather->data.forecast_icon_str);
+    u8g2.drawUTF8(HOME_WEATHER_ICON_X, 190, weather->data.forecast_icon_str);
 
     u8g2.setFont(u8g2_font_wqy12_t_gb2312);
-    u8g2.setCursor(325, 183);
+    u8g2.setCursor(HOME_WEATHER_TEXT_X, 183);
     u8g2.print(weather->data.forecast_weather);
     u8g2.print(" ");
     u8g2.print(weather->data.forecast_temp_low);

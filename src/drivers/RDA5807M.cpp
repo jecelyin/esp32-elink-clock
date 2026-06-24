@@ -57,6 +57,7 @@ RDA5807M::RDA5807M() {
   _mono = false;
   _mute = false;
   _softMute = false;
+  _seekThreshold = 8;
   _debugEnabled = false;
   _currentFreq = 8790;
 
@@ -160,6 +161,14 @@ void RDA5807M::setSoftMute(bool switchOn) {
 }
 
 bool RDA5807M::getSoftMute() { return _softMute; }
+
+void RDA5807M::setSeekThreshold(uint8_t threshold) {
+  _seekThreshold = threshold > 15 ? 15 : threshold;
+  registers[REG_VOL] &= ~(0x0F << BIT_VOL_SEEKTH);
+  registers[REG_VOL] |=
+      (static_cast<uint16_t>(_seekThreshold) << BIT_VOL_SEEKTH);
+  _writeReg(REG_VOL, registers[REG_VOL]);
+}
 
 // ----- Receiver -----
 

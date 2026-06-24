@@ -5,7 +5,6 @@
 namespace {
 const int CONTROL_ROW_COUNT = 5;
 const int BUTTON_ROW_H = 50;
-const uint16_t FREQUENCY_STEP = 10;
 const uint32_t RADIO_STATUS_DURATION_MS = 5000UL;
 
 void setRowButtonBounds(RadioScreen::UIButton &button, int index, int count,
@@ -35,7 +34,7 @@ void drawButtonLabel(DisplayDriver *display, RadioScreen::UIButton &button) {
 } // namespace
 
 void RadioScreen::initButtons() {
-  const char *controls[CONTROL_ROW_COUNT] = {"Scan", "<< Seek", "Seek >>",
+  const char *controls[CONTROL_ROW_COUNT] = {"Scan", "Step -", "Step +",
                                              "Vol-", "Vol +"};
   int controlY = Layout::CONTROLS_Y;
   int presetY = Layout::CONTROLS_Y + BUTTON_ROW_H;
@@ -221,9 +220,9 @@ void RadioScreen::handleEnterAction() {
   if (focusedControl == CONTROL_SCAN) {
     scanAndSavePresets();
   } else if (focusedControl == CONTROL_SEEK_DOWN) {
-    tuneByStep(-1, "Seek");
+    tuneByStep(-1, "Step");
   } else if (focusedControl == CONTROL_SEEK_UP) {
-    tuneByStep(1, "Seek");
+    tuneByStep(1, "Step");
   } else if (focusedControl == CONTROL_VOL_DOWN) {
     changeVolume(-1);
   } else if (focusedControl == CONTROL_VOL_UP) {
@@ -263,7 +262,7 @@ void RadioScreen::changePresetPage(int offset) {
 
 void RadioScreen::tuneByStep(int offset, const char *statusPrefix) {
   uint16_t currentFreq = radio->getFrequency();
-  int nextFreq = currentFreq + offset * FREQUENCY_STEP;
+  int nextFreq = currentFreq + offset * config->config.radio_seek_step;
   nextFreq = constrain(nextFreq, radio->getMinFrequency(),
                        radio->getMaxFrequency());
   if (nextFreq == currentFreq) {
@@ -287,7 +286,7 @@ void RadioScreen::changeVolume(int offset) {
   }
   config->config.volume = nextVolume;
   radio->setVolume(config->config.volume);
-  config->save();
+  config->saveVolume();
   setVolumeStatus();
 #if ENABLE_SERIAL_DEBUG
   Serial.printf("[Radio][volume] value=%u\n", config->config.volume);
@@ -309,11 +308,11 @@ void RadioScreen::scanAndSavePresets() {
 
 void RadioScreen::saveScannedPresets(uint16_t *stations, uint8_t count) {
   // 关键逻辑：Scan 的结果代表当前电磁环境下的新预设列表；
-  // 未扫到的位置必须清零，否则旧电台会混在新结果后面造成误判。
+  // 频率名称由独立别名表维护，因此本次只替换预设频率。
   for (int i = 0; i < RADIO_PRESET_COUNT; i++) {
     config->config.radio_presets[i] = i < count ? stations[i] : 0;
   }
-  config->save();
+  config->saveRadioPresets();
 #if ENABLE_SERIAL_DEBUG
   Serial.print("[Radio][scan] saved presets:");
   for (int i = 0; i < RADIO_PRESET_COUNT; i++) {

@@ -5,16 +5,13 @@ TodoManager::TodoManager() {}
 void TodoManager::begin() {
     prefs.begin("todos", false);
     load();
-    if (todos.empty()) {
-        addSampleData();
-    }
 }
 
 void TodoManager::load() {
     todos.clear();
     String json = prefs.getString("data", "[]");
     
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, json);
     
     if (error) {
@@ -36,12 +33,12 @@ void TodoManager::load() {
     }
 }
 
-void TodoManager::save() {
-    DynamicJsonDocument doc(4096);
+bool TodoManager::save() {
+    JsonDocument doc;
     JsonArray array = doc.to<JsonArray>();
     
     for (const auto& item : todos) {
-        JsonObject obj = array.createNestedObject();
+        JsonObject obj = array.add<JsonObject>();
         obj["id"] = item.id;
         obj["h"] = item.hour;
         obj["m"] = item.minute;
@@ -53,22 +50,15 @@ void TodoManager::save() {
     
     String json;
     serializeJson(doc, json);
-    prefs.putString("data", json);
-}
-
-void TodoManager::addSampleData() {
-    todos.push_back({1, 13, 30, "产品设计评审会议", true, 0x7F, true});
-    todos.push_back({2, 15, 15, "发送周报邮件", false, 0x7F, true});
-    todos.push_back({3, 18, 05, "取快递 (顺丰)", false, 0x7F, true});
-    save();
+    return prefs.putString("data", json) > 0;
 }
 
 String TodoManager::getTodosJSON() {
-    DynamicJsonDocument doc(4096);
+    JsonDocument doc;
     JsonArray array = doc.to<JsonArray>();
     
     for (const auto& item : todos) {
-        JsonObject obj = array.createNestedObject();
+        JsonObject obj = array.add<JsonObject>();
         obj["id"] = item.id;
         obj["h"] = item.hour;
         obj["m"] = item.minute;
@@ -83,108 +73,116 @@ String TodoManager::getTodosJSON() {
     return json;
 }
 
-void TodoManager::saveTodosFromJSON(const String& json) {
-    DynamicJsonDocument doc(4096);
+bool TodoManager::saveTodosFromJSON(const String& json) {
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, json);
     
-    if (error) {
-        Serial.println("Invalid JSON");
-        return;
+    if (error || !doc.is<JsonArray>() || doc.size() > 20) {
+        Serial.printf("Todo config parse failed: %s\n", error.c_str());
+        return false;
     }
-    
-    todos.clear();
+
+    std::vector<TodoConfig> updated;
     JsonArray array = doc.as<JsonArray>();
+    int fallbackId = millis();
     for (JsonObject obj : array) {
         TodoConfig item;
-        item.id = obj["id"]; // Generate ID if 0?
-        if (item.id == 0) item.id = millis(); // Simple ID generation
-        item.hour = obj["h"];
-        item.minute = obj["m"];
-        item.content = obj["c"].as<String>();
-        item.highPriority = obj["p"];
-        item.weekDays = obj["w"];
-        item.enabled = obj["e"];
-        todos.push_back(item);
+        if (!parseTodo(obj, item, fallbackId++)) {
+            return false;
+        }
+        updated.push_back(item);
     }
-    
-    // Sort by time?
-    std::sort(todos.begin(), todos.end(), [](const TodoConfig& a, const TodoConfig& b) {
+
+    std::sort(updated.begin(), updated.end(), [](const TodoConfig& a, const TodoConfig& b) {
         if (a.hour != b.hour) return a.hour < b.hour;
         return a.minute < b.minute;
     });
-    
-    save();
+
+    std::vector<TodoConfig> previous = todos;
+    todos = updated;
+    if (save()) {
+        return true;
+    }
+    todos = previous;
+    return false;
+}
+
+bool TodoManager::parseTodo(JsonObject obj, TodoConfig &item, int fallbackId) {
+    int hour = obj["h"] | -1;
+    int minute = obj["m"] | -1;
+    String content = obj["c"] | "";
+    int weekDays = obj["w"] | 0;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
+        weekDays < 0 || weekDays > 0x7F || content.length() > 64) {
+        return false;
+    }
+
+    item.id = obj["id"] | fallbackId;
+    if (item.id == 0) {
+        item.id = fallbackId;
+    }
+    item.hour = hour;
+    item.minute = minute;
+    item.content = content;
+    item.highPriority = obj["p"] | false;
+    item.weekDays = static_cast<uint8_t>(weekDays);
+    item.enabled = obj["e"] | true;
+    return true;
 }
 
 std::vector<TodoItem> TodoManager::getVisibleTodos(const DateTime& now) {
     std::vector<TodoItem> result;
-    if (todos.empty()) return result;
+    std::vector<TodoConfig> dayTodos = getDayTodos(now);
+    if (dayTodos.empty()) {
+        return result;
+    }
 
-    // Filter by day of week
-    // now.week is 0-6? RtcDriver uses 0=Sunday usually? 
-    // Let's check RtcDriver or assume 0-6.
-    // In connectionManager: dt.week = timeinfo.tm_wday (0-6, Sunday=0)
-    int currentDayBit = 1 << now.week; 
-    
-    std::vector<TodoConfig> dayTodos;
-    for (const auto& item : todos) {
+    int startIndex = findVisibleStart(dayTodos, now);
+    for (int i = startIndex;
+         i < static_cast<int>(dayTodos.size()) && result.size() < 3; ++i) {
+        result.push_back(buildVisibleItem(dayTodos[i], now));
+    }
+    return result;
+}
+
+std::vector<TodoConfig> TodoManager::getDayTodos(const DateTime& now) const {
+    std::vector<TodoConfig> result;
+    uint8_t currentDayBit = static_cast<uint8_t>(1 << now.week);
+    for (const TodoConfig& item : todos) {
         if (item.enabled && (item.weekDays & currentDayBit)) {
-            dayTodos.push_back(item);
+            result.push_back(item);
         }
     }
-    
-    // Implement logic: 1 past, 1 current, 1-2 future.
-    // Or simplified: show 3 items around current time.
-    // Let's find index of "next" item (first item > now)
-    
+    return result;
+}
+
+int TodoManager::findVisibleStart(const std::vector<TodoConfig>& dayTodos,
+                                  const DateTime& now) const {
     int currentMinutes = now.hour * 60 + now.minute;
-    
-    int nextIdx = -1;
-    for (int i = 0; i < dayTodos.size(); i++) {
+    int nextIndex = -1;
+    for (int i = 0; i < static_cast<int>(dayTodos.size()); ++i) {
         int itemMinutes = dayTodos[i].hour * 60 + dayTodos[i].minute;
         if (itemMinutes >= currentMinutes) {
-            nextIdx = i;
+            nextIndex = i;
             break;
         }
     }
-    
-    // Strategy:
-    // If we have items today:
-    // Try to pick [nextIdx - 1, nextIdx, nextIdx + 1]
-    // If nextIdx == -1 (all past), show last 3?
-    // If nextIdx == 0 (all future), show first 3.
-    
-    int startIdx = 0;
-    if (nextIdx == -1) {
-        // All past, show last 3
-        startIdx = max(0, (int)dayTodos.size() - 3);
-    } else {
-        // We have a future item at nextIdx.
-        // We want at least 1 past if possible.
-        if (nextIdx > 0) {
-            startIdx = nextIdx - 1; 
-        } else {
-            startIdx = 0;
-        }
-        
-        // Adjust if we are at the end
-        if (startIdx + 3 > dayTodos.size()) {
-            startIdx = max(0, (int)dayTodos.size() - 3);
-        }
+
+    // 关键逻辑：首页固定展示最多三项，并尽量保留一项已过事项作为上下文。
+    if (nextIndex < 0) {
+        return max(0, static_cast<int>(dayTodos.size()) - 3);
     }
-    
-    int count = 0;
-    for (int i = startIdx; i < dayTodos.size() && count < 3; i++) {
-        const auto& item = dayTodos[i];
-        TodoItem uiItem;
-        uiItem.time = formatTime(item.hour, item.minute);
-        uiItem.content = item.content;
-        uiItem.highPriority = item.highPriority;
-        uiItem.countdown = formatCountdown(now, item.hour, item.minute);
-        result.push_back(uiItem);
-        count++;
-    }
-    
+    int startIndex = nextIndex > 0 ? nextIndex - 1 : 0;
+    return min(startIndex, max(0, static_cast<int>(dayTodos.size()) - 3));
+}
+
+TodoItem TodoManager::buildVisibleItem(const TodoConfig& item,
+                                       const DateTime& now) {
+    TodoItem result;
+    result.time = formatTime(item.hour, item.minute);
+    result.content = item.content;
+    result.highPriority = item.highPriority;
+    result.countdown = formatCountdown(now, item.hour, item.minute);
     return result;
 }
 

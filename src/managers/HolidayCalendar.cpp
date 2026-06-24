@@ -5,12 +5,9 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-namespace {
-const char *HOLIDAY_API_TOKEN = "ekY2fwzJu4FonhyKdv_WXA";
-}
-
 HolidayCalendar::HolidayCalendar() {
   cacheMutex = xSemaphoreCreateMutex();
+  configMgr = nullptr;
 }
 
 HolidayCalendar::~HolidayCalendar() {
@@ -18,6 +15,8 @@ HolidayCalendar::~HolidayCalendar() {
     vSemaphoreDelete(cacheMutex);
   }
 }
+
+void HolidayCalendar::begin(ConfigManager *config) { configMgr = config; }
 
 HolidayDayType HolidayCalendar::getDayType(const DateTime &date) {
   HolidayOverride holiday;
@@ -81,6 +80,21 @@ void HolidayCalendar::updateIfNeeded(const DateTime &now) {
   if (now.month == 12 && now.day >= 25) {
     syncYearIfNeeded(currentYear + 1);
   }
+}
+
+void HolidayCalendar::resetFetchState() {
+  if (cacheMutex == nullptr) {
+    return;
+  }
+
+  xSemaphoreTake(cacheMutex, portMAX_DELAY);
+  for (HolidayYearCache &cache : caches) {
+    if (!cache.loaded) {
+      cache.fetchFailed = false;
+      cache.lastFetchAttemptMs = 0;
+    }
+  }
+  xSemaphoreGive(cacheMutex);
 }
 
 void HolidayCalendar::ensureYearLoaded(uint16_t fullYear) {
@@ -308,6 +322,13 @@ bool HolidayCalendar::tryFetchYear(uint16_t fullYear) {
 }
 
 bool HolidayCalendar::tryFetchYearBody(uint16_t fullYear, String &body) const {
+  String apiToken =
+      configMgr == nullptr ? "" : configMgr->getHolidayApiToken();
+  if (apiToken.length() == 0) {
+    Serial.println("Holiday request skipped: API token is empty");
+    return false;
+  }
+
   WiFiClientSecure client;
   client.setInsecure();
 
@@ -320,7 +341,7 @@ bool HolidayCalendar::tryFetchYearBody(uint16_t fullYear, String &body) const {
   http.setReuse(false);
   http.setTimeout(8000);
   http.addHeader("Accept-Encoding", "identity");
-  http.addHeader("Authorization", HOLIDAY_API_TOKEN);
+  http.addHeader("Authorization", apiToken);
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
     Serial.printf("Holiday request failed: %d\n", httpCode);

@@ -154,6 +154,25 @@ void RadioDriver::setVolume(uint8_t vol) {
   runWithRadioBusLock("setVolume", [&]() { radio.setVolume(vol); });
 }
 
+void RadioDriver::setBassBoost(bool enabled) {
+  runWithRadioBusLock("setBassBoost",
+                      [&]() { radio.setBassBoost(enabled); });
+}
+
+void RadioDriver::setMono(bool enabled) {
+  runWithRadioBusLock("setMono", [&]() { radio.setMono(enabled); });
+}
+
+void RadioDriver::setSoftMute(bool enabled) {
+  runWithRadioBusLock("setSoftMute",
+                      [&]() { radio.setSoftMute(enabled); });
+}
+
+void RadioDriver::setSeekThreshold(uint8_t threshold) {
+  runWithRadioBusLock("setSeekThreshold",
+                      [&]() { radio.setSeekThreshold(threshold); });
+}
+
 uint8_t RadioDriver::getVolume() { return radio.getVolume(); }
 
 void RadioDriver::mute(bool m) {

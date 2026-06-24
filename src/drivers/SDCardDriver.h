@@ -19,17 +19,20 @@ public:
     SDCardDriver();
     bool begin();
     void end();
+    bool isMounted() const { return mounted; }
     fs::SDFS getFS();
 
     File open(const char *path, const char *mode = FILE_READ);
     bool exists(const char *path);
-    bool remove(const char *path);
     bool rename(const char *pathFrom, const char *pathTo);
+    bool softDelete(const char *path);
     bool mkdir(const char *path);
     bool rmdir(const char *path);
     std::vector<FileInfo> listDir(const char *dirname);
     String readFile(const char *path);
-    void writeFile(const char *path, const char *message);
+    bool writeFile(const char *path, const char *message);
 
 private:
+    bool mounted = false;
+    String buildTrashPath(const char *path);
 };

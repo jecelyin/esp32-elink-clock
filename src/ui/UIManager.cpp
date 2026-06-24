@@ -54,15 +54,15 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
                      BatteryDriver *battery, ConnectionManager *conn,
                      AlarmManager *alarm, RadioDriver *radio,
                      AudioDriver *audio, MusicManager *music,
-                     ConfigManager *config)
+                     ConfigManager *config, SDCardDriver *sd)
     : display(disp), rtc(rtc), weather(weather), sensor(sensor),
       battery(battery), conn(conn), alarmMgr(alarm), radio(radio), audio(audio),
-      music(music), config(config) {
+      music(music), config(config), sd(sd) {
 
   statusBar = new StatusBar(conn, rtc, battery);
   todoMgr = new TodoManager();
 
-  webMgr = new WebManager(todoMgr);
+  webMgr = new WebManager(todoMgr, alarmMgr, config, sd, conn, weather);
 
   // Create Screens
   homeScreen = new HomeScreen(rtc, weather, sensor, statusBar, todoMgr, conn);
@@ -92,7 +92,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
 
 void UIManager::init() {
   todoMgr->begin(); // Initialize TodoManager
-  // webMgr->begin(); // Start Web Server
+  webMgr->begin();
 
   if (currentScreenObj)
     currentScreenObj->init();

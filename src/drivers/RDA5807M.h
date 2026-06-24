@@ -56,6 +56,7 @@ public:
 
   void setSoftMute(bool switchOn);
   bool getSoftMute();
+  void setSeekThreshold(uint8_t threshold);
 
   // ----- Receiver features -----
   void setBand(RDA5807M_Band newBand);
@@ -89,6 +90,7 @@ private:
   bool _mono;
   bool _mute;
   bool _softMute;
+  uint8_t _seekThreshold;
   uint16_t _currentFreq;
 
   bool _debugEnabled;

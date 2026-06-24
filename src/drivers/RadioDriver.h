@@ -12,6 +12,10 @@ public:
   void powerDown();
   void setFrequency(uint16_t freq); // freq in 10kHz (e.g. 10110 for 101.1 MHz)
   void setVolume(uint8_t vol);
+  void setBassBoost(bool enabled);
+  void setMono(bool enabled);
+  void setSoftMute(bool enabled);
+  void setSeekThreshold(uint8_t threshold);
   uint8_t getVolume();
   void mute(bool m);
   uint16_t getFrequency();

@@ -49,6 +49,7 @@ class WeatherManager {
 public:
   WeatherManager();
   void begin(ConfigManager *config);
+  void resetUpdateSchedule();
   void update();
   unsigned long getLastUpdate() const { return lastUpdate; }
   WeatherData data;

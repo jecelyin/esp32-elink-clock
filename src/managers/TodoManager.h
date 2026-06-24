@@ -35,17 +35,19 @@ public:
     
     // For Web/Config
     String getTodosJSON();
-    void saveTodosFromJSON(const String& json);
-    
-    // Helper
-    void addSampleData();
+    bool saveTodosFromJSON(const String& json);
 
 private:
     Preferences prefs;
     std::vector<TodoConfig> todos;
     
     void load();
-    void save();
+    bool save();
+    bool parseTodo(JsonObject obj, TodoConfig &item, int fallbackId);
+    std::vector<TodoConfig> getDayTodos(const DateTime& now) const;
+    int findVisibleStart(const std::vector<TodoConfig>& dayTodos,
+                         const DateTime& now) const;
+    TodoItem buildVisibleItem(const TodoConfig& item, const DateTime& now);
     String formatTime(int h, int m);
     String formatCountdown(const DateTime& now, int targetH, int targetM);
 };

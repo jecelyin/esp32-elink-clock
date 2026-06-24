@@ -159,6 +159,11 @@ String RadioScreen::buildRDSLabel(const RDA5807M_Info &radioInfo) {
     return radioStatus;
   }
 
+  String customName = config->getRadioName(radio->getFrequency());
+  if (customName.length() > 0) {
+    return customName;
+  }
+
   if (radioInfo.rds) {
     const char *ps = radio->getRDSStationName();
     if (ps && ps[0] && strcmp(ps, "        ") != 0) {
@@ -258,6 +263,10 @@ void RadioScreen::setAlignedPartialWindow(DisplayDriver *display, int x, int y,
 
 void RadioScreen::restoreSavedState() {
   radio->setVolume(config->config.volume);
+  radio->setBassBoost(config->config.radio_bass_boost);
+  radio->setMono(config->config.radio_force_mono);
+  radio->setSoftMute(config->config.radio_soft_mute);
+  radio->setSeekThreshold(config->config.radio_seek_threshold);
   presetPage = constrain(config->config.radio_preset_page, 0,
                          getPresetPageCount() - 1);
   updatePresetButtonLabels();
@@ -278,7 +287,7 @@ void RadioScreen::saveFocusIfChanged() {
   // 只保存焦点会让切回页面后同一个按钮加载到另一页的电台。
   config->config.radio_focus_index = focusedControl;
   config->config.radio_preset_page = presetPage;
-  config->save();
+  config->saveRadioUiState();
 }
 
 bool RadioScreen::hasExpiredRadioStatus(uint32_t now) const {
@@ -446,7 +455,7 @@ void RadioScreen::drawRDS(DisplayDriver *display, const char *text,
 
   setupWindow(display, x, y, w, h, partial);
 
-  display->u8g2Fonts.setFont(u8g2_font_helvB10_tf);
+  display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
   int tw = display->u8g2Fonts.getUTF8Width(text);
   int textX = x + (w - tw) / 2;
 

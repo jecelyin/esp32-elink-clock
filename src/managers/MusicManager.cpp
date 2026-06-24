@@ -5,6 +5,11 @@ MusicManager::MusicManager(AudioDriver *audio, SDCardDriver *sd,
     : audio(audio), sd(sd), config(config) {}
 
 void MusicManager::init() {
+  if (!sd->begin()) {
+    playlist.clear();
+    currentTrackIndex = -1;
+    return;
+  }
   scanSD();
   if (!playlist.empty()) {
     currentTrackIndex = 0;
@@ -38,7 +43,7 @@ void MusicManager::scanSD() {
         track.title = track.title.substring(0, dotIdx);
 
       track.artist = "Unknown Artist";
-      track.path = "/" + file.name;
+      track.path = file.name.startsWith("/") ? file.name : "/" + file.name;
       track.duration = 0; // Duration will be known once played or parsed
       playlist.push_back(track);
     }
@@ -95,7 +100,7 @@ void MusicManager::setVolume(int vol) {
   config->config.volume =
       constrain(vol, 0, 15); // Audio library range is typically 0-21 or 0-100
   audio->setVolume(config->config.volume);
-  config->save();
+  config->saveVolume();
 }
 
 int MusicManager::getVolume() const { return config->config.volume; }

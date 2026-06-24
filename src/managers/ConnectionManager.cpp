@@ -24,69 +24,162 @@ ConnectionManager::ConnectionManager() {}
 void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
   configMgr = config;
   rtcDriver = rtc;
+  if (networkMutex == nullptr) {
+    networkMutex = xSemaphoreCreateRecursiveMutex();
+  }
 }
 
 void ConnectionManager::enableNetwork(bool enable) {
-  if (networkEnabled == enable)
+  lockNetwork();
+  if (networkEnabled == enable) {
+    unlockNetwork();
     return;
+  }
 
   if (enable) {
     powerOnNetwork();
+    unlockNetwork();
     return;
   }
 
   powerOffNetwork();
+  unlockNetwork();
 }
 
 void ConnectionManager::loop() {
-  if (!networkEnabled)
+  lockNetwork();
+  if (!networkEnabled) {
+    unlockNetwork();
     return;
+  }
+  bool portalActive = systemPortalActive;
+  uint32_t lastSync = lastSyncTime;
+  unlockNetwork();
 
-  beginAutoConnect();
-  wifiManager.process();
+  if (!portalActive) {
+    beginAutoConnect();
+    wifiManager.process();
+  }
 
   if (WiFi.status() != WL_CONNECTED) {
     retryWiFiConnection();
     return;
   }
 
-  if (millis() - lastSyncTime > NTP_SYNC_INTERVAL_MS || lastSyncTime == 0) {
+  bool shouldSync =
+      millis() - lastSync > NTP_SYNC_INTERVAL_MS || lastSync == 0;
+  if (shouldSync) {
     syncTime();
   }
 }
 
-bool ConnectionManager::isConnected() { return WiFi.status() == WL_CONNECTED; }
+bool ConnectionManager::isConnected() {
+  lockNetwork();
+  bool connected = WiFi.status() == WL_CONNECTED;
+  unlockNetwork();
+  return connected;
+}
 
 bool ConnectionManager::isSyncComplete() {
-  return (lastSyncTime > 0) && (WiFi.status() == WL_CONNECTED);
+  lockNetwork();
+  bool complete =
+      (lastSyncTime > 0) && (WiFi.status() == WL_CONNECTED);
+  unlockNetwork();
+  return complete;
+}
+
+bool ConnectionManager::isConfigPortalActive() const {
+  lockNetwork();
+  bool active = wifiManager.getConfigPortalActive();
+  unlockNetwork();
+  return active;
+}
+
+bool ConnectionManager::isNetworkEnabled() const {
+  lockNetwork();
+  bool enabled = networkEnabled;
+  unlockNetwork();
+  return enabled;
+}
+
+bool ConnectionManager::isSystemPortalActive() const {
+  lockNetwork();
+  bool active = systemPortalActive;
+  unlockNetwork();
+  return active;
+}
+
+void ConnectionManager::lockNetwork() const {
+  if (networkMutex != nullptr) {
+    xSemaphoreTakeRecursive(networkMutex, portMAX_DELAY);
+  }
+}
+
+void ConnectionManager::unlockNetwork() const {
+  if (networkMutex != nullptr) {
+    xSemaphoreGiveRecursive(networkMutex);
+  }
 }
 
 void ConnectionManager::startAP() {
+  lockNetwork();
   if (!networkEnabled)
     powerOnNetwork();
 
+  systemPortalActive = false;
+  WiFi.softAPdisconnect(true);
   configurePortal(true);
-  if (wifiManager.getConfigPortalActive())
+  if (wifiManager.getConfigPortalActive()) {
+    unlockNetwork();
     return;
+  }
 
   // 关键逻辑：设置页需要立即出现 ESP32-Clock 热点，不能走
   // autoConnect() 的“先连已保存 WiFi，失败后再开 AP”路径。
   firstConnectAttempted = true;
   WiFi.setSleep(false);
   esp_wifi_set_ps(WIFI_PS_NONE);
-  wifiManager.startConfigPortal(ConfigPortal::AP_SSID,
-                                ConfigPortal::AP_PASSWORD);
+  String password = ConfigPortal::getAPPassword();
+  wifiManager.startConfigPortal(ConfigPortal::AP_SSID, password.c_str());
   Serial.println("WiFi Config Portal forced from Settings");
+  unlockNetwork();
+}
+
+void ConnectionManager::startSystemAP() {
+  lockNetwork();
+  if (!networkEnabled)
+    powerOnNetwork();
+
+  stopPortalIfActive();
+  firstConnectAttempted = true;
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  String password = ConfigPortal::getAPPassword();
+  systemPortalActive =
+      WiFi.softAP(ConfigPortal::AP_SSID, password.c_str());
+  if (!systemPortalActive) {
+    Serial.println("System settings access point failed");
+    powerOffNetwork();
+    unlockNetwork();
+    return;
+  }
+  Serial.println("System settings access point started");
+  unlockNetwork();
 }
 
 void ConnectionManager::flushPendingRtcSync() {
-  if (!pendingSync || rtcDriver == nullptr)
+  lockNetwork();
+  if (!pendingSync || rtcDriver == nullptr) {
+    unlockNetwork();
     return;
+  }
 
   uint32_t now = millis();
   uint32_t retryInterval = getRtcSyncRetryInterval();
   if (lastRtcSyncAttempt != 0 &&
       now - lastRtcSyncAttempt < retryInterval) {
+    unlockNetwork();
     return;
   }
 
@@ -102,17 +195,21 @@ void ConnectionManager::flushPendingRtcSync() {
   } else if (rtcSyncFailCount < RTC_SYNC_RETRY_MAX_SHIFT) {
     rtcSyncFailCount++;
   }
+  unlockNetwork();
 }
 
 void ConnectionManager::startScheduledSyncIfDue(uint32_t now) {
-  if (networkEnabled) {
-    return;
-  }
-
+  lockNetwork();
+  bool enabled = networkEnabled;
   bool neverStarted = lastNetworkPowerOnTime == 0;
   bool intervalReached =
       !neverStarted &&
       now - lastNetworkPowerOnTime >= AUTO_NETWORK_SYNC_INTERVAL_MS;
+  unlockNetwork();
+  if (enabled) {
+    return;
+  }
+
   if (neverStarted || intervalReached) {
     enableNetwork(true);
   }
@@ -125,8 +222,8 @@ void ConnectionManager::beginAutoConnect() {
   firstConnectAttempted = true;
   configurePortal(false);
 
-  if (wifiManager.autoConnect(ConfigPortal::AP_SSID,
-                              ConfigPortal::AP_PASSWORD)) {
+  String password = ConfigPortal::getAPPassword();
+  if (wifiManager.autoConnect(ConfigPortal::AP_SSID, password.c_str())) {
     Serial.println("WiFi connected");
     return;
   }
@@ -151,24 +248,31 @@ uint32_t ConnectionManager::getRtcSyncRetryInterval() const {
 }
 
 uint32_t ConnectionManager::getNextScheduledWorkDelayMs(uint32_t now) const {
+  lockNetwork();
   if (lastNetworkPowerOnTime == 0 ||
       now - lastNetworkPowerOnTime >= AUTO_NETWORK_SYNC_INTERVAL_MS) {
+    unlockNetwork();
     return 0;
   }
 
   uint32_t syncDelayMs =
       AUTO_NETWORK_SYNC_INTERVAL_MS - (now - lastNetworkPowerOnTime);
   if (!pendingSync) {
+    unlockNetwork();
     return syncDelayMs;
   }
 
   uint32_t retryIntervalMs = getRtcSyncRetryInterval();
   if (lastRtcSyncAttempt == 0 || now - lastRtcSyncAttempt >= retryIntervalMs) {
+    unlockNetwork();
     return 0;
   }
 
   uint32_t retryDelayMs = retryIntervalMs - (now - lastRtcSyncAttempt);
-  return retryDelayMs < syncDelayMs ? retryDelayMs : syncDelayMs;
+  uint32_t result =
+      retryDelayMs < syncDelayMs ? retryDelayMs : syncDelayMs;
+  unlockNetwork();
+  return result;
 }
 
 void ConnectionManager::powerOffNetwork() {
@@ -176,11 +280,13 @@ void ConnectionManager::powerOffNetwork() {
   // 内部空指针解引用。
   stopPortalIfActive();
   WiFi.disconnect(true, false);
+  WiFi.softAPdisconnect(true);
   esp_wifi_stop();
   WiFi.mode(WIFI_OFF);
   firstConnectAttempted = false;
   lastReconnectAttempt = 0;
   networkEnabled = false;
+  systemPortalActive = false;
   Serial.println("WiFi Power Off to save energy");
 }
 
@@ -199,10 +305,14 @@ void ConnectionManager::retryWiFiConnection() {
   if (wifiManager.getConfigPortalActive() || wifiManager.getWebPortalActive())
     return;
 
-  if (millis() - lastReconnectAttempt <= WIFI_RECONNECT_INTERVAL_MS)
+  uint32_t now = millis();
+  // 关键逻辑：系统设置热点刚开启时也要立刻尝试 STA 回连，
+  // 不能强制等首个 30 秒窗口，否则浏览器刚保存的新 API Key 无法及时生效。
+  if (lastReconnectAttempt != 0 &&
+      now - lastReconnectAttempt <= WIFI_RECONNECT_INTERVAL_MS)
     return;
 
-  lastReconnectAttempt = millis();
+  lastReconnectAttempt = now;
   Serial.println("WiFi disconnected, attempting to reconnect...");
   WiFi.begin();
 }
@@ -221,6 +331,7 @@ void ConnectionManager::syncTime() {
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
+    lockNetwork();
     ntpTime.second = timeinfo.tm_sec;
     ntpTime.minute = timeinfo.tm_min;
     ntpTime.hour = timeinfo.tm_hour;
@@ -237,6 +348,7 @@ void ConnectionManager::syncTime() {
     pendingSync = true;
     lastRtcSyncAttempt = 0;
     lastSyncTime = millis();
+    unlockNetwork();
     Serial.println("Time fetched from NTP, pending RTC update");
   }
 }

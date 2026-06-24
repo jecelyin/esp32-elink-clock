@@ -20,6 +20,7 @@ class TimerScreen;
 
 #include "../drivers/AudioDriver.h"
 #include "../drivers/RadioDriver.h"
+#include "../drivers/SDCardDriver.h"
 #include "../managers/AlarmManager.h"
 #include "../managers/ConfigManager.h"
 #include "../managers/MusicManager.h"
@@ -44,7 +45,8 @@ public:
   UIManager(DisplayDriver *disp, RtcDriver *rtc, WeatherManager *weather,
             SensorDriver *sensor, BatteryDriver *battery,
             ConnectionManager *conn, AlarmManager *alarm, RadioDriver *radio,
-            AudioDriver *audio, MusicManager *music, ConfigManager *config);
+            AudioDriver *audio, MusicManager *music, ConfigManager *config,
+            SDCardDriver *sd);
   void init();
   void update();
   bool onInput(UIKey key);
@@ -85,6 +87,7 @@ private:
   AudioDriver *audio;
   MusicManager *music;
   ConfigManager *config;
+  SDCardDriver *sd;
   StatusBar *statusBar;
   TodoManager *todoMgr;
   WebManager *webMgr;

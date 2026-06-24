@@ -57,6 +57,13 @@ WeatherManager::WeatherManager() {
 
 void WeatherManager::begin(ConfigManager *config) { configMgr = config; }
 
+void WeatherManager::resetUpdateSchedule() {
+  // 关键逻辑：API Token 变更后要立即清空节流状态，
+  // 否则刚保存的新配置可能还会继续等待上一次失败请求的重试窗口。
+  lastUpdate = 0;
+  lastAttemptTime = 0;
+}
+
 void WeatherManager::update() {
   uint32_t now = millis();
   if (!canStartUpdate(now)) {
@@ -106,7 +113,10 @@ bool WeatherManager::updateWeatherBatch() {
 
 bool WeatherManager::fetchCurrentWeather() {
   bool apiOk = false;
-  bool requestOk = requestWeatherApi(current_weather_url, "current weather",
+  String apiToken =
+      configMgr == nullptr ? "" : configMgr->getWeatherApiToken();
+  bool requestOk = requestWeatherApi(
+      current_weather_url, "current weather", apiToken.c_str(),
                                      [this, &apiOk](JsonDocument &doc) {
     JsonObject now = doc["now"];
     String code = doc["code"];
@@ -142,7 +152,10 @@ bool WeatherManager::fetchCurrentWeather() {
 
 bool WeatherManager::fetchForecastWeather() {
   bool apiOk = false;
-  bool requestOk = requestWeatherApi(forecast_weather_url, "forecast weather",
+  String apiToken =
+      configMgr == nullptr ? "" : configMgr->getWeatherApiToken();
+  bool requestOk = requestWeatherApi(
+      forecast_weather_url, "forecast weather", apiToken.c_str(),
                                      [this, &apiOk](JsonDocument &doc) {
     String code = doc["code"];
     if (code == "200") {
@@ -167,7 +180,10 @@ bool WeatherManager::fetchForecastWeather() {
 
 bool WeatherManager::fetchHourlyWeather() {
   bool apiOk = false;
-  bool requestOk = requestWeatherApi(hourly_weather_url, "hourly weather",
+  String apiToken =
+      configMgr == nullptr ? "" : configMgr->getWeatherApiToken();
+  bool requestOk = requestWeatherApi(
+      hourly_weather_url, "hourly weather", apiToken.c_str(),
                                      [this, &apiOk](JsonDocument &doc) {
     String code = doc["code"];
     if (code == "200") {
@@ -198,7 +214,10 @@ bool WeatherManager::fetchHourlyWeather() {
 
 bool WeatherManager::fetchDailyWeather() {
   bool apiOk = false;
-  bool requestOk = requestWeatherApi(daily_weather_url, "daily weather",
+  String apiToken =
+      configMgr == nullptr ? "" : configMgr->getWeatherApiToken();
+  bool requestOk = requestWeatherApi(
+      daily_weather_url, "daily weather", apiToken.c_str(),
                                      [this, &apiOk](JsonDocument &doc) {
     String code = doc["code"];
     if (code == "200") {
@@ -227,7 +246,10 @@ bool WeatherManager::fetchDailyWeather() {
 
 bool WeatherManager::fetchWarning() {
   bool apiOk = false;
-  bool requestOk = requestWeatherApi(warning_weather_url, "weather warning",
+  String apiToken =
+      configMgr == nullptr ? "" : configMgr->getWeatherApiToken();
+  bool requestOk = requestWeatherApi(
+      warning_weather_url, "weather warning", apiToken.c_str(),
                                      [this, &apiOk](JsonDocument &doc) {
     // Note: The warning API response contains an "alerts" array, not "warning".
     // It also has a metadata.zeroResult flag.

@@ -1,5 +1,6 @@
 #include "AlarmManager.h"
 #include "../utils/WakeTiming.h"
+#include <ArduinoJson.h>
 
 namespace {
 const char *kWeekNames[] = {"日", "一", "二", "三", "四", "五", "六"};
@@ -11,19 +12,23 @@ AlarmManager::AlarmManager() {
   lastCheck = 0;
 }
 
-void AlarmManager::begin() {
+void AlarmManager::begin(ConfigManager *config) {
   prefsReady = prefs.begin("alarms", false);
   if (!prefsReady) {
     Serial.println("Alarm prefs open failed");
     return;
   }
+  holidayCalendar.begin(config);
   load();
 }
 
 bool AlarmManager::addAlarm(const AlarmConfig &alarm) {
   alarms.push_back(sanitizeAlarm(alarm));
-  save();
-  return true;
+  if (save()) {
+    return true;
+  }
+  alarms.pop_back();
+  return false;
 }
 
 AlarmConfig AlarmManager::buildDefaultAlarm() const {
@@ -58,6 +63,7 @@ void AlarmManager::check(const DateTime &now) {
     // 关键逻辑：用“分钟级时间戳”去重，确保同一分钟内多次唤醒、
     // 或者页面刷新重复调用 check() 时，不会把同一个闹钟连响多次。
     ringing = true;
+    activeRingtone = alarm.ringtone;
     alarm.lastTriggeredMinuteKey = currentMinuteKey;
     return;
   }
@@ -143,35 +149,121 @@ bool AlarmManager::removeAlarm(size_t index) {
   if (!isIndexValid(index)) {
     return false;
   }
+  AlarmConfig removed = alarms[index];
   alarms.erase(alarms.begin() + index);
-  save();
-  return true;
+  if (save()) {
+    return true;
+  }
+  alarms.insert(alarms.begin() + index, removed);
+  return false;
 }
 
-void AlarmManager::snooze() { ringing = false; }
+void AlarmManager::snooze() {
+  ringing = false;
+  activeRingtone = "";
+}
 
-void AlarmManager::stop() { ringing = false; }
+void AlarmManager::stop() {
+  ringing = false;
+  activeRingtone = "";
+}
 
 bool AlarmManager::toggleEnabled(size_t index) {
   if (!isIndexValid(index)) {
     return false;
   }
   alarms[index].enabled = !alarms[index].enabled;
-  save();
-  return true;
+  if (save()) {
+    return true;
+  }
+  alarms[index].enabled = !alarms[index].enabled;
+  return false;
 }
 
 bool AlarmManager::updateAlarm(size_t index, const AlarmConfig &alarm) {
   if (!isIndexValid(index)) {
     return false;
   }
+  AlarmConfig previous = alarms[index];
   alarms[index] = sanitizeAlarm(alarm);
-  save();
-  return true;
+  if (save()) {
+    return true;
+  }
+  alarms[index] = previous;
+  return false;
 }
 
 void AlarmManager::updateHolidayCache(const DateTime &now) {
   holidayCalendar.updateIfNeeded(now);
+}
+
+String AlarmManager::getActiveRingtone() const {
+  return activeRingtone.length() > 0 ? activeRingtone
+                                    : "spiffs:/alarm.mp3";
+}
+
+String AlarmManager::getAlarmsJSON() const {
+  JsonDocument doc;
+  JsonArray items = doc.to<JsonArray>();
+  for (size_t i = 0; i < alarms.size(); ++i) {
+    JsonObject item = items.add<JsonObject>();
+    item["h"] = alarms[i].hour;
+    item["m"] = alarms[i].minute;
+    item["e"] = alarms[i].enabled;
+    item["r"] = alarms[i].repeatType;
+    item["w"] = alarms[i].weekMask;
+    item["s"] = alarms[i].ringtone;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  return json;
+}
+
+bool AlarmManager::saveAlarmsFromJSON(const String &json) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, json);
+  if (error || !doc.is<JsonArray>() || doc.size() > 20) {
+    Serial.printf("Alarm config parse failed: %s\n", error.c_str());
+    return false;
+  }
+
+  std::vector<AlarmConfig> updated;
+  for (JsonObject item : doc.as<JsonArray>()) {
+    AlarmConfig alarm;
+    int hour = item["h"] | -1;
+    int minute = item["m"] | -1;
+    int repeat = item["r"] | -1;
+    String ringtone = item["s"] | "spiffs:/alarm.mp3";
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
+        repeat < ALARM_REPEAT_DAILY || repeat > ALARM_REPEAT_WORKDAY ||
+        ringtone.length() > 96 || ringtone.indexOf("..") >= 0) {
+      return false;
+    }
+    if (!ringtone.startsWith("sd:/") &&
+        ringtone != "spiffs:/alarm.mp3") {
+      return false;
+    }
+    alarm.hour = hour;
+    alarm.minute = minute;
+    alarm.enabled = item["e"] | true;
+    alarm.repeatType = static_cast<AlarmRepeatType>(repeat);
+    alarm.weekMask = item["w"] | 0x7F;
+    alarm.ringtone = ringtone;
+    updated.push_back(sanitizeAlarm(alarm));
+  }
+
+  std::vector<AlarmConfig> previous = alarms;
+  alarms = updated;
+  if (save()) {
+    return true;
+  }
+  alarms = previous;
+  return false;
+}
+
+void AlarmManager::resetHolidayFetchState() {
+  holidayCalendar.resetFetchState();
 }
 
 AlarmRepeatType AlarmManager::inferRepeatType(uint8_t weekMask) const {
@@ -196,6 +288,9 @@ AlarmConfig AlarmManager::sanitizeAlarm(const AlarmConfig &alarm) const {
     clean.weekMask = 0x3E;
   } else if (clean.weekMask == 0) {
     clean.weekMask = 0x02;
+  }
+  if (clean.ringtone.length() == 0) {
+    clean.ringtone = "spiffs:/alarm.mp3";
   }
   return clean;
 }

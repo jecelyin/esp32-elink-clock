@@ -14,6 +14,6 @@ struct AlarmConfig {
   bool enabled = true;
   AlarmRepeatType repeatType = ALARM_REPEAT_DAILY;
   uint8_t weekMask = 0x7F;
+  String ringtone = "spiffs:/alarm.mp3";
   uint32_t lastTriggeredMinuteKey = 0;
 };
-

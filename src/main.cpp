@@ -41,7 +41,8 @@ MusicManager musicManager(&audioDriver, &sdCardDriver, &configManager);
 
 UIManager uiManager(&displayDriver, &rtcDriver, &weatherManager, &sensorDriver,
                     &batteryDriver, &connectionManager, &alarmManager,
-                    &radioDriver, &audioDriver, &musicManager, &configManager);
+                    &radioDriver, &audioDriver, &musicManager, &configManager,
+                    &sdCardDriver);
 
 // #include <nvs_flash.h>
 
@@ -55,6 +56,7 @@ constexpr uint32_t ALARM_IDLE_CHECK_INTERVAL_MS = 3600000UL;
 constexpr uint32_t ACTIVE_LOOP_DELAY_MS = 50UL;
 uint32_t g_lastButtonWakeMs = 0;
 uint32_t g_lastUserActivityMs = 0;
+uint32_t g_lastAlarmPlaybackAttemptMs = 0;
 
 void startSerialDebug() {
 #if ENABLE_SERIAL_DEBUG
@@ -94,6 +96,7 @@ void initBootDrivers() {
   delay(100);
   inputDriver.begin();
   configManager.begin();
+  audioDriver.setVolume(configManager.config.volume);
   Serial.println("Config Manager Init Success");
   batteryDriver.begin();
   displayDriver.init();
@@ -136,7 +139,7 @@ void finishStartupHardwareCheck(bool allOk) {
     displayDriver.showStatus("Hardware Check OK", 0);
     configManager.config.hw_checked = true;
     configManager.config.hw_check_version = HardwareCheck::REQUIRED_VERSION;
-    configManager.save();
+    configManager.saveHardwareCheck();
     delay(1000);
     return;
   }
@@ -193,7 +196,7 @@ void initOptionalDrivers() {
 void initManagers() {
   connectionManager.begin(&configManager, &rtcDriver);
   Serial.println("Connection Manager Init Success");
-  alarmManager.begin();
+  alarmManager.begin(&configManager);
   Serial.println("Alarm Manager Init Success");
   weatherManager.begin(&configManager);
   Serial.println("Weather Manager Init Success");
@@ -323,6 +326,13 @@ void handleInputEvents() {
   }
 
   markUserActivity();
+  if (alarmManager.isRinging()) {
+    // 关键逻辑：响铃时任意实体按键优先停止闹钟，不能继续分发给当前页面，
+    // 否则用户没有可靠的静音入口，按键还可能误触发页面业务操作。
+    alarmManager.stop();
+    audioDriver.stop();
+    return;
+  }
   UIKey key = mapButtonEventToUIKey(btn);
   if (key == UI_KEY_NONE) {
     return;
@@ -427,6 +437,9 @@ void idleOrLightSleep() {
 
 #include <esp_task_wdt.h>
 
+bool shouldUpdateWeatherWhileOnline(ScreenState state,
+                                    bool systemPortalActive);
+
 void networkTask(void *pvParameters) {
   static uint32_t wifiSessionStart = 0;
 
@@ -439,11 +452,10 @@ void networkTask(void *pvParameters) {
       }
       connectionManager.loop();
       alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
+      bool systemPortalActive = connectionManager.isSystemPortalActive();
 
-      // Only update weather on Home or Weather screens
-      if (uiManager.getCurrentState() == SCREEN_HOME ||
-          uiManager.getCurrentState() == SCREEN_CALENDAR ||
-          uiManager.getCurrentState() == SCREEN_WEATHER) {
+      if (shouldUpdateWeatherWhileOnline(uiManager.getCurrentState(),
+                                         systemPortalActive)) {
         weatherManager.update();
       }
 
@@ -475,6 +487,13 @@ bool isScreenUsingSharedAudioPower(ScreenState state) {
   return state == SCREEN_MUSIC || state == SCREEN_RADIO;
 }
 
+bool shouldUpdateWeatherWhileOnline(ScreenState state,
+                                    bool systemPortalActive) {
+  return state == SCREEN_HOME || state == SCREEN_CALENDAR ||
+         state == SCREEN_WEATHER ||
+         (systemPortalActive && state == SCREEN_SETTINGS);
+}
+
 void manageAudioPower(ScreenState state) {
   if (alarmManager.isRinging() || audioDriver.isPlaying()) {
     digitalWrite(CODEC_EN, HIGH);
@@ -488,6 +507,10 @@ void manageAudioPower(ScreenState state) {
   // 关键逻辑：audioDriver.end() 会关闭 AMP_EN 和共享 I2C 电源域。
   // 收音机使用同一个功放和 I2C 总线，不能在收音机页把它当作闲置音频关闭。
   audioDriver.end();
+  // 系统配置页可能正在分块上传文件，不能在每次主循环末尾关闭 SD。
+  if (!connectionManager.isSystemPortalActive()) {
+    sdCardDriver.end();
+  }
 }
 
 void manageRadioPower(ScreenState state) {
@@ -496,6 +519,32 @@ void manageRadioPower(ScreenState state) {
   }
 
   digitalWrite(RADIO_EN, LOW);
+}
+
+void playConfiguredAlarm() {
+  uint32_t now = millis();
+  if (g_lastAlarmPlaybackAttemptMs != 0 &&
+      now - g_lastAlarmPlaybackAttemptMs < 5000UL) {
+    return;
+  }
+  g_lastAlarmPlaybackAttemptMs = now;
+
+  String ringtone = alarmManager.getActiveRingtone();
+  if (ringtone.startsWith("sd:")) {
+    String path = ringtone.substring(3);
+    if (sdCardDriver.begin() && sdCardDriver.exists(path.c_str())) {
+      audioDriver.playFromSD(path.c_str());
+      return;
+    }
+  }
+
+  String path = ringtone.startsWith("spiffs:") ? ringtone.substring(7)
+                                               : "/alarm.mp3";
+  if (SPIFFS.exists(path)) {
+    audioDriver.playFromFS(SPIFFS, path.c_str());
+    return;
+  }
+  Serial.printf("Alarm ringtone not found: %s\n", ringtone.c_str());
 }
 
 void setup() {
@@ -531,7 +580,7 @@ void loop() {
 
   if (alarmManager.isRinging()) {
     if (!audioDriver.isPlaying()) {
-      audioDriver.playFromFS(SPIFFS, "/alarm.mp3");
+      playConfiguredAlarm();
     }
   }
 

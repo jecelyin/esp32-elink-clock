@@ -3,6 +3,8 @@
 #include "../drivers/RtcDriver.h"
 #include "ConfigManager.h"
 #include <WiFi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <time.h>
 
 class ConnectionManager {
@@ -12,13 +14,16 @@ public:
   void loop();
   bool isConnected();
   void startAP();
+  void startSystemAP();
   void syncTime();
   void flushPendingRtcSync();
   void enableNetwork(bool enable);
   void startScheduledSyncIfDue(uint32_t now);
   uint32_t getNextScheduledWorkDelayMs(uint32_t now) const;
-  bool isNetworkEnabled() const { return networkEnabled; }
+  bool isNetworkEnabled() const;
   bool isSyncComplete();
+  bool isSystemPortalActive() const;
+  bool isConfigPortalActive() const;
 
 private:
   void beginAutoConnect();
@@ -39,5 +44,9 @@ private:
   bool networkEnabled = false;
   bool firstConnectAttempted = false;
   bool pendingSync = false;
+  bool systemPortalActive = false;
+  mutable SemaphoreHandle_t networkMutex = nullptr;
   DateTime ntpTime;
+  void lockNetwork() const;
+  void unlockNetwork() const;
 };

@@ -24,28 +24,29 @@ void AlarmManager::load() {
     alarm.weekMask = item["w"] | 0x7F;
     int repeatValue = item["r"] | static_cast<int>(inferRepeatType(alarm.weekMask));
     alarm.repeatType = static_cast<AlarmRepeatType>(repeatValue);
+    alarm.ringtone = item["s"] | "spiffs:/alarm.mp3";
     alarms.push_back(sanitizeAlarm(alarm));
   }
 }
 
-void AlarmManager::save() {
+bool AlarmManager::save() {
   if (!prefsReady) {
-    return;
+    return false;
   }
 
   JsonDocument doc;
   JsonArray items = doc.to<JsonArray>();
   for (size_t i = 0; i < alarms.size(); ++i) {
-    JsonObject item = items.createNestedObject();
+    JsonObject item = items.add<JsonObject>();
     item["h"] = alarms[i].hour;
     item["m"] = alarms[i].minute;
     item["e"] = alarms[i].enabled;
     item["r"] = alarms[i].repeatType;
     item["w"] = alarms[i].weekMask;
+    item["s"] = alarms[i].ringtone;
   }
 
   String json;
   serializeJson(doc, json);
-  prefs.putString("data", json);
+  return prefs.putString("data", json) > 0;
 }
-

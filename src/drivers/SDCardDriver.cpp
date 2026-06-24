@@ -6,6 +6,9 @@
 SDCardDriver::SDCardDriver() {}
 
 bool SDCardDriver::begin() {
+  if (mounted) {
+    return true;
+  }
   Serial.println("Mounting SD card...");
   SharedSPIBus::prepareSDCard();
   if (!SD.begin(SD_CS, SharedSPIBus::bus(), SPI_SPEED)) {
@@ -23,13 +26,18 @@ bool SDCardDriver::begin() {
   }
 
   digitalWrite(SD_CS, HIGH);
+  mounted = true;
   Serial.println("SD card mounted successfully.");
   return true;
 }
 
 void SDCardDriver::end() {
+  if (!mounted) {
+    return;
+  }
   SD.end();
   SharedSPIBus::releaseSDCard();
+  mounted = false;
 }
 
 fs::SDFS SDCardDriver::getFS() { return SD; }
@@ -40,10 +48,16 @@ File SDCardDriver::open(const char *path, const char *mode) {
 
 bool SDCardDriver::exists(const char *path) { return SD.exists(path); }
 
-bool SDCardDriver::remove(const char *path) { return SD.remove(path); }
-
 bool SDCardDriver::rename(const char *pathFrom, const char *pathTo) {
   return SD.rename(pathFrom, pathTo);
+}
+
+bool SDCardDriver::softDelete(const char *path) {
+  if (!SD.exists("/.trash") && !SD.mkdir("/.trash")) {
+    return false;
+  }
+  String trashPath = buildTrashPath(path);
+  return trashPath.length() > 0 && SD.rename(path, trashPath.c_str());
 }
 
 bool SDCardDriver::mkdir(const char *path) { return SD.mkdir(path); }
@@ -70,8 +84,10 @@ std::vector<FileInfo> SDCardDriver::listDir(const char *dirname) {
     info.size = file.size();
     info.lastWrite = file.getLastWrite();
     fileList.push_back(info);
+    file.close();
     file = root.openNextFile();
   }
+  root.close();
   return fileList;
 }
 
@@ -90,16 +106,28 @@ String SDCardDriver::readFile(const char *path) {
   return content;
 }
 
-void SDCardDriver::writeFile(const char *path, const char *message) {
+bool SDCardDriver::writeFile(const char *path, const char *message) {
   File file = SD.open(path, FILE_WRITE);
   if (!file) {
     Serial.println("Failed to open file for writing");
-    return;
+    return false;
   }
-  if (file.print(message)) {
+  bool written = file.print(message);
+  if (written) {
     Serial.println("File written");
   } else {
     Serial.println("Write failed");
   }
   file.close();
+  return written;
+}
+
+String SDCardDriver::buildTrashPath(const char *path) {
+  String source = path == nullptr ? "" : path;
+  int slash = source.lastIndexOf('/');
+  String name = slash >= 0 ? source.substring(slash + 1) : source;
+  if (name.length() == 0) {
+    return "";
+  }
+  return "/.trash/" + String(millis()) + "_" + name;
 }

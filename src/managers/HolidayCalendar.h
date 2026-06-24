@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../drivers/RtcDriver.h"
+#include "ConfigManager.h"
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -37,6 +38,7 @@ class HolidayCalendar {
 public:
   HolidayCalendar();
   ~HolidayCalendar();
+  void begin(ConfigManager *config);
 
   HolidayDayType getDayType(const DateTime &date);
   String getHolidayName(const DateTime &date);
@@ -45,12 +47,14 @@ public:
   bool isWorkday(const DateTime &date);
   String getStatusText(uint16_t fullYear) const;
   void updateIfNeeded(const DateTime &now);
+  void resetFetchState();
 
 private:
   static const uint32_t FETCH_RETRY_INTERVAL_MS = 21600000UL;
 
   mutable SemaphoreHandle_t cacheMutex;
   std::vector<HolidayYearCache> caches;
+  ConfigManager *configMgr;
 
   void ensureYearLoaded(uint16_t fullYear);
   void advanceDate(DateTime &date) const;

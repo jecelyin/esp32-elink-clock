@@ -8,7 +8,6 @@
 namespace {
 constexpr uint32_t WEATHER_HTTP_TIMEOUT_MS = 8000UL;
 constexpr uint32_t WEATHER_POLL_DELAY_MS = 10UL;
-constexpr char WEATHER_API_KEY[] = "ba7d575ae307406f9455efd0b11abe18";
 
 bool deserializePayload(const String &encoding,
                         const std::vector<uint8_t> &payload,
@@ -102,7 +101,12 @@ bool readResponsePayload(HTTPClient &http, std::vector<uint8_t> &payload) {
 }
 
 bool beginWeatherRequest(HTTPClient &http, WiFiClientSecure &client,
-                         const char *url, const char *requestName) {
+                         const char *url, const char *requestName,
+                         const char *apiToken) {
+  if (apiToken == nullptr || apiToken[0] == '\0') {
+    Serial.printf("%s skipped: API token is empty\n", requestName);
+    return false;
+  }
   if (!http.begin(client, url)) {
     Serial.printf("%s begin failed: %s\n", requestName, url);
     return false;
@@ -112,7 +116,7 @@ bool beginWeatherRequest(HTTPClient &http, WiFiClientSecure &client,
   http.useHTTP10(true);
   http.setTimeout(WEATHER_HTTP_TIMEOUT_MS);
   http.setReuse(false);
-  http.addHeader("X-QW-Api-Key", WEATHER_API_KEY);
+  http.addHeader("X-QW-Api-Key", apiToken);
   http.addHeader("Accept-Encoding", "identity");
 
   const char *headers[] = {"Content-Encoding"};
@@ -140,6 +144,7 @@ bool validateHttpResponse(HTTPClient &http, const char *requestName) {
 } // namespace
 
 bool requestWeatherApi(const char *url, const char *requestName,
+                       const char *apiToken,
                        std::function<void(JsonDocument &)> callback) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("%s skipped: WiFi disconnected\n", requestName);
@@ -150,7 +155,7 @@ bool requestWeatherApi(const char *url, const char *requestName,
   client.setInsecure();
 
   HTTPClient http;
-  if (!beginWeatherRequest(http, client, url, requestName)) {
+  if (!beginWeatherRequest(http, client, url, requestName, apiToken)) {
     return false;
   }
 
