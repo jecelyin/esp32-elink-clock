@@ -11,12 +11,15 @@ static const int SCREEN_W = 400;
 static const uint16_t COLOR_BG = GxEPD_WHITE;
 static const uint16_t COLOR_FG = GxEPD_BLACK;
 static const int MAIN_SECTION_Y = 24;
-static const int MAIN_SECTION_H = 176;
+static const int CONTROLS_Y = 200;
+static const int MAIN_SECTION_H = CONTROLS_Y - MAIN_SECTION_Y;
 static const int VOL_BAR_W = 40;
 static const int DISPLAY_AREA_W = SCREEN_W - VOL_BAR_W;
+static const int FREQUENCY_Y = 50;
+static const int FREQUENCY_MESSAGE_Y = 136;
+static const int FREQUENCY_MESSAGE_H = 24;
 static const int DIAL_Y = 160;
-static const int DIAL_H = 40;
-static const int CONTROLS_Y = 200;
+static const int DIAL_H = CONTROLS_Y - DIAL_Y;
 } // namespace Layout
 
 class RadioScreen : public Screen {
@@ -99,7 +102,7 @@ private:
   void setPresetPageStatus();
   void setVolumeStatus();
 
-  void updateFrequency(DisplayDriver *display);
+  void updateFrequency(DisplayDriver *display, const char *rds);
   void updateHeader(DisplayDriver *display, int vol, bool isStereo, int rssi);
   void updateSignal(DisplayDriver *display, int rssi);
   void updateRDS(DisplayDriver *display, const char *text);

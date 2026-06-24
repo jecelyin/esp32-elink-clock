@@ -204,9 +204,14 @@ void RadioScreen::drawFullRefresh(DisplayDriver *display, uint16_t freq,
 
 void RadioScreen::drawPartialRefresh(DisplayDriver *display, uint16_t freq,
                                      int vol, bool isStereo, const char *rds) {
-  if (freq != lastFreq) {
+  bool frequencyChanged = freq != lastFreq;
+  bool parserRDSChanged = radio->hasRDSChanged();
+  bool rdsChanged = String(rds) != lastRDS || parserRDSChanged;
+
+  if (frequencyChanged) {
     lastFreq = freq;
-    updateFrequency(display);
+    lastRDS = rds;
+    updateFrequency(display, rds);
   }
 
   if (vol != lastVol || isStereo != lastStereo) {
@@ -220,7 +225,7 @@ void RadioScreen::drawPartialRefresh(DisplayDriver *display, uint16_t freq,
     updateSignal(display, smoothedRSSI);
   }
 
-  if (String(rds) != lastRDS || radio->hasRDSChanged()) {
+  if (!frequencyChanged && rdsChanged) {
     lastRDS = rds;
     updateRDS(display, rds);
   }
@@ -307,17 +312,21 @@ void RadioScreen::clearExpiredRadioStatus() {
 void RadioScreen::drawFrequency(DisplayDriver *display, bool partial) {
   using namespace Layout;
   int x = 0;
-  int y = 54;
+  int y = FREQUENCY_Y;
   int w = DISPLAY_AREA_W;
-  int h = MAIN_SECTION_H - DIAL_H;
+  int h = FREQUENCY_MESSAGE_Y - FREQUENCY_Y;
 
   display->u8g2Fonts.setFont(u8g2_font_logisoso78_tn);
   char freqStr[12];
   radio->getFormattedFrequency(freqStr, sizeof(freqStr));
   int16_t tw = display->u8g2Fonts.getUTF8Width(freqStr);
   int cursorX = x + (w - tw) / 2;
-  int cursorY = y + 66;
-  // Use fixed full width to ensure reliable clearing of old text
+  int cursorY = y + display->u8g2Fonts.getFontAscent();
+
+  // 关键逻辑：局刷窗口顶部必须覆盖大字号字体的真实上边界。
+  // 旧基线为 120，而字体上升高度为 78，字形实际从 y=42 开始；
+  // 窗口从 y=54 开始会漏刷顶部。现在按字体上升高度确定基线，
+  // 并使用固定全宽区域，三位数切换为两位数时也能完整清除旧字形。
   setupWindow(display, x, y, w, h, partial);
 
   display->u8g2Fonts.setCursor(cursorX, cursorY);
@@ -348,7 +357,7 @@ void RadioScreen::drawSignal(DisplayDriver *display, int rssi, bool partial) {
   int x = DISPLAY_AREA_W + 2;
   int y = MAIN_SECTION_Y + 2;
   int w = VOL_BAR_W - 4;
-  int h = MAIN_SECTION_H;
+  int h = CONTROLS_Y - y;
 
   setupWindow(display, x, y, w, h, partial);
 
@@ -431,9 +440,9 @@ void RadioScreen::drawRDS(DisplayDriver *display, const char *text,
   using namespace Layout;
 
   int x = 0;
-  int y = MAIN_SECTION_Y + MAIN_SECTION_H;
+  int y = FREQUENCY_MESSAGE_Y;
   int w = DISPLAY_AREA_W;
-  int h = 20;
+  int h = FREQUENCY_MESSAGE_H;
 
   setupWindow(display, x, y, w, h, partial);
 
@@ -441,28 +450,28 @@ void RadioScreen::drawRDS(DisplayDriver *display, const char *text,
   int tw = display->u8g2Fonts.getUTF8Width(text);
   int textX = x + (w - tw) / 2;
 
-  display->u8g2Fonts.setCursor(textX, y + 15);
+  display->u8g2Fonts.setCursor(textX, y + 17);
   display->u8g2Fonts.print(text);
 }
 
-void RadioScreen::updateFrequency(DisplayDriver *display) {
+void RadioScreen::updateFrequency(DisplayDriver *display, const char *rds) {
   using namespace Layout;
   uint16_t freq = radio->getFrequency();
   float freqVal = freq / 100.0;
 
   int x = 0;
-  int y = 54;
+  int y = FREQUENCY_Y;
   int w = DISPLAY_AREA_W;
-  int h = DIAL_Y + DIAL_H - y;
+  int h = CONTROLS_Y - y;
 
-  // 关键逻辑：频率数字和刻度尺在视觉上是一组状态，拆成两个局刷窗口时，
-  // 大字号数字残影和刻度指针会在窗口交界处不同步。这里合并为一个连续
-  // 且按 8 像素对齐的窗口，让清屏、重绘、刷屏使用同一块区域。
+  // 关键逻辑：频率、提示消息和刻度尺占满 y=50..199 的连续区域。
+  // 三者在同一个局刷分页内重绘，既不会清掉提示消息，也不会让大字号
+  // 数字、提示和指针因相邻窗口分批刷新而出现短暂错位。
   setAlignedPartialWindow(display, x, y, w, h);
   display->display.firstPage();
   do {
-    display->display.fillRect(x, y, w, h, Layout::COLOR_BG);
     drawFrequency(display, false);
+    drawRDS(display, rds, false);
     drawDial(display, freqVal, false);
   } while (display->display.nextPage());
 
@@ -497,7 +506,7 @@ void RadioScreen::updateSignal(DisplayDriver *display, int rssi) {
   int x = DISPLAY_AREA_W + 2;
   int y = MAIN_SECTION_Y + 2;
   int w = VOL_BAR_W - 4;
-  int h = MAIN_SECTION_H;
+  int h = CONTROLS_Y - y;
 
   setAlignedPartialWindow(display, x, y, w, h);
   display->display.firstPage();
@@ -509,9 +518,9 @@ void RadioScreen::updateSignal(DisplayDriver *display, int rssi) {
 
 void RadioScreen::updateRDS(DisplayDriver *display, const char *text) {
   using namespace Layout;
-  int y = MAIN_SECTION_Y + MAIN_SECTION_H;
+  int y = FREQUENCY_MESSAGE_Y;
   int w = DISPLAY_AREA_W;
-  int h = 20;
+  int h = FREQUENCY_MESSAGE_H;
   int x = 0;
 
   setAlignedPartialWindow(display, x, y, w, h);
