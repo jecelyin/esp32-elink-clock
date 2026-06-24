@@ -104,6 +104,7 @@ RadioScreen::RadioScreen(RadioDriver *radio, StatusBar *statusBar,
   lastRSSI = -1;
   lastStereo = false;
   smoothedRSSI = 0;
+  presetPage = 0;
   isFirstDraw = true;
   radioStatus = "";
   radioStatusExpiresAt = 0;
@@ -252,6 +253,9 @@ void RadioScreen::setAlignedPartialWindow(DisplayDriver *display, int x, int y,
 
 void RadioScreen::restoreSavedState() {
   radio->setVolume(config->config.volume);
+  presetPage = constrain(config->config.radio_preset_page, 0,
+                         getPresetPageCount() - 1);
+  updatePresetButtonLabels();
   focusedControl = constrain(config->config.radio_focus_index, 0,
                              BUTTON_COUNT - 1);
   lastFocusedControl = -1;
@@ -260,13 +264,15 @@ void RadioScreen::restoreSavedState() {
 }
 
 void RadioScreen::saveFocusIfChanged() {
-  if (config->config.radio_focus_index == focusedControl) {
+  if (config->config.radio_focus_index == focusedControl &&
+      config->config.radio_preset_page == presetPage) {
     return;
   }
 
-  // 关键逻辑：焦点位置属于用户操作习惯状态，左右移动后立即落盘，
-  // 避免设备睡眠、重启或切页后丢失用户上次停留的按钮。
+  // 关键逻辑：焦点位置和预设页共同决定底部按钮的真实电台编号；
+  // 只保存焦点会让切回页面后同一个按钮加载到另一页的电台。
   config->config.radio_focus_index = focusedControl;
+  config->config.radio_preset_page = presetPage;
   config->save();
 }
 

@@ -5,6 +5,7 @@ ConfigManager::ConfigManager() {
   config.volume = 10;
   config.time_format_24 = true;
   config.radio_focus_index = 0;
+  config.radio_preset_page = 0;
   config.hw_checked = false;
   config.hw_check_version = 0;
   for (int i = 0; i < RADIO_PRESET_COUNT; i++) {
@@ -23,6 +24,7 @@ void ConfigManager::load() {
   config.volume = prefs.getUChar("vol", 10);
   config.time_format_24 = prefs.getBool("fmt24", true);
   config.radio_focus_index = prefs.getUChar("radio_focus", 0);
+  config.radio_preset_page = prefs.getUChar("radio_page", 0);
   config.hw_checked = prefs.getBool("hwck", false);
   config.hw_check_version = prefs.getUChar("hwv", 0);
   for (int i = 0; i < RADIO_PRESET_COUNT; i++) {
@@ -38,6 +40,7 @@ void ConfigManager::save() {
   prefs.putUChar("vol", config.volume);
   prefs.putBool("fmt24", config.time_format_24);
   prefs.putUChar("radio_focus", config.radio_focus_index);
+  prefs.putUChar("radio_page", config.radio_preset_page);
   prefs.putBool("hwck", config.hw_checked);
   prefs.putUChar("hwv", config.hw_check_version);
   for (int i = 0; i < RADIO_PRESET_COUNT; i++) {

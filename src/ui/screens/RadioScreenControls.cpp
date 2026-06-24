@@ -4,7 +4,6 @@
 
 namespace {
 const int CONTROL_ROW_COUNT = 5;
-const int PRESET_ROW_COUNT = RADIO_PRESET_COUNT;
 const int BUTTON_ROW_H = 50;
 const uint16_t FREQUENCY_STEP = 10;
 const uint32_t RADIO_STATUS_DURATION_MS = 5000UL;
@@ -40,17 +39,61 @@ void RadioScreen::initButtons() {
                                              "Vol-", "Vol +"};
   int controlY = Layout::CONTROLS_Y;
   int presetY = Layout::CONTROLS_Y + BUTTON_ROW_H;
+  int presetRowButtonCount = PRESET_PAGE_SIZE + 2;
 
   for (int i = 0; i < CONTROL_ROW_COUNT; i++) {
     setRowButtonBounds(buttons[i], i, CONTROL_ROW_COUNT, controlY);
     snprintf(buttons[i].label, sizeof(buttons[i].label), "%s", controls[i]);
   }
 
-  for (int i = 0; i < PRESET_ROW_COUNT; i++) {
+  setRowButtonBounds(buttons[CONTROL_PAGE_PREV], 0, presetRowButtonCount,
+                     presetY);
+  snprintf(buttons[CONTROL_PAGE_PREV].label,
+           sizeof(buttons[CONTROL_PAGE_PREV].label), "<");
+
+  for (int i = 0; i < PRESET_PAGE_SIZE; i++) {
     int buttonIndex = CONTROL_PRESET_START + i;
-    setRowButtonBounds(buttons[buttonIndex], i, PRESET_ROW_COUNT, presetY);
+    setRowButtonBounds(buttons[buttonIndex], i + 1, presetRowButtonCount,
+                       presetY);
+  }
+
+  setRowButtonBounds(buttons[CONTROL_PAGE_NEXT], PRESET_PAGE_SIZE + 1,
+                     presetRowButtonCount, presetY);
+  snprintf(buttons[CONTROL_PAGE_NEXT].label,
+           sizeof(buttons[CONTROL_PAGE_NEXT].label), ">");
+  updatePresetButtonLabels();
+}
+
+int RadioScreen::getPresetPageCount() const {
+  return (RADIO_PRESET_COUNT + PRESET_PAGE_SIZE - 1) / PRESET_PAGE_SIZE;
+}
+
+bool RadioScreen::isPresetControl(int controlIndex) const {
+  return controlIndex >= CONTROL_PRESET_START &&
+         controlIndex < CONTROL_PAGE_NEXT;
+}
+
+int RadioScreen::getPresetIndexForControl(int controlIndex) const {
+  if (!isPresetControl(controlIndex)) {
+    return -1;
+  }
+
+  int slot = controlIndex - CONTROL_PRESET_START;
+  return presetPage * PRESET_PAGE_SIZE + slot;
+}
+
+void RadioScreen::updatePresetButtonLabels() {
+  for (int i = 0; i < PRESET_PAGE_SIZE; i++) {
+    int buttonIndex = CONTROL_PRESET_START + i;
+    int presetIndex = getPresetIndexForControl(buttonIndex);
+    const char *emptyLabel = "--";
+    if (presetIndex >= RADIO_PRESET_COUNT) {
+      snprintf(buttons[buttonIndex].label, sizeof(buttons[buttonIndex].label),
+               "%s", emptyLabel);
+      continue;
+    }
     snprintf(buttons[buttonIndex].label, sizeof(buttons[buttonIndex].label),
-             "%d", i + 1);
+             "%d", presetIndex + 1);
   }
 }
 
@@ -132,6 +175,15 @@ void RadioScreen::setScanResultStatus(uint8_t count) {
   setRadioStatus(status);
 }
 
+void RadioScreen::setPresetPageStatus() {
+  char status[32];
+  int start = presetPage * PRESET_PAGE_SIZE + 1;
+  int pageEnd = start + PRESET_PAGE_SIZE - 1;
+  int end = pageEnd > RADIO_PRESET_COUNT ? RADIO_PRESET_COUNT : pageEnd;
+  snprintf(status, sizeof(status), "Preset %d-%d", start, end);
+  setRadioStatus(status);
+}
+
 void RadioScreen::setVolumeStatus() {
   char status[20];
   snprintf(status, sizeof(status), "Vol: %u", config->config.volume);
@@ -176,13 +228,37 @@ void RadioScreen::handleEnterAction() {
     changeVolume(-1);
   } else if (focusedControl == CONTROL_VOL_UP) {
     changeVolume(1);
-  } else if (focusedControl >= CONTROL_PRESET_START) {
-    loadPreset(focusedControl - CONTROL_PRESET_START);
+  } else if (focusedControl == CONTROL_PAGE_PREV) {
+    changePresetPage(-1);
+  } else if (focusedControl == CONTROL_PAGE_NEXT) {
+    changePresetPage(1);
+  } else if (isPresetControl(focusedControl)) {
+    loadPreset(getPresetIndexForControl(focusedControl));
   }
 }
 
 void RadioScreen::moveFocus(int offset) {
   focusedControl = (focusedControl + offset + BUTTON_COUNT) % BUTTON_COUNT;
+}
+
+void RadioScreen::changePresetPage(int offset) {
+  int pageCount = getPresetPageCount();
+  if (pageCount <= 1) {
+    setPresetPageStatus();
+    return;
+  }
+
+  // 关键逻辑：翻页采用循环模式，首尾页的翻页键都保持可用，
+  // 避免电子墨水屏上还要额外绘制禁用态导致交互状态不清晰。
+  presetPage = (presetPage + offset + pageCount) % pageCount;
+  updatePresetButtonLabels();
+  lastFocusedControl = -1;
+  saveFocusIfChanged();
+  setPresetPageStatus();
+#if ENABLE_SERIAL_DEBUG
+  Serial.printf("[Radio][preset-page] page=%d/%d\n", presetPage + 1,
+                pageCount);
+#endif
 }
 
 void RadioScreen::tuneByStep(int offset, const char *statusPrefix) {

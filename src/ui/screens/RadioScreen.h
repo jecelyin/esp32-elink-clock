@@ -45,8 +45,11 @@ private:
   static const int CONTROL_SEEK_UP = 2;
   static const int CONTROL_VOL_DOWN = 3;
   static const int CONTROL_VOL_UP = 4;
-  static const int CONTROL_PRESET_START = 5;
-  static const int BUTTON_COUNT = CONTROL_PRESET_START + RADIO_PRESET_COUNT;
+  static const int CONTROL_PAGE_PREV = 5;
+  static const int PRESET_PAGE_SIZE = 10;
+  static const int CONTROL_PRESET_START = 6;
+  static const int CONTROL_PAGE_NEXT = CONTROL_PRESET_START + PRESET_PAGE_SIZE;
+  static const int BUTTON_COUNT = CONTROL_PAGE_NEXT + 1;
   UIButton buttons[BUTTON_COUNT];
 
   // UI State
@@ -58,6 +61,7 @@ private:
   int lastRSSI;
   bool lastStereo;
   int smoothedRSSI;
+  int presetPage;
   bool isFirstDraw;
   String radioStatus;
   uint32_t radioStatusExpiresAt;
@@ -92,6 +96,7 @@ private:
   void setRadioStatus(const char *text);
   void setFrequencyStatus(const char *prefix);
   void setScanResultStatus(uint8_t count);
+  void setPresetPageStatus();
   void setVolumeStatus();
 
   void updateFrequency(DisplayDriver *display);
@@ -101,6 +106,11 @@ private:
 
   void handleEnterAction();
   void moveFocus(int offset);
+  void changePresetPage(int offset);
+  void updatePresetButtonLabels();
+  int getPresetPageCount() const;
+  int getPresetIndexForControl(int controlIndex) const;
+  bool isPresetControl(int controlIndex) const;
   void tuneByStep(int offset, const char *statusPrefix);
   void changeVolume(int offset);
   void scanAndSavePresets();
