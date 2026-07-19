@@ -437,14 +437,16 @@ void idleOrLightSleep() {
 
 #include <esp_task_wdt.h>
 
-bool shouldUpdateWeatherWhileOnline(ScreenState state,
-                                    bool systemPortalActive);
+bool shouldUpdateWeatherWhileOnline(bool systemPortalActive);
 
 void networkTask(void *pvParameters) {
   static uint32_t wifiSessionStart = 0;
 
   while (true) {
     uint32_t now = millis();
+    // 所有 WiFi/WiFiManager 状态变更统一在 Core 0 执行，避免配置门户与
+    // 后台连接流程跨核并发破坏 lwIP 内部状态。
+    connectionManager.processPendingAction();
 
     if (connectionManager.isNetworkEnabled()) {
       if (wifiSessionStart == 0) {
@@ -454,16 +456,15 @@ void networkTask(void *pvParameters) {
       alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
       bool systemPortalActive = connectionManager.isSystemPortalActive();
 
-      if (shouldUpdateWeatherWhileOnline(uiManager.getCurrentState(),
-                                         systemPortalActive)) {
+      if (shouldUpdateWeatherWhileOnline(systemPortalActive)) {
         weatherManager.update();
       }
 
       // 同步完成后关闭 WiFi 以省电
-      // 判断条件：NTP 已同步；在首页/天气页时还要求天气刚更新
+      // 判断条件：本轮 NTP 已同步；配置了天气 Token 时还要求天气刚更新。
+      // 天气属于后台数据，不应由当前页面决定是否拉取。
       ScreenState state = uiManager.getCurrentState();
-      bool weatherNeeded = state == SCREEN_HOME || state == SCREEN_CALENDAR ||
-                           state == SCREEN_WEATHER;
+      bool weatherNeeded = configManager.getWeatherApiToken().length() > 0;
       bool weatherFresh = millis() - weatherManager.getLastUpdate() < 120000;
       bool settingsVisible = state == SCREEN_SETTINGS;
       if (!settingsVisible && connectionManager.isSyncComplete() &&
@@ -487,11 +488,10 @@ bool isScreenUsingSharedAudioPower(ScreenState state) {
   return state == SCREEN_MUSIC || state == SCREEN_RADIO;
 }
 
-bool shouldUpdateWeatherWhileOnline(ScreenState state,
-                                    bool systemPortalActive) {
-  return state == SCREEN_HOME || state == SCREEN_CALENDAR ||
-         state == SCREEN_WEATHER ||
-         (systemPortalActive && state == SCREEN_SETTINGS);
+bool shouldUpdateWeatherWhileOnline(bool systemPortalActive) {
+  // 系统配置热点开启时仍允许刚保存的 Token 立即生效；其余联网会话也要
+  // 无条件尝试后台天气同步，具体频率由 WeatherManager 自己节流。
+  return !systemPortalActive || configManager.getWeatherApiToken().length() > 0;
 }
 
 void manageAudioPower(ScreenState state) {

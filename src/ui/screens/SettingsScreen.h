@@ -23,7 +23,8 @@ private:
     MENU_HARDWARE = 0,
     MENU_NETWORK = 1,
     MENU_SYSTEM = 2,
-    MENU_COUNT = 3
+    MENU_RESTART = 3,
+    MENU_COUNT = 4
   };
 
   ConfigManager *config;
@@ -40,6 +41,7 @@ private:
   void drawHardwareContent(DisplayDriver *display, const BatteryInfo &info);
   void drawNetworkContent(DisplayDriver *display);
   void drawSystemContent(DisplayDriver *display);
+  void drawRestartContent(DisplayDriver *display);
   void drawPortalContent(DisplayDriver *display, const String &payload,
                          const char *title, const String &address,
                          bool active);
@@ -56,4 +58,5 @@ private:
   void showDeviceCheckResult(DisplayDriver *display, const char *name, bool ok,
                              uint8_t line);
   void finishManualHardwareCheck(DisplayDriver *display, bool allOk);
+  void restartDevice();
 };

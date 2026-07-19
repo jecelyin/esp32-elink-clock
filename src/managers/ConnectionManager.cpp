@@ -31,18 +31,25 @@ void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
 
 void ConnectionManager::enableNetwork(bool enable) {
   lockNetwork();
-  if (networkEnabled == enable) {
-    unlockNetwork();
-    return;
-  }
+  // 关键逻辑：UI 和调度器运行在 Core 1，不能直接操作 Core 0 使用的
+  // WiFi/lwIP。这里只投递动作，由网络任务在单一核心内执行。
+  pendingAction = enable ? NETWORK_ACTION_ENABLE : NETWORK_ACTION_DISABLE;
+  unlockNetwork();
+}
 
-  if (enable) {
+void ConnectionManager::processPendingAction() {
+  lockNetwork();
+  NetworkAction action = pendingAction;
+  pendingAction = NETWORK_ACTION_NONE;
+  if (action == NETWORK_ACTION_ENABLE && !networkEnabled) {
     powerOnNetwork();
-    unlockNetwork();
-    return;
+  } else if (action == NETWORK_ACTION_DISABLE && networkEnabled) {
+    powerOffNetwork();
+  } else if (action == NETWORK_ACTION_CONFIG_PORTAL) {
+    activateConfigPortal();
+  } else if (action == NETWORK_ACTION_SYSTEM_PORTAL) {
+    activateSystemPortal();
   }
-
-  powerOffNetwork();
   unlockNetwork();
 }
 
@@ -82,8 +89,9 @@ bool ConnectionManager::isConnected() {
 
 bool ConnectionManager::isSyncComplete() {
   lockNetwork();
-  bool complete =
-      (lastSyncTime > 0) && (WiFi.status() == WL_CONNECTED);
+  // 关键逻辑：只承认当前联网会话内完成的 NTP 同步，不能沿用上一轮的
+  // lastSyncTime；否则 WiFi 重连后会被误判为已完成并立即断电。
+  bool complete = currentSessionSynced && WiFi.status() == WL_CONNECTED;
   unlockNetwork();
   return complete;
 }
@@ -123,16 +131,21 @@ void ConnectionManager::unlockNetwork() const {
 
 void ConnectionManager::startAP() {
   lockNetwork();
+  pendingAction = NETWORK_ACTION_CONFIG_PORTAL;
+  unlockNetwork();
+}
+
+void ConnectionManager::activateConfigPortal() {
   if (!networkEnabled)
     powerOnNetwork();
 
   systemPortalActive = false;
+  // 关键逻辑：手动打开配置门户时必须重建 WiFiManager 的门户状态。
+  // 旧版逻辑先断开 softAP，再因为 getConfigPortalActive() 仍为 true 直接返回，
+  // 会造成“软件认为已开启、手机却搜不到 ESP32-Clock”的假激活状态。
+  stopPortalIfActive();
   WiFi.softAPdisconnect(true);
   configurePortal(true);
-  if (wifiManager.getConfigPortalActive()) {
-    unlockNetwork();
-    return;
-  }
 
   // 关键逻辑：设置页需要立即出现 ESP32-Clock 热点，不能走
   // autoConnect() 的“先连已保存 WiFi，失败后再开 AP”路径。
@@ -142,11 +155,15 @@ void ConnectionManager::startAP() {
   String password = ConfigPortal::getAPPassword();
   wifiManager.startConfigPortal(ConfigPortal::AP_SSID, password.c_str());
   Serial.println("WiFi Config Portal forced from Settings");
-  unlockNetwork();
 }
 
 void ConnectionManager::startSystemAP() {
   lockNetwork();
+  pendingAction = NETWORK_ACTION_SYSTEM_PORTAL;
+  unlockNetwork();
+}
+
+void ConnectionManager::activateSystemPortal() {
   if (!networkEnabled)
     powerOnNetwork();
 
@@ -161,11 +178,9 @@ void ConnectionManager::startSystemAP() {
   if (!systemPortalActive) {
     Serial.println("System settings access point failed");
     powerOffNetwork();
-    unlockNetwork();
     return;
   }
   Serial.println("System settings access point started");
-  unlockNetwork();
 }
 
 void ConnectionManager::flushPendingRtcSync() {
@@ -292,12 +307,16 @@ void ConnectionManager::powerOffNetwork() {
 
 void ConnectionManager::powerOnNetwork() {
   networkEnabled = true;
+  currentSessionSynced = false;
   firstConnectAttempted = false;
   lastReconnectAttempt = 0;
   lastNetworkPowerOnTime = millis();
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(true);
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  // 关键逻辑：关联和 WPA 四次握手期间必须保持射频持续工作。
+  // 提前启用 MIN_MODEM 省电可能造成握手报文超时（Reason 15）；本轮联网
+  // 最多持续两分钟，成功后会直接关闭 WiFi，无需在连接阶段启用省电。
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
   Serial.println("WiFi Power On for sync");
 }
 
@@ -346,6 +365,7 @@ void ConnectionManager::syncTime() {
       rtcDriver->setSoftwareTime(ntpTime);
     }
     pendingSync = true;
+    currentSessionSynced = true;
     lastRtcSyncAttempt = 0;
     lastSyncTime = millis();
     unlockNetwork();

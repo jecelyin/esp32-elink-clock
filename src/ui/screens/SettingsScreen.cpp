@@ -10,7 +10,10 @@ constexpr int CONTENT_X = SIDEBAR_W + 14;
 constexpr int CONTENT_W = 400 - CONTENT_X - 10;
 constexpr int BODY_Y = 24;
 constexpr int QR_SIZE = 112;
-const char *MENU_LABELS[] = {"检查器件", "网络配置", "系统设置"};
+constexpr int MENU_START_Y = 62;
+constexpr int MENU_STEP_Y = 45;
+const char *MENU_LABELS[] = {"检查器件", "网络配置", "系统设置",
+                             "重启"};
 } // namespace
 
 SettingsScreen::SettingsScreen(ConfigManager *config, StatusBar *statusBar,
@@ -59,8 +62,11 @@ bool SettingsScreen::onInput(UIKey key) {
     runManualHardwareCheck();
   } else if (selectedItem == MENU_NETWORK) {
     conn->startAP();
-  } else {
+  } else if (selectedItem == MENU_SYSTEM) {
     conn->startSystemAP();
+  } else {
+    redrawAfterInput = false;
+    restartDevice();
   }
   return true;
 }
@@ -82,7 +88,7 @@ void SettingsScreen::drawSidebar(DisplayDriver *display) {
   epd.drawLine(SIDEBAR_W, BODY_Y, SIDEBAR_W, 299, GxEPD_BLACK);
   drawText(display, 16, 48, "设置", u8g2_font_wqy16_t_gb2312);
   for (uint8_t i = 0; i < MENU_COUNT; ++i) {
-    drawMenuItem(display, i, 70 + i * 58);
+    drawMenuItem(display, i, MENU_START_Y + i * MENU_STEP_Y);
   }
   drawText(display, 32, 266, "左右选择", u8g2_font_wqy12_t_gb2312);
   drawText(display, 32, 288, "确认进入", u8g2_font_wqy12_t_gb2312);
@@ -110,8 +116,10 @@ void SettingsScreen::drawContent(DisplayDriver *display,
     drawHardwareContent(display, info);
   } else if (selectedItem == MENU_NETWORK) {
     drawNetworkContent(display);
-  } else {
+  } else if (selectedItem == MENU_SYSTEM) {
     drawSystemContent(display);
+  } else {
+    drawRestartContent(display);
   }
 }
 
@@ -147,6 +155,14 @@ void SettingsScreen::drawSystemContent(DisplayDriver *display) {
   drawPortalContent(display, ConfigPortal::buildWiFiQrPayload(), "系统设置",
                     address,
                     conn->isSystemPortalActive());
+}
+
+void SettingsScreen::drawRestartContent(DisplayDriver *display) {
+  drawText(display, CONTENT_X, 52, "重启设备", u8g2_font_wqy16_t_gb2312);
+  drawText(display, CONTENT_X, 88, "按确认键立即重启",
+           u8g2_font_wqy12_t_gb2312);
+  drawText(display, CONTENT_X, 122, "用于重新初始化 WiFi、RTC 和传感器",
+           u8g2_font_wqy12_t_gb2312);
 }
 
 void SettingsScreen::drawPortalContent(DisplayDriver *display,
@@ -272,4 +288,14 @@ void SettingsScreen::finishManualHardwareCheck(DisplayDriver *display,
   }
   delay(2000);
   draw(display);
+}
+
+void SettingsScreen::restartDevice() {
+  // 关键逻辑：ESP.restart() 会立刻触发软复位；先关闭网络，避免配置门户或
+  // 后台同步仍在运行时复位，导致串口日志难以判断最后一次操作来源。
+  conn->enableNetwork(false);
+  delay(200);
+  Serial.println("Restart requested from Settings");
+  Serial.flush();
+  ESP.restart();
 }

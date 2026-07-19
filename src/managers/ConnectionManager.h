@@ -12,6 +12,7 @@ public:
   ConnectionManager();
   void begin(ConfigManager *config, RtcDriver *rtc);
   void loop();
+  void processPendingAction();
   bool isConnected();
   void startAP();
   void startSystemAP();
@@ -26,6 +27,16 @@ public:
   bool isConfigPortalActive() const;
 
 private:
+  enum NetworkAction : uint8_t {
+    NETWORK_ACTION_NONE,
+    NETWORK_ACTION_ENABLE,
+    NETWORK_ACTION_DISABLE,
+    NETWORK_ACTION_CONFIG_PORTAL,
+    NETWORK_ACTION_SYSTEM_PORTAL
+  };
+
+  void activateConfigPortal();
+  void activateSystemPortal();
   void beginAutoConnect();
   void configurePortal(bool manual);
   uint32_t getRtcSyncRetryInterval() const;
@@ -44,7 +55,9 @@ private:
   bool networkEnabled = false;
   bool firstConnectAttempted = false;
   bool pendingSync = false;
+  bool currentSessionSynced = false;
   bool systemPortalActive = false;
+  NetworkAction pendingAction = NETWORK_ACTION_NONE;
   mutable SemaphoreHandle_t networkMutex = nullptr;
   DateTime ntpTime;
   void lockNetwork() const;
