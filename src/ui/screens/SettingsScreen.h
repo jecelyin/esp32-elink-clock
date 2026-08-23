@@ -20,6 +20,12 @@ public:
   bool shouldDrawAfterInput() const override;
 
 private:
+  enum RefreshMode : uint8_t {
+    REFRESH_FULL,
+    REFRESH_NAVIGATION,
+    REFRESH_CONTENT
+  };
+
   enum MenuItem : uint8_t {
     MENU_HARDWARE = 0,
     MENU_NETWORK = 1,
@@ -33,9 +39,16 @@ private:
   BatteryDriver *battery;
   ConnectionManager *conn;
   uint8_t selectedItem = MENU_HARDWARE;
+  uint8_t previousSelectedItem = MENU_HARDWARE;
   bool redrawAfterInput = true;
   int8_t renderedPortalState = -1;
+  int8_t portalStateForDraw = -1;
+  RefreshMode refreshMode = REFRESH_FULL;
 
+  void drawFull(DisplayDriver *display, const BatteryInfo &info);
+  void drawNavigationPartial(DisplayDriver *display);
+  void drawMenuItemPartial(DisplayDriver *display, uint8_t index);
+  void drawContentPartial(DisplayDriver *display, const BatteryInfo &info);
   void drawPage(DisplayDriver *display, const BatteryInfo &info);
   void drawSidebar(DisplayDriver *display);
   void drawMenuItem(DisplayDriver *display, uint8_t index, int y);

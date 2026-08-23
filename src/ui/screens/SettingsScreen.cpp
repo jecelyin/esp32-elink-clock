@@ -2,7 +2,6 @@
 #include "../../managers/ConfigPortal.h"
 #include "../../utils/HardwareCheck.h"
 #include "../UIManager.h"
-#include <WiFi.h>
 
 namespace {
 constexpr int SIDEBAR_W = 128;
@@ -23,13 +22,15 @@ SettingsScreen::SettingsScreen(ConfigManager *config, StatusBar *statusBar,
 
 void SettingsScreen::enter() {
   selectedItem = MENU_HARDWARE;
+  previousSelectedItem = selectedItem;
   redrawAfterInput = true;
   renderedPortalState = -1;
+  refreshMode = REFRESH_FULL;
 }
 
 void SettingsScreen::exit() {
   // 系统配置服务只在设置页存活，避免离开页面后与音乐/闹铃争用 SD。
-  if (conn->isSystemPortalActive()) {
+  if (conn->isSystemPortalActive() || conn->isSystemPortalStarting()) {
     conn->enableNetwork(false);
   }
 }
@@ -41,45 +42,107 @@ void SettingsScreen::update() {
       uiManager->getDisplayDriver() != nullptr) {
     // The AP starts asynchronously on Core 0. Refresh once when the visible
     // status moves from idle -> starting -> active, without another key press.
+    refreshMode = REFRESH_CONTENT;
     draw(uiManager->getDisplayDriver());
   }
 }
 
 void SettingsScreen::draw(DisplayDriver *display) {
+  // 墨水屏全刷期间热点状态可能发生变化。整帧固定使用同一状态快照，
+  // 刷新后再与真实状态比较，避免画面停在“正在开启”。
+  portalStateForDraw = getSelectedPortalState();
   BatteryInfo info = battery->readInfo();
+
+  if (refreshMode == REFRESH_FULL) {
+    drawFull(display, info);
+  } else if (refreshMode == REFRESH_NAVIGATION) {
+    drawNavigationPartial(display);
+    drawContentPartial(display, info);
+  } else {
+    drawContentPartial(display, info);
+  }
+
+  renderedPortalState = portalStateForDraw;
+  portalStateForDraw = -1;
+}
+
+void SettingsScreen::drawFull(DisplayDriver *display,
+                              const BatteryInfo &info) {
   display->display.setFullWindow();
   display->display.firstPage();
   do {
     drawPage(display, info);
   } while (display->display.nextPage());
   display->powerOff();
-  renderedPortalState = getSelectedPortalState();
+}
+
+void SettingsScreen::drawNavigationPartial(DisplayDriver *display) {
+  drawMenuItemPartial(display, previousSelectedItem);
+  if (selectedItem != previousSelectedItem) {
+    drawMenuItemPartial(display, selectedItem);
+  }
+}
+
+void SettingsScreen::drawMenuItemPartial(DisplayDriver *display,
+                                         uint8_t index) {
+  int y = MENU_START_Y + index * MENU_STEP_Y;
+  display->display.setPartialWindow(8, y, 112, 42);
+  display->display.firstPage();
+  do {
+    display->display.fillScreen(GxEPD_WHITE);
+    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+    drawMenuItem(display, index, y);
+  } while (display->display.nextPage());
+}
+
+void SettingsScreen::drawContentPartial(DisplayDriver *display,
+                                        const BatteryInfo &info) {
+  display->display.setPartialWindow(SIDEBAR_W + 8, BODY_Y,
+                                    400 - SIDEBAR_W - 8, 300 - BODY_Y);
+  display->display.firstPage();
+  do {
+    display->display.fillScreen(GxEPD_WHITE);
+    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+    drawContent(display, info);
+  } while (display->display.nextPage());
+  display->powerOff();
 }
 
 bool SettingsScreen::onInput(UIKey key) {
   redrawAfterInput = true;
   if (key == UI_KEY_LEFT) {
+    previousSelectedItem = selectedItem;
     selectedItem = (selectedItem + MENU_COUNT - 1) % MENU_COUNT;
+    refreshMode = REFRESH_NAVIGATION;
     return true;
   }
   if (key == UI_KEY_RIGHT) {
+    previousSelectedItem = selectedItem;
     selectedItem = (selectedItem + 1) % MENU_COUNT;
+    refreshMode = REFRESH_NAVIGATION;
     return true;
   }
   if (key != UI_KEY_ENTER) {
     return false;
   }
 
+  refreshMode = REFRESH_CONTENT;
+
   if (selectedItem == MENU_HARDWARE) {
     redrawAfterInput = false;
     runManualHardwareCheck();
   } else if (selectedItem == MENU_NETWORK) {
-    if (!conn->isConfigPortalActive() && !conn->isConfigPortalStarting()) {
+    if (conn->isConfigPortalActive() || conn->isConfigPortalStarting()) {
+      conn->enableNetwork(false);
+    } else if (!conn->isNetworkStopping()) {
       conn->startAP();
     }
   } else if (selectedItem == MENU_SYSTEM) {
-    if (!conn->isSystemPortalActive() &&
-        !conn->isSystemPortalStarting()) {
+    if (conn->isSystemPortalActive() || conn->isSystemPortalStarting()) {
+      conn->enableNetwork(false);
+    } else if (!conn->isNetworkStopping()) {
       conn->startSystemAP();
     }
   } else {
@@ -164,22 +227,24 @@ void SettingsScreen::drawHardwareContent(DisplayDriver *display,
 
 void SettingsScreen::drawNetworkContent(DisplayDriver *display) {
   String address = "http://" + getGatewayIp();
-  bool active = conn->isConfigPortalActive();
-  bool starting = conn->isConfigPortalStarting();
+  int8_t state = portalStateForDraw >= 0 ? portalStateForDraw
+                                        : getSelectedPortalState();
   drawPortalContent(display, ConfigPortal::buildWiFiQrPayload(), "网络配置",
-                    address, active ? "已开启"
-                                    : starting ? "正在开启..."
-                                               : "按确认键开启");
+                    address, state == 2   ? "已开启，确认关闭"
+                             : state == 1 ? "正在开启..."
+                             : state == 3 ? "正在关闭..."
+                                          : "按确认键开启");
 }
 
 void SettingsScreen::drawSystemContent(DisplayDriver *display) {
   String address = ConfigPortal::buildSystemUrl(getGatewayIp());
-  bool active = conn->isSystemPortalActive();
-  bool starting = conn->isSystemPortalStarting();
+  int8_t state = portalStateForDraw >= 0 ? portalStateForDraw
+                                        : getSelectedPortalState();
   drawPortalContent(display, ConfigPortal::buildWiFiQrPayload(), "系统设置",
-                    address, active ? "已开启"
-                                    : starting ? "正在开启..."
-                                               : "按确认键开启");
+                    address, state == 2   ? "已开启，确认关闭"
+                             : state == 1 ? "正在开启..."
+                             : state == 3 ? "正在关闭..."
+                                          : "按确认键开启");
 }
 
 void SettingsScreen::drawRestartContent(DisplayDriver *display) {
@@ -266,14 +331,18 @@ void SettingsScreen::drawText(DisplayDriver *display, int x, int y,
 }
 
 String SettingsScreen::getGatewayIp() const {
-  IPAddress ip = WiFi.softAPIP();
-  if (ip == IPAddress(0, 0, 0, 0)) {
+  String address = conn->getSoftAPAddress();
+  if (address.length() == 0) {
     return ConfigPortal::DEFAULT_GATEWAY;
   }
-  return ip.toString();
+  return address;
 }
 
 int8_t SettingsScreen::getSelectedPortalState() const {
+  if ((selectedItem == MENU_NETWORK || selectedItem == MENU_SYSTEM) &&
+      conn->isNetworkStopping()) {
+    return 3;
+  }
   if (selectedItem == MENU_NETWORK) {
     if (conn->isConfigPortalActive()) {
       return 2;
@@ -329,6 +398,7 @@ void SettingsScreen::finishManualHardwareCheck(DisplayDriver *display,
     display->showStatus("Check Failed!", 0);
   }
   delay(2000);
+  refreshMode = REFRESH_FULL;
   draw(display);
 }
 

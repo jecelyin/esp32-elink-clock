@@ -12,6 +12,9 @@ constexpr uint32_t NTP_SYNC_INTERVAL_MS = 3600000UL;
 constexpr uint32_t RTC_SYNC_RETRY_INTERVAL_MS = 1000UL;
 constexpr uint32_t RTC_SYNC_RETRY_MAX_INTERVAL_MS = 60000UL;
 constexpr uint8_t RTC_SYNC_RETRY_MAX_SHIFT = 6;
+constexpr uint32_t WIFI_MODE_SETTLE_MS = 120UL;
+constexpr uint8_t SYSTEM_AP_CHANNEL = 6;
+constexpr uint8_t SYSTEM_AP_MAX_CLIENTS = 1;
 } // namespace
 
 const char *ntpServer = "pool.ntp.org";
@@ -46,7 +49,16 @@ void ConnectionManager::enableNetwork(bool enable) {
   lockNetwork();
   // 关键逻辑：UI 和调度器运行在 Core 1，不能直接操作 Core 0 使用的
   // WiFi/lwIP。这里只投递动作，由网络任务在单一核心内执行。
-  pendingAction = enable ? NETWORK_ACTION_ENABLE : NETWORK_ACTION_DISABLE;
+  if (!enable) {
+    // An explicit shutdown also cancels a portal that has not started yet.
+    pendingAction = NETWORK_ACTION_DISABLE;
+    networkStopping = true;
+  } else if (pendingAction != NETWORK_ACTION_CONFIG_PORTAL &&
+             pendingAction != NETWORK_ACTION_SYSTEM_PORTAL) {
+    // Hourly synchronization runs on every main-loop pass until Core 0 accepts
+    // it. Never let that low-priority request overwrite a user portal request.
+    pendingAction = NETWORK_ACTION_ENABLE;
+  }
   unlockNetwork();
 }
 
@@ -56,8 +68,14 @@ void ConnectionManager::processPendingAction() {
   pendingAction = NETWORK_ACTION_NONE;
   if (action == NETWORK_ACTION_ENABLE && !networkEnabled) {
     powerOnNetwork();
-  } else if (action == NETWORK_ACTION_DISABLE && networkEnabled) {
-    powerOffNetwork();
+  } else if (action == NETWORK_ACTION_DISABLE) {
+    if (networkEnabled) {
+      powerOffNetwork();
+    } else {
+      networkStopping = false;
+      configPortalStarting = false;
+      systemPortalStarting = false;
+    }
   } else if (action == NETWORK_ACTION_CONFIG_PORTAL) {
     activateConfigPortal();
   } else if (action == NETWORK_ACTION_SYSTEM_PORTAL) {
@@ -119,7 +137,7 @@ bool ConnectionManager::isConfigPortalActive() const {
 
 bool ConnectionManager::isConfigPortalStarting() const {
   lockNetwork();
-  bool starting = pendingAction == NETWORK_ACTION_CONFIG_PORTAL;
+  bool starting = configPortalStarting;
   unlockNetwork();
   return starting;
 }
@@ -131,6 +149,13 @@ bool ConnectionManager::isNetworkEnabled() const {
   return enabled;
 }
 
+bool ConnectionManager::isNetworkStopping() const {
+  lockNetwork();
+  bool stopping = networkStopping;
+  unlockNetwork();
+  return stopping;
+}
+
 bool ConnectionManager::isSystemPortalActive() const {
   lockNetwork();
   bool active = systemPortalActive;
@@ -140,9 +165,18 @@ bool ConnectionManager::isSystemPortalActive() const {
 
 bool ConnectionManager::isSystemPortalStarting() const {
   lockNetwork();
-  bool starting = pendingAction == NETWORK_ACTION_SYSTEM_PORTAL;
+  bool starting = systemPortalStarting;
   unlockNetwork();
   return starting;
+}
+
+String ConnectionManager::getSoftAPAddress() const {
+  lockNetwork();
+  IPAddress ip = WiFi.softAPIP();
+  String address = ip == IPAddress(0, 0, 0, 0) ? String()
+                                                : ip.toString();
+  unlockNetwork();
+  return address;
 }
 
 void ConnectionManager::lockNetwork() const {
@@ -159,14 +193,18 @@ void ConnectionManager::unlockNetwork() const {
 
 void ConnectionManager::startAP() {
   lockNetwork();
-  bool duplicate = wifiManager.getConfigPortalActive() ||
-                   pendingAction == NETWORK_ACTION_CONFIG_PORTAL;
+  bool duplicate = wifiManager.getConfigPortalActive() || configPortalStarting;
   if (!duplicate) {
     pendingAction = NETWORK_ACTION_CONFIG_PORTAL;
+    networkStopping = false;
+    configPortalStarting = true;
+    systemPortalStarting = false;
   }
   unlockNetwork();
   if (duplicate) {
     Serial.println("WiFi config portal request ignored: already active/starting");
+  } else {
+    Serial.println("WiFi config portal request queued");
   }
 }
 
@@ -189,39 +227,76 @@ void ConnectionManager::activateConfigPortal() {
   esp_wifi_set_ps(WIFI_PS_NONE);
   String password = ConfigPortal::getAPPassword();
   wifiManager.startConfigPortal(ConfigPortal::AP_SSID, password.c_str());
+  configPortalStarting = false;
   Serial.println("WiFi Config Portal forced from Settings");
 }
 
 void ConnectionManager::startSystemAP() {
   lockNetwork();
-  bool duplicate = systemPortalActive ||
-                   pendingAction == NETWORK_ACTION_SYSTEM_PORTAL;
+  bool duplicate = systemPortalActive || systemPortalStarting;
   if (!duplicate) {
     pendingAction = NETWORK_ACTION_SYSTEM_PORTAL;
+    networkStopping = false;
+    systemPortalStarting = true;
+    configPortalStarting = false;
   }
   unlockNetwork();
   if (duplicate) {
     Serial.println(
         "System settings AP request ignored: already active/starting");
+  } else {
+    Serial.println("System settings access point request queued");
   }
 }
 
 void ConnectionManager::activateSystemPortal() {
   if (systemPortalActive) {
+    systemPortalStarting = false;
     Serial.println("System settings access point already active");
     return;
   }
-  if (!networkEnabled)
-    powerOnNetwork();
-
+  // System settings only serves the phone connected to our SoftAP. Starting a
+  // STA session first and immediately changing it to AP+STA can leave the
+  // ESP32 RX task processing frames for an interface whose mode just changed.
+  // Stop the old session completely, allow the driver task to settle, then
+  // initialize exactly one AP interface.
   stopPortalIfActive();
+  if (WiFi.getMode() != WIFI_MODE_NULL) {
+    if (!WiFi.mode(WIFI_OFF)) {
+      systemPortalStarting = false;
+      networkEnabled = false;
+      Serial.println("System settings previous WiFi session stop failed");
+      return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(WIFI_MODE_SETTLE_MS));
+  }
+
+  networkEnabled = true;
+  networkStopping = false;
+  currentSessionSynced = false;
   firstConnectAttempted = true;
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.setSleep(false);
-  esp_wifi_set_ps(WIFI_PS_NONE);
+  lastReconnectAttempt = 0;
+  lastNetworkPowerOnTime = millis();
+
+  if (!WiFi.mode(WIFI_AP)) {
+    systemPortalStarting = false;
+    Serial.println("System settings AP mode initialization failed");
+    powerOffNetwork();
+    return;
+  }
+  vTaskDelay(pdMS_TO_TICKS(WIFI_MODE_SETTLE_MS));
+
   String password = ConfigPortal::getAPPassword();
-  systemPortalActive =
-      WiFi.softAP(ConfigPortal::AP_SSID, password.c_str());
+  bool apStarted = WiFi.softAP(ConfigPortal::AP_SSID, password.c_str(),
+                               SYSTEM_AP_CHANNEL, false,
+                               SYSTEM_AP_MAX_CLIENTS);
+  if (apStarted) {
+    // Do not expose the WebServer to the other core until the AP driver and
+    // netif have completed their start event.
+    vTaskDelay(pdMS_TO_TICKS(WIFI_MODE_SETTLE_MS));
+  }
+  systemPortalActive = apStarted;
+  systemPortalStarting = false;
   if (!systemPortalActive) {
     Serial.println("System settings access point failed");
     powerOffNetwork();
@@ -341,18 +416,22 @@ void ConnectionManager::powerOffNetwork() {
   // 先确认门户真实处于激活状态，再调用关闭接口，避免 WiFiManager
   // 内部空指针解引用。
   stopPortalIfActive();
-  WiFi.disconnect(true, false);
-  WiFi.softAPdisconnect(true);
-  esp_wifi_stop();
+  // WiFi.mode(WIFI_OFF) performs one coordinated driver stop. Calling STA
+  // disconnect, AP disconnect and esp_wifi_stop back-to-back can deliver
+  // duplicate stop events while the RX task is still unwinding.
   WiFi.mode(WIFI_OFF);
   firstConnectAttempted = false;
   lastReconnectAttempt = 0;
   networkEnabled = false;
+  networkStopping = false;
+  configPortalStarting = false;
+  systemPortalStarting = false;
   systemPortalActive = false;
   Serial.println("WiFi Power Off to save energy");
 }
 
 void ConnectionManager::powerOnNetwork() {
+  networkStopping = false;
   networkEnabled = true;
   currentSessionSynced = false;
   firstConnectAttempted = false;

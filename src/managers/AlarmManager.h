@@ -41,6 +41,7 @@ public:
 
 private:
   static const uint32_t CHECK_INTERVAL_MS = 1000UL;
+  static const uint8_t MISSED_TRIGGER_GRACE_MINUTES = 5;
   static const uint8_t LOOKAHEAD_DAYS = 31;
 
   std::vector<AlarmConfig> alarms;
@@ -49,6 +50,7 @@ private:
   bool ringing;
   bool prefsReady;
   uint32_t lastCheck;
+  uint32_t lastCheckedMinuteKey;
   uint32_t triggerSequence;
   String activeRingtone;
 

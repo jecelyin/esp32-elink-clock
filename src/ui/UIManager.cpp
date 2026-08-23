@@ -99,10 +99,12 @@ void UIManager::init() {
 }
 
 void UIManager::update() {
-  if (currentScreenObj && (alarmMgr == nullptr || !alarmMgr->isRinging())) {
-    // 关键逻辑：响铃期间暂停当前页面的业务 update。音乐页会在曲目结束后
-    // 自动播放下一首，如果继续更新，它可能在闹铃片段的间隙抢回 AudioDriver，
-    // 导致闹铃只响一次甚至完全被音乐覆盖。
+  bool pauseAudioScreenUpdate =
+      alarmMgr != nullptr && alarmMgr->isRinging() &&
+      (currentScreenState == SCREEN_MUSIC || currentScreenState == SCREEN_RADIO);
+  if (currentScreenObj && !pauseAudioScreenUpdate) {
+    // 关键逻辑：响铃期间只暂停会访问共享音频硬件的页面。设置页仍须更新，
+    // 否则热点已经启动后，屏幕会永远停留在“正在开启”。
     drawing = true;
     currentScreenObj->update();
     drawing = false;

@@ -126,13 +126,17 @@ bool AlarmScreen::commitDraft() {
     return true;
   }
 
-  if (creatingAlarm) {
-    alarmMgr->addAlarm(draftAlarm);
-    listFocus = alarmMgr->getAlarmCount() - 1;
-  } else {
-    alarmMgr->updateAlarm(editingIndex, draftAlarm);
-    listFocus = static_cast<int>(editingIndex);
+  bool saved = creatingAlarm ? alarmMgr->addAlarm(draftAlarm)
+                             : alarmMgr->updateAlarm(editingIndex, draftAlarm);
+  if (!saved) {
+    helperText = "保存失败，请重试";
+    Serial.println("[Alarm] editor save failed");
+    return true;
   }
+
+  listFocus = creatingAlarm
+                  ? static_cast<int>(alarmMgr->getAlarmCount()) - 1
+                  : static_cast<int>(editingIndex);
 
   helperText = "回车编辑当前项，长按退出";
   mode = MODE_LIST;

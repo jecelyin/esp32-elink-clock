@@ -10,6 +10,7 @@ AlarmManager::AlarmManager() {
   ringing = false;
   prefsReady = false;
   lastCheck = 0;
+  lastCheckedMinuteKey = 0;
   triggerSequence = 0;
 }
 
@@ -71,36 +72,57 @@ void AlarmManager::check(const DateTime &now) {
   lastCheck = millis();
 
   uint32_t currentMinuteKey = toMinuteKey(now);
-  for (size_t i = 0; i < alarms.size(); ++i) {
-    AlarmConfig &alarm = alarms[i];
-    if (!alarm.enabled || !matchesDate(alarm, now)) {
-      continue;
-    }
-    if (alarm.hour != now.hour || alarm.minute != now.minute) {
-      continue;
-    }
-    if (alarm.lastTriggeredMinuteKey == currentMinuteKey) {
-      continue;
-    }
+  uint32_t firstMinuteKey = currentMinuteKey;
+  if (lastCheckedMinuteKey != 0 && currentMinuteKey > lastCheckedMinuteKey &&
+      currentMinuteKey - lastCheckedMinuteKey <=
+          MISSED_TRIGGER_GRACE_MINUTES) {
+    firstMinuteKey = lastCheckedMinuteKey + 1;
+  }
+  lastCheckedMinuteKey = currentMinuteKey;
 
-    // 关键逻辑：用“分钟级时间戳”去重，确保同一分钟内多次唤醒、
-    // 或者页面刷新重复调用 check() 时，不会把同一个闹钟连响多次。
-    bool replacingActiveAlarm = ringing;
-    ringing = true;
-    activeRingtone = alarm.ringtone;
-    alarm.lastTriggeredMinuteKey = currentMinuteKey;
-    ++triggerSequence;
-    // 启动测试闹钟只触发一次，避免设备连续运行时第二天重复响铃。
-    if (alarm.transient) {
-      alarm.enabled = false;
+  // Check newest-to-oldest. If a display refresh or network operation delayed
+  // the main loop across a minute boundary, a recently missed alarm still
+  // rings, while an hours-old alarm never fires after boot or a clock jump.
+  for (uint32_t minuteKey = currentMinuteKey;; --minuteKey) {
+    DateTime candidate =
+        minuteKey == currentMinuteKey
+            ? now
+            : toDateTime(static_cast<time_t>(minuteKey) * 60);
+    for (size_t i = 0; i < alarms.size(); ++i) {
+      AlarmConfig &alarm = alarms[i];
+      if (!alarm.enabled || !matchesDate(alarm, candidate)) {
+        continue;
+      }
+      if (alarm.hour != candidate.hour || alarm.minute != candidate.minute) {
+        continue;
+      }
+      if (alarm.lastTriggeredMinuteKey == minuteKey) {
+        continue;
+      }
+
+      // 关键逻辑：用“分钟级时间戳”去重，确保同一分钟内多次唤醒、
+      // 或者页面刷新重复调用 check() 时，不会把同一个闹钟连响多次。
+      bool replacingActiveAlarm = ringing;
+      ringing = true;
+      activeRingtone = alarm.ringtone;
+      alarm.lastTriggeredMinuteKey = minuteKey;
+      ++triggerSequence;
+      // 启动测试闹钟只触发一次，避免设备连续运行时第二天重复响铃。
+      if (alarm.transient) {
+        alarm.enabled = false;
+      }
+      Serial.printf("[Alarm] triggered index=%u time=%02u:%02u ringtone=%s "
+                    "sequence=%lu%s%s\n",
+                    static_cast<unsigned>(i), candidate.hour,
+                    candidate.minute, activeRingtone.c_str(),
+                    static_cast<unsigned long>(triggerSequence),
+                    replacingActiveAlarm ? " replacing-active" : "",
+                    minuteKey == currentMinuteKey ? "" : " delayed");
+      return;
     }
-    Serial.printf("[Alarm] triggered index=%u time=%02u:%02u ringtone=%s "
-                  "sequence=%lu%s\n",
-                  static_cast<unsigned>(i), now.hour, now.minute,
-                  activeRingtone.c_str(),
-                  static_cast<unsigned long>(triggerSequence),
-                  replacingActiveAlarm ? " replacing-active" : "");
-    return;
+    if (minuteKey == firstMinuteKey) {
+      break;
+    }
   }
 }
 

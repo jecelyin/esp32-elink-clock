@@ -208,7 +208,7 @@ void initManagers() {
   Serial.println("Connection Manager Init Success");
   alarmManager.begin(&configManager);
   if (ALARM_STARTUP_TEST_ENABLED) {
-    alarmManager.addStartupTestAlarm(rtcDriver.getTime(),
+    alarmManager.addStartupTestAlarm(rtcDriver.getSoftwareTime(),
                                      ALARM_STARTUP_TEST_DELAY_MINUTES);
   }
   Serial.println("Alarm Manager Init Success");
@@ -453,7 +453,10 @@ uint32_t getIdleSleepDelayMs() {
 
 void runScheduledTasks() {
   connectionManager.startScheduledSyncIfDue(millis());
-  alarmManager.check(rtcDriver.getTime());
+  // The status bar and sleep scheduler both use the monotonic software clock.
+  // Alarm matching must use the same source; the hardware RTC can temporarily
+  // lag after an NTP update if a deferred I2C write needs to retry.
+  alarmManager.check(rtcDriver.getSoftwareTime());
 }
 
 bool canEnterIdleSleep() {
@@ -526,10 +529,14 @@ void networkTask(void *pvParameters) {
       }
       connectionManager.loop();
       bool systemPortalActive = connectionManager.isSystemPortalActive();
+      ScreenState state = uiManager.getCurrentState();
+      bool settingsVisible = state == SCREEN_SETTINGS;
 
       // Keep the local configuration server as the only lwIP/HTTP workload
-      // while the phone is connected to the SoftAP.
-      if (!systemPortalActive) {
+      // while the phone is connected to the SoftAP. Entering Settings also
+      // suspends background HTTP before the AP request, so it cannot sit behind
+      // a weather/holiday download while the display says "starting".
+      if (!systemPortalActive && !settingsVisible) {
         alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
         if (shouldUpdateWeatherWhileOnline(systemPortalActive)) {
           weatherManager.update();
@@ -539,10 +546,8 @@ void networkTask(void *pvParameters) {
       // 同步完成后关闭 WiFi 以省电
       // 判断条件：本轮 NTP 已同步；配置了天气 Token 时还要求天气刚更新。
       // 天气属于后台数据，不应由当前页面决定是否拉取。
-      ScreenState state = uiManager.getCurrentState();
       bool weatherNeeded = configManager.getWeatherApiToken().length() > 0;
       bool weatherFresh = millis() - weatherManager.getLastUpdate() < 120000;
-      bool settingsVisible = state == SCREEN_SETTINGS;
       if (!settingsVisible && connectionManager.isSyncComplete() &&
           (!weatherNeeded || weatherFresh)) {
         Serial.println("Sync Complete, powering off WiFi...");

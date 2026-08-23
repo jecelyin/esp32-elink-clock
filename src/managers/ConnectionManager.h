@@ -31,11 +31,13 @@ public:
   void startScheduledSyncIfDue(uint32_t now);
   uint32_t getNextScheduledWorkDelayMs(uint32_t now) const;
   bool isNetworkEnabled() const;
+  bool isNetworkStopping() const;
   bool isSyncComplete();
   bool isSystemPortalActive() const;
   bool isSystemPortalStarting() const;
   bool isConfigPortalActive() const;
   bool isConfigPortalStarting() const;
+  String getSoftAPAddress() const;
 
 private:
   enum NetworkAction : uint8_t {
@@ -67,6 +69,9 @@ private:
   bool firstConnectAttempted = false;
   bool pendingSync = false;
   bool currentSessionSynced = false;
+  bool networkStopping = false;
+  bool configPortalStarting = false;
+  bool systemPortalStarting = false;
   bool systemPortalActive = false;
   NetworkAction pendingAction = NETWORK_ACTION_NONE;
   mutable SemaphoreHandle_t networkMutex = nullptr;

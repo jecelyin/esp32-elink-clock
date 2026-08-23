@@ -27,6 +27,18 @@ void AlarmManager::load() {
     alarm.ringtone = item["s"] | AlarmRingtones::DEFAULT_VALUE;
     alarms.push_back(sanitizeAlarm(alarm));
   }
+
+  Serial.printf("[Alarm] loaded count=%u\n",
+                static_cast<unsigned>(alarms.size()));
+  for (size_t i = 0; i < alarms.size(); ++i) {
+    const AlarmConfig &alarm = alarms[i];
+    Serial.printf("[Alarm] config index=%u time=%02u:%02u enabled=%u "
+                  "repeat=%u week=0x%02X ringtone=%s\n",
+                  static_cast<unsigned>(i), alarm.hour, alarm.minute,
+                  alarm.enabled ? 1U : 0U,
+                  static_cast<unsigned>(alarm.repeatType), alarm.weekMask,
+                  alarm.ringtone.c_str());
+  }
 }
 
 bool AlarmManager::save() {
