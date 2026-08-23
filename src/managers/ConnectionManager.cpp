@@ -21,6 +21,19 @@ WiFiManager wifiManager;
 
 ConnectionManager::ConnectionManager() {}
 
+ConnectionManager::NetworkGuard::NetworkGuard(ConnectionManager *owner)
+    : owner(owner) {
+  if (owner != nullptr) {
+    owner->lockNetwork();
+  }
+}
+
+ConnectionManager::NetworkGuard::~NetworkGuard() {
+  if (owner != nullptr) {
+    owner->unlockNetwork();
+  }
+}
+
 void ConnectionManager::begin(ConfigManager *config, RtcDriver *rtc) {
   configMgr = config;
   rtcDriver = rtc;
@@ -54,19 +67,20 @@ void ConnectionManager::processPendingAction() {
 }
 
 void ConnectionManager::loop() {
-  lockNetwork();
+  NetworkGuard guard(this);
   if (!networkEnabled) {
-    unlockNetwork();
     return;
   }
-  bool portalActive = systemPortalActive;
-  uint32_t lastSync = lastSyncTime;
-  unlockNetwork();
 
-  if (!portalActive) {
-    beginAutoConnect();
-    wifiManager.process();
+  // The system settings server only needs the SoftAP. Calling WiFi.begin()
+  // while WebServer is selecting on an AP socket can invalidate lwIP's route
+  // tables, especially if ENTER was pressed twice during asynchronous startup.
+  if (systemPortalActive) {
+    return;
   }
+
+  beginAutoConnect();
+  wifiManager.process();
 
   if (WiFi.status() != WL_CONNECTED) {
     retryWiFiConnection();
@@ -74,7 +88,7 @@ void ConnectionManager::loop() {
   }
 
   bool shouldSync =
-      millis() - lastSync > NTP_SYNC_INTERVAL_MS || lastSync == 0;
+      millis() - lastSyncTime > NTP_SYNC_INTERVAL_MS || lastSyncTime == 0;
   if (shouldSync) {
     syncTime();
   }
@@ -103,6 +117,13 @@ bool ConnectionManager::isConfigPortalActive() const {
   return active;
 }
 
+bool ConnectionManager::isConfigPortalStarting() const {
+  lockNetwork();
+  bool starting = pendingAction == NETWORK_ACTION_CONFIG_PORTAL;
+  unlockNetwork();
+  return starting;
+}
+
 bool ConnectionManager::isNetworkEnabled() const {
   lockNetwork();
   bool enabled = networkEnabled;
@@ -115,6 +136,13 @@ bool ConnectionManager::isSystemPortalActive() const {
   bool active = systemPortalActive;
   unlockNetwork();
   return active;
+}
+
+bool ConnectionManager::isSystemPortalStarting() const {
+  lockNetwork();
+  bool starting = pendingAction == NETWORK_ACTION_SYSTEM_PORTAL;
+  unlockNetwork();
+  return starting;
 }
 
 void ConnectionManager::lockNetwork() const {
@@ -131,8 +159,15 @@ void ConnectionManager::unlockNetwork() const {
 
 void ConnectionManager::startAP() {
   lockNetwork();
-  pendingAction = NETWORK_ACTION_CONFIG_PORTAL;
+  bool duplicate = wifiManager.getConfigPortalActive() ||
+                   pendingAction == NETWORK_ACTION_CONFIG_PORTAL;
+  if (!duplicate) {
+    pendingAction = NETWORK_ACTION_CONFIG_PORTAL;
+  }
   unlockNetwork();
+  if (duplicate) {
+    Serial.println("WiFi config portal request ignored: already active/starting");
+  }
 }
 
 void ConnectionManager::activateConfigPortal() {
@@ -159,11 +194,23 @@ void ConnectionManager::activateConfigPortal() {
 
 void ConnectionManager::startSystemAP() {
   lockNetwork();
-  pendingAction = NETWORK_ACTION_SYSTEM_PORTAL;
+  bool duplicate = systemPortalActive ||
+                   pendingAction == NETWORK_ACTION_SYSTEM_PORTAL;
+  if (!duplicate) {
+    pendingAction = NETWORK_ACTION_SYSTEM_PORTAL;
+  }
   unlockNetwork();
+  if (duplicate) {
+    Serial.println(
+        "System settings AP request ignored: already active/starting");
+  }
 }
 
 void ConnectionManager::activateSystemPortal() {
+  if (systemPortalActive) {
+    Serial.println("System settings access point already active");
+    return;
+  }
   if (!networkEnabled)
     powerOnNetwork();
 
@@ -325,8 +372,8 @@ void ConnectionManager::retryWiFiConnection() {
     return;
 
   uint32_t now = millis();
-  // 关键逻辑：系统设置热点刚开启时也要立刻尝试 STA 回连，
-  // 不能强制等首个 30 秒窗口，否则浏览器刚保存的新 API Key 无法及时生效。
+  // System settings portal sessions return before reaching this method. Keep
+  // STA reconnects exclusive to normal synchronization sessions.
   if (lastReconnectAttempt != 0 &&
       now - lastReconnectAttempt <= WIFI_RECONNECT_INTERVAL_MS)
     return;

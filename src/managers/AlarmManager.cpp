@@ -10,6 +10,7 @@ AlarmManager::AlarmManager() {
   ringing = false;
   prefsReady = false;
   lastCheck = 0;
+  triggerSequence = 0;
 }
 
 void AlarmManager::begin(ConfigManager *config) {
@@ -31,18 +32,40 @@ bool AlarmManager::addAlarm(const AlarmConfig &alarm) {
   return false;
 }
 
+void AlarmManager::addStartupTestAlarm(const DateTime &now,
+                                       uint8_t delayMinutes) {
+  if (delayMinutes == 0) {
+    delayMinutes = 1;
+  }
+
+  uint16_t targetMinute =
+      static_cast<uint16_t>(now.hour) * 60U + now.minute + delayMinutes;
+  AlarmConfig alarm = buildDefaultAlarm();
+  alarm.hour = (targetMinute / 60U) % 24U;
+  alarm.minute = targetMinute % 60U;
+  alarm.transient = true;
+  alarms.push_back(alarm);
+
+  Serial.printf(
+      "[Alarm][test] one-shot alarm added for %02u:%02u "
+      "(now=%02u:%02u:%02u, delay=%u min)\n",
+      alarm.hour, alarm.minute, now.hour, now.minute, now.second,
+      delayMinutes);
+}
+
 AlarmConfig AlarmManager::buildDefaultAlarm() const {
   AlarmConfig alarm;
   alarm.hour = 7;
   alarm.minute = 30;
   alarm.enabled = true;
-  alarm.repeatType = ALARM_REPEAT_WORKDAY;
-  alarm.weekMask = 0x3E;
+  // 新建闹钟默认每天响，避免周末临时测试时因“工作日”默认值被静默跳过。
+  alarm.repeatType = ALARM_REPEAT_DAILY;
+  alarm.weekMask = 0x7F;
   return alarm;
 }
 
 void AlarmManager::check(const DateTime &now) {
-  if (millis() - lastCheck < CHECK_INTERVAL_MS || ringing) {
+  if (millis() - lastCheck < CHECK_INTERVAL_MS) {
     return;
   }
   lastCheck = millis();
@@ -62,9 +85,21 @@ void AlarmManager::check(const DateTime &now) {
 
     // 关键逻辑：用“分钟级时间戳”去重，确保同一分钟内多次唤醒、
     // 或者页面刷新重复调用 check() 时，不会把同一个闹钟连响多次。
+    bool replacingActiveAlarm = ringing;
     ringing = true;
     activeRingtone = alarm.ringtone;
     alarm.lastTriggeredMinuteKey = currentMinuteKey;
+    ++triggerSequence;
+    // 启动测试闹钟只触发一次，避免设备连续运行时第二天重复响铃。
+    if (alarm.transient) {
+      alarm.enabled = false;
+    }
+    Serial.printf("[Alarm] triggered index=%u time=%02u:%02u ringtone=%s "
+                  "sequence=%lu%s\n",
+                  static_cast<unsigned>(i), now.hour, now.minute,
+                  activeRingtone.c_str(),
+                  static_cast<unsigned long>(triggerSequence),
+                  replacingActiveAlarm ? " replacing-active" : "");
     return;
   }
 }
@@ -145,6 +180,8 @@ bool AlarmManager::hasEnabledAlarms() const {
 
 bool AlarmManager::isRinging() const { return ringing; }
 
+uint32_t AlarmManager::getTriggerSequence() const { return triggerSequence; }
+
 bool AlarmManager::removeAlarm(size_t index) {
   if (!isIndexValid(index)) {
     return false;
@@ -199,13 +236,18 @@ void AlarmManager::updateHolidayCache(const DateTime &now) {
 
 String AlarmManager::getActiveRingtone() const {
   return activeRingtone.length() > 0 ? activeRingtone
-                                    : "spiffs:/alarm.mp3";
+                                    : AlarmRingtones::DEFAULT_VALUE;
 }
 
 String AlarmManager::getAlarmsJSON() const {
   JsonDocument doc;
   JsonArray items = doc.to<JsonArray>();
   for (size_t i = 0; i < alarms.size(); ++i) {
+    // 启动测试闹钟不暴露给 Web 持久化表单，否则用户点击“保存”时
+    // 会把本应一次性的闹钟写入 NVS。
+    if (alarms[i].transient) {
+      continue;
+    }
     JsonObject item = items.add<JsonObject>();
     item["h"] = alarms[i].hour;
     item["m"] = alarms[i].minute;
@@ -234,14 +276,13 @@ bool AlarmManager::saveAlarmsFromJSON(const String &json) {
     int hour = item["h"] | -1;
     int minute = item["m"] | -1;
     int repeat = item["r"] | -1;
-    String ringtone = item["s"] | "spiffs:/alarm.mp3";
+    String ringtone = item["s"] | AlarmRingtones::DEFAULT_VALUE;
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
         repeat < ALARM_REPEAT_DAILY || repeat > ALARM_REPEAT_WORKDAY ||
         ringtone.length() > 96 || ringtone.indexOf("..") >= 0) {
       return false;
     }
-    if (!ringtone.startsWith("sd:/") &&
-        ringtone != "spiffs:/alarm.mp3") {
+    if (!ringtone.startsWith("sd:/") && !AlarmRingtones::isBuiltin(ringtone)) {
       return false;
     }
     alarm.hour = hour;
@@ -278,6 +319,7 @@ AlarmRepeatType AlarmManager::inferRepeatType(uint8_t weekMask) const {
 
 AlarmConfig AlarmManager::sanitizeAlarm(const AlarmConfig &alarm) const {
   AlarmConfig clean = alarm;
+  clean.ringtone = AlarmRingtones::normalize(clean.ringtone);
   clean.hour %= 24;
   clean.minute %= 60;
   clean.weekMask &= 0x7F;
@@ -290,7 +332,7 @@ AlarmConfig AlarmManager::sanitizeAlarm(const AlarmConfig &alarm) const {
     clean.weekMask = 0x02;
   }
   if (clean.ringtone.length() == 0) {
-    clean.ringtone = "spiffs:/alarm.mp3";
+    clean.ringtone = AlarmRingtones::DEFAULT_VALUE;
   }
   return clean;
 }

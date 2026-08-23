@@ -99,7 +99,10 @@ void UIManager::init() {
 }
 
 void UIManager::update() {
-  if (currentScreenObj) {
+  if (currentScreenObj && (alarmMgr == nullptr || !alarmMgr->isRinging())) {
+    // 关键逻辑：响铃期间暂停当前页面的业务 update。音乐页会在曲目结束后
+    // 自动播放下一首，如果继续更新，它可能在闹铃片段的间隙抢回 AudioDriver，
+    // 导致闹铃只响一次甚至完全被音乐覆盖。
     drawing = true;
     currentScreenObj->update();
     drawing = false;

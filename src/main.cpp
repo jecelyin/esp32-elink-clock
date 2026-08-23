@@ -1,7 +1,9 @@
 #include "config.h"
+#include "drivers/AlarmPcmPlayer.h"
 #include "drivers/AudioDriver.h"
 #include "drivers/BatteryDriver.h"
 #include "drivers/DisplayDriver.h"
+#include "drivers/ES8311AlarmCodec.h"
 #include "drivers/InputDriver.h"
 #include "drivers/RadioDriver.h"
 #include "drivers/RtcDriver.h"
@@ -30,6 +32,7 @@ SensorDriver sensorDriver;
 BatteryDriver batteryDriver;
 RadioDriver radioDriver;
 AudioDriver audioDriver;
+AlarmPcmPlayer alarmPcmPlayer;
 InputDriver inputDriver;
 SDCardDriver sdCardDriver;
 
@@ -54,9 +57,16 @@ constexpr uint32_t BUTTON_WAKE_GRACE_MS = 120UL;
 constexpr uint32_t USER_ACTIVITY_GRACE_MS = 2000UL;
 constexpr uint32_t ALARM_IDLE_CHECK_INTERVAL_MS = 3600000UL;
 constexpr uint32_t ACTIVE_LOOP_DELAY_MS = 50UL;
+constexpr uint32_t PCM_ACTIVE_LOOP_DELAY_MS = 1UL;
+constexpr uint8_t ALARM_PLAYBACK_VOLUME = 21; // ESP32-audioI2S maximum.
+constexpr uint8_t IDLE_CPU_FREQUENCY_MHZ = 80;
+constexpr uint8_t ALARM_CPU_FREQUENCY_MHZ = 160;
 uint32_t g_lastButtonWakeMs = 0;
 uint32_t g_lastUserActivityMs = 0;
 uint32_t g_lastAlarmPlaybackAttemptMs = 0;
+uint32_t g_alarmPlaybackTriggerSequence = 0;
+bool g_alarmOwnsAudio = false;
+bool g_alarmCodecReady = false;
 
 void startSerialDebug() {
 #if ENABLE_SERIAL_DEBUG
@@ -67,7 +77,7 @@ void startSerialDebug() {
 }
 
 void configurePowerSaving() {
-  setCpuFrequencyMhz(80);
+  setCpuFrequencyMhz(IDLE_CPU_FREQUENCY_MHZ);
   btStop();
 
 #if defined(CONFIG_PM_ENABLE) && CONFIG_PM_ENABLE
@@ -197,6 +207,10 @@ void initManagers() {
   connectionManager.begin(&configManager, &rtcDriver);
   Serial.println("Connection Manager Init Success");
   alarmManager.begin(&configManager);
+  if (ALARM_STARTUP_TEST_ENABLED) {
+    alarmManager.addStartupTestAlarm(rtcDriver.getTime(),
+                                     ALARM_STARTUP_TEST_DELAY_MINUTES);
+  }
   Serial.println("Alarm Manager Init Success");
   weatherManager.begin(&configManager);
   Serial.println("Weather Manager Init Success");
@@ -215,6 +229,57 @@ bool isWithinGracePeriod(uint32_t lastMs, uint32_t graceMs) {
 }
 
 void markUserActivity() { g_lastUserActivityMs = millis(); }
+
+void restoreRadioAfterAlarmIfNeeded() {
+  if (uiManager.getCurrentState() != SCREEN_RADIO) {
+    return;
+  }
+
+  // AudioDriver::stop() removes the complete 3.3V_codec rail, which also
+  // power-cycles the RDA5807. Raising RADIO_EN alone cannot restore registers;
+  // initialize and reapply the saved settings before enabling the amplifier.
+  digitalWrite(AMP_EN, LOW);
+  digitalWrite(RADIO_EN, HIGH);
+  radioDriver.setup();
+  radioDriver.setVolume(configManager.config.volume);
+  radioDriver.setBassBoost(configManager.config.radio_bass_boost);
+  radioDriver.setMono(configManager.config.radio_force_mono);
+  radioDriver.setSoftMute(configManager.config.radio_soft_mute);
+  radioDriver.setSeekThreshold(configManager.config.radio_seek_threshold);
+  digitalWrite(AMP_EN, HIGH);
+  Serial.println("[Alarm] radio restored");
+}
+
+void releaseAlarmAudio() {
+  alarmPcmPlayer.stop();
+  audioDriver.stop();
+  audioDriver.setVolume(configManager.config.volume);
+  setCpuFrequencyMhz(IDLE_CPU_FREQUENCY_MHZ);
+  g_alarmOwnsAudio = false;
+  g_alarmCodecReady = false;
+  g_lastAlarmPlaybackAttemptMs = 0;
+  restoreRadioAfterAlarmIfNeeded();
+}
+
+bool prepareAlarmCodecForPlayback() {
+  if (g_alarmCodecReady) {
+    digitalWrite(AMP_EN, HIGH);
+    return true;
+  }
+
+  // AudioDriver stays at its original implementation. Once it has created the
+  // I2S clock, configure only the digital alarm path and keep the PA muted
+  // until the ES8311 reference/output has settled.
+  digitalWrite(AMP_EN, LOW);
+  if (!ES8311AlarmCodec::begin()) {
+    Serial.println("[Alarm] codec initialization failed");
+    audioDriver.stop();
+    return false;
+  }
+  g_alarmCodecReady = true;
+  digitalWrite(AMP_EN, HIGH);
+  return true;
+}
 
 bool isDirectionInput(UIKey key) {
   return key == UI_KEY_LEFT || key == UI_KEY_RIGHT ||
@@ -327,10 +392,13 @@ void handleInputEvents() {
 
   markUserActivity();
   if (alarmManager.isRinging()) {
-    // 关键逻辑：响铃时任意实体按键优先停止闹钟，不能继续分发给当前页面，
-    // 否则用户没有可靠的静音入口，按键还可能误触发页面业务操作。
-    alarmManager.stop();
-    audioDriver.stop();
+    // 关键逻辑：响铃是全局模态状态。确认键停止闹钟，左右键只消费不分发，
+    // 防止用户在关闹钟时误触发当前页面的调频、切歌或配置操作。
+    if (btn == BTN_ENTER_SHORT || btn == BTN_ENTER_LONG) {
+      alarmManager.stop();
+      releaseAlarmAudio();
+      Serial.println("[Alarm] stopped by ENTER");
+    }
     return;
   }
   UIKey key = mapButtonEventToUIKey(btn);
@@ -402,7 +470,11 @@ bool canEnterIdleSleep() {
 
 void idleOrLightSleep() {
   if (!canEnterIdleSleep()) {
-    delay(ACTIVE_LOOP_DELAY_MS);
+    // The direct PCM player feeds I2S in small chunks. A normal 50 ms UI idle
+    // delay would starve DMA and create periodic gaps, so keep servicing it
+    // until i2s_write itself provides the required pacing.
+    delay(alarmPcmPlayer.isPlaying() ? PCM_ACTIVE_LOOP_DELAY_MS
+                                     : ACTIVE_LOOP_DELAY_MS);
     return;
   }
 
@@ -453,11 +525,15 @@ void networkTask(void *pvParameters) {
         wifiSessionStart = now;
       }
       connectionManager.loop();
-      alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
       bool systemPortalActive = connectionManager.isSystemPortalActive();
 
-      if (shouldUpdateWeatherWhileOnline(systemPortalActive)) {
-        weatherManager.update();
+      // Keep the local configuration server as the only lwIP/HTTP workload
+      // while the phone is connected to the SoftAP.
+      if (!systemPortalActive) {
+        alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
+        if (shouldUpdateWeatherWhileOnline(systemPortalActive)) {
+          weatherManager.update();
+        }
       }
 
       // 同步完成后关闭 WiFi 以省电
@@ -489,9 +565,9 @@ bool isScreenUsingSharedAudioPower(ScreenState state) {
 }
 
 bool shouldUpdateWeatherWhileOnline(bool systemPortalActive) {
-  // 系统配置热点开启时仍允许刚保存的 Token 立即生效；其余联网会话也要
-  // 无条件尝试后台天气同步，具体频率由 WeatherManager 自己节流。
-  return !systemPortalActive || configManager.getWeatherApiToken().length() > 0;
+  // The system portal owns the local AP socket set; postpone outbound HTTP
+  // until the portal closes and the next normal STA synchronization begins.
+  return !systemPortalActive;
 }
 
 void manageAudioPower(ScreenState state) {
@@ -514,37 +590,98 @@ void manageAudioPower(ScreenState state) {
 }
 
 void manageRadioPower(ScreenState state) {
-  if (state == SCREEN_RADIO) {
+  if (state == SCREEN_RADIO && !alarmManager.isRinging()) {
+    // 响铃抢占期间 RADIO_EN 会被拉低；确认停止后仍停留在收音机页时，
+    // 这里恢复模拟音频通道，不要求用户退出页面再重新进入。
+    digitalWrite(AMP_EN, HIGH);
+    digitalWrite(RADIO_EN, HIGH);
     return;
   }
 
   digitalWrite(RADIO_EN, LOW);
 }
 
-void playConfiguredAlarm() {
+bool playConfiguredAlarm() {
   uint32_t now = millis();
   if (g_lastAlarmPlaybackAttemptMs != 0 &&
       now - g_lastAlarmPlaybackAttemptMs < 5000UL) {
-    return;
+    return false;
   }
   g_lastAlarmPlaybackAttemptMs = now;
 
-  String ringtone = alarmManager.getActiveRingtone();
+  String ringtone =
+      AlarmRingtones::normalize(alarmManager.getActiveRingtone());
+
   if (ringtone.startsWith("sd:")) {
     String path = ringtone.substring(3);
     if (sdCardDriver.begin() && sdCardDriver.exists(path.c_str())) {
       audioDriver.playFromSD(path.c_str());
-      return;
+      return prepareAlarmCodecForPlayback();
     }
   }
 
-  String path = ringtone.startsWith("spiffs:") ? ringtone.substring(7)
-                                               : "/alarm.mp3";
-  if (SPIFFS.exists(path)) {
-    audioDriver.playFromFS(SPIFFS, path.c_str());
-    return;
+  if (ringtone.startsWith("spiffs:")) {
+    String path = ringtone.substring(7);
+    if (SPIFFS.exists(path)) {
+      if (path.endsWith(".wav")) {
+        return alarmPcmPlayer.begin(SPIFFS, path.c_str());
+      }
+      audioDriver.playFromFS(SPIFFS, path.c_str());
+      return prepareAlarmCodecForPlayback();
+    }
+  }
+
+  const String fallbackPath =
+      String(AlarmRingtones::DEFAULT_VALUE).substring(7);
+  if (SPIFFS.exists(fallbackPath)) {
+    Serial.printf("Alarm ringtone not found: %s, using default\n",
+                  ringtone.c_str());
+    return alarmPcmPlayer.begin(SPIFFS, fallbackPath.c_str());
   }
   Serial.printf("Alarm ringtone not found: %s\n", ringtone.c_str());
+  return false;
+}
+
+void serviceAlarmPlayback() {
+  if (!alarmManager.isRinging()) {
+    if (g_alarmOwnsAudio) {
+      releaseAlarmAudio();
+    }
+    return;
+  }
+
+  uint32_t triggerSequence = alarmManager.getTriggerSequence();
+  if (!g_alarmOwnsAudio) {
+    // 关键逻辑：闹钟必须抢占所有页面共享的音频通道。否则音乐页正在播放时，
+    // isPlaying() 会一直为 true，旧逻辑便永远不会启动闹铃。
+    alarmPcmPlayer.stop();
+    audioDriver.stop();
+    // 闹钟音量不受音乐/收音机用户音量限制，固定使用解码器
+    // 最大档；停止响铃后再恢复 config 中的音量。
+    setCpuFrequencyMhz(ALARM_CPU_FREQUENCY_MHZ);
+    audioDriver.setVolume(ALARM_PLAYBACK_VOLUME);
+    digitalWrite(RADIO_EN, LOW);
+    g_alarmOwnsAudio = true;
+    g_alarmCodecReady = false;
+    g_lastAlarmPlaybackAttemptMs = 0;
+    g_alarmPlaybackTriggerSequence = triggerSequence;
+    Serial.println("[Alarm] audio channel acquired");
+  } else if (triggerSequence != g_alarmPlaybackTriggerSequence) {
+    // A later alarm must replace the one that is still ringing. A monotonic
+    // trigger sequence is used instead of comparing ringtone paths because
+    // consecutive alarms are allowed to select the same sound.
+    alarmPcmPlayer.stop();
+    audioDriver.stop();
+    g_alarmCodecReady = false;
+    g_lastAlarmPlaybackAttemptMs = 0;
+    g_alarmPlaybackTriggerSequence = triggerSequence;
+    Serial.println("[Alarm] active ringtone stopped for newer alarm");
+  }
+
+  if (!alarmPcmPlayer.isPlaying() && !audioDriver.isPlaying() &&
+      playConfiguredAlarm()) {
+    Serial.println("[Alarm] ringtone playback started");
+  }
 }
 
 void setup() {
@@ -576,13 +713,10 @@ void loop() {
 
   t_start = millis();
   audioDriver.loop(); // For audio processing
+  alarmPcmPlayer.loop();
   // Serial.printf("Audio loop: %ums\n", millis() - t_start);
 
-  if (alarmManager.isRinging()) {
-    if (!audioDriver.isPlaying()) {
-      playConfiguredAlarm();
-    }
-  }
+  serviceAlarmPlayback();
 
   handleInputEvents();
   // Serial.printf("Input loop: %ums\n", millis() - t_start);

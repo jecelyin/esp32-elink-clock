@@ -14,6 +14,10 @@ void WebManager::begin() {
 }
 
 void WebManager::loop() {
+  // WebServer::handleClient() reaches lwIP select(). Serialize it with every
+  // WiFi/AP mode change performed by ConnectionManager on Core 0, while the
+  // request handlers remain on the UI core where their managers are owned.
+  ConnectionManager::NetworkGuard networkGuard(conn);
   // 关键逻辑：业务 WebServer 只在用户主动开启“系统设置”热点时监听，
   // 避免设备连接家庭 WiFi 同步天气期间把配置接口暴露到局域网。
   if (conn != nullptr && conn->isSystemPortalActive()) {
@@ -301,13 +305,21 @@ void WebManager::handleTrashFile() {
 void WebManager::handleGetRingtones() {
   JsonDocument doc;
   JsonArray items = doc.to<JsonArray>();
-  items.add("spiffs:/alarm.mp3");
+  for (size_t i = 0; i < AlarmRingtones::BUILTIN_COUNT; ++i) {
+    JsonObject item = items.add<JsonObject>();
+    item["value"] = AlarmRingtones::BUILTIN[i].value;
+    item["label"] = AlarmRingtones::BUILTIN[i].label;
+    item["builtin"] = true;
+  }
   if (mountSD()) {
     for (const FileInfo &file : sd->listDir("/")) {
       if (!file.isDirectory && file.name.endsWith(".mp3")) {
         String path = file.name.startsWith("/") ? file.name
                                                 : "/" + file.name;
-        items.add("sd:" + path);
+        JsonObject item = items.add<JsonObject>();
+        item["value"] = "sd:" + path;
+        item["label"] = "SD 卡 · " + file.name;
+        item["builtin"] = false;
       }
     }
     sd->end();

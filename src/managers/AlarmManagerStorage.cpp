@@ -24,7 +24,7 @@ void AlarmManager::load() {
     alarm.weekMask = item["w"] | 0x7F;
     int repeatValue = item["r"] | static_cast<int>(inferRepeatType(alarm.weekMask));
     alarm.repeatType = static_cast<AlarmRepeatType>(repeatValue);
-    alarm.ringtone = item["s"] | "spiffs:/alarm.mp3";
+    alarm.ringtone = item["s"] | AlarmRingtones::DEFAULT_VALUE;
     alarms.push_back(sanitizeAlarm(alarm));
   }
 }
@@ -37,6 +37,9 @@ bool AlarmManager::save() {
   JsonDocument doc;
   JsonArray items = doc.to<JsonArray>();
   for (size_t i = 0; i < alarms.size(); ++i) {
+    if (alarms[i].transient) {
+      continue;
+    }
     JsonObject item = items.add<JsonObject>();
     item["h"] = alarms[i].hour;
     item["m"] = alarms[i].minute;

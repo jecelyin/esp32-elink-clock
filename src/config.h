@@ -1,5 +1,12 @@
 #pragma once
 
+#include <stdint.h>
+
+// 闹钟启动测试：开启后，每次启动都会按 RTC 当前时间添加一个
+// 下一分钟触发的一次性临时闹钟。正式使用时改为 false。
+constexpr bool ALARM_STARTUP_TEST_ENABLED = false;
+constexpr uint8_t ALARM_STARTUP_TEST_DELAY_MINUTES = 1;
+
 // SPI
 #define SPI_MOSI 23
 #define SPI_MISO 19

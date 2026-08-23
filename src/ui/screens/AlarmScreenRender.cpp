@@ -6,6 +6,9 @@ const char *kWeekLabels[] = {"一", "二", "三", "四", "五", "六", "日"};
 const uint8_t kWeekBits[] = {0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x01};
 const int kContentTop = 30;
 const int kRowHeight = 56;
+const int kContentPartialTop = 24;
+const int kScreenWidth = 400;
+const int kScreenHeight = 300;
 }
 
 void AlarmScreen::drawEditor(DisplayDriver *display) {
@@ -13,6 +16,7 @@ void AlarmScreen::drawEditor(DisplayDriver *display) {
   drawEditorTime(display);
   drawRepeatSelector(display);
   drawWeekdaySelector(display);
+  drawRingtoneSelector(display);
   drawEditorActions(display);
   drawEditorHints(display);
 }
@@ -32,17 +36,17 @@ void AlarmScreen::drawEditorActions(DisplayDriver *display) {
     int x = startX + i * gap;
     bool focused = editFocus == focusMap[i];
     if (focused) {
-      display->display.fillRoundRect(x, 254, buttonW, 30, 8, GxEPD_BLACK);
+      display->display.fillRoundRect(x, 252, buttonW, 30, 8, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
       display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
     } else {
-      display->display.drawRoundRect(x, 254, buttonW, 30, 8, GxEPD_BLACK);
+      display->display.drawRoundRect(x, 252, buttonW, 30, 8, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
       display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
     }
     display->u8g2Fonts.setFont(u8g2_font_wqy16_t_gb2312);
     int width = display->u8g2Fonts.getUTF8Width(labels[i]);
-    display->u8g2Fonts.setCursor(x + (buttonW - width) / 2, 275);
+    display->u8g2Fonts.setCursor(x + (buttonW - width) / 2, 273);
     display->u8g2Fonts.print(labels[i]);
   }
   display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
@@ -58,56 +62,92 @@ void AlarmScreen::drawEditorHints(DisplayDriver *display) {
 void AlarmScreen::drawEditorTime(DisplayDriver *display) {
   char timeText[6];
   sprintf(timeText, "%02d:%02d", draftAlarm.hour, draftAlarm.minute);
-  display->u8g2Fonts.setFont(u8g2_font_logisoso62_tn);
+  // Keep the time visually dominant without colliding with the title row.
+  display->u8g2Fonts.setFont(u8g2_font_logisoso42_tn);
   int width = display->u8g2Fonts.getUTF8Width(timeText);
   display->u8g2Fonts.setCursor((400 - width) / 2, 102);
   display->u8g2Fonts.print(timeText);
 
-  for (int i = 0; i < 2; ++i) {
-    int x = 70 + i * 155;
-    bool focused = editFocus == i;
-    display->display.drawRoundRect(x, 110, 105, 38, 8, GxEPD_BLACK);
+  struct TimeControl {
+    int focus;
+    int x;
+    int width;
+    const char *label;
+  };
+  const TimeControl controls[] = {
+      {FOCUS_HOUR, 12, 88, "小时 +1"},
+      {FOCUS_MINUTE_FINE_DOWN, 108, 78, "分钟 -1"},
+      {FOCUS_MINUTE, 194, 98, "分钟 +10"},
+      {FOCUS_MINUTE_FINE_UP, 300, 88, "分钟 +1"},
+  };
+
+  for (const TimeControl &control : controls) {
+    bool focused = editFocus == control.focus;
     if (focused) {
-      display->display.drawRoundRect(x - 3, 107, 111, 44, 10, GxEPD_BLACK);
+      display->display.fillRoundRect(control.x, 108, control.width, 32, 7,
+                                     GxEPD_BLACK);
+      display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
+      display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
+    } else {
+      display->display.drawRoundRect(control.x, 108, control.width, 32, 7,
+                                     GxEPD_BLACK);
+      display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+      display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
     }
     display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
-    display->u8g2Fonts.setCursor(x + 18, 134);
-    display->u8g2Fonts.print(i == 0 ? "小时 回车+1" : "分钟 回车+1");
+    int labelWidth = display->u8g2Fonts.getUTF8Width(control.label);
+    display->u8g2Fonts.setCursor(
+        control.x + (control.width - labelWidth) / 2, 129);
+    display->u8g2Fonts.print(control.label);
   }
+  display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+  display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+}
+
+void AlarmScreen::drawContentPartial(DisplayDriver *display) {
+  display->display.setPartialWindow(0, kContentPartialTop, kScreenWidth,
+                                    kScreenHeight - kContentPartialTop);
+  display->display.firstPage();
+  do {
+    display->display.fillScreen(GxEPD_WHITE);
+    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+    renderContent(display);
+  } while (display->display.nextPage());
+  display->powerOff();
 }
 
 void AlarmScreen::drawEditorTitle(DisplayDriver *display) {
   display->u8g2Fonts.setFont(u8g2_font_wqy16_t_gb2312);
-  display->u8g2Fonts.setCursor(18, 52);
+  display->u8g2Fonts.setCursor(16, 45);
   display->u8g2Fonts.print(creatingAlarm ? "新建闹钟" : "编辑闹钟");
-  display->u8g2Fonts.setFont(u8g2_font_helvB08_tr);
-  display->u8g2Fonts.setCursor(18, 68);
-  display->u8g2Fonts.print("LONG ENTER TO EXIT");
+  display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
+  const char *state = draftAlarm.enabled ? "已启用" : "已停用";
+  int width = display->u8g2Fonts.getUTF8Width(state);
+  display->u8g2Fonts.setCursor(384 - width, 45);
+  display->u8g2Fonts.print(state);
 }
 
 void AlarmScreen::drawRepeatSelector(DisplayDriver *display) {
   display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
-  display->u8g2Fonts.setCursor(18, 168);
-  display->u8g2Fonts.print("重复规则");
-
   for (int i = 0; i < 3; ++i) {
     int x = 18 + i * 126;
     bool selected = draftAlarm.repeatType == i;
     bool focused = editFocus == FOCUS_REPEAT_DAILY + i;
     if (selected) {
-      display->display.fillRoundRect(x, 176, 112, 34, 8, GxEPD_BLACK);
+      display->display.fillRoundRect(x, 146, 112, 30, 7, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
       display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
     } else {
-      display->display.drawRoundRect(x, 176, 112, 34, 8, GxEPD_BLACK);
+      display->display.drawRoundRect(x, 146, 112, 30, 7, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
       display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
     }
     if (focused) {
-      display->display.drawRoundRect(x - 2, 174, 116, 38, 10, GxEPD_BLACK);
+      display->display.drawRoundRect(x - 2, 144, 116, 34, 9, GxEPD_BLACK);
     }
     int width = display->u8g2Fonts.getUTF8Width(kRuleLabels[i]);
-    display->u8g2Fonts.setCursor(x + (112 - width) / 2, 198);
+    display->u8g2Fonts.setCursor(x + (112 - width) / 2, 166);
     display->u8g2Fonts.print(kRuleLabels[i]);
     display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
     display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
@@ -117,31 +157,57 @@ void AlarmScreen::drawRepeatSelector(DisplayDriver *display) {
 void AlarmScreen::drawWeekdaySelector(DisplayDriver *display) {
   bool weekly = draftAlarm.repeatType == ALARM_REPEAT_WEEKLY;
   display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
-  display->u8g2Fonts.setCursor(18, 220);
-  display->u8g2Fonts.print(weekly ? "星期选择" : "仅“指定星期”模式可编辑");
+  display->u8g2Fonts.setCursor(14, 199);
+  display->u8g2Fonts.print("周");
 
   for (int i = 0; i < 7; ++i) {
-    int x = 18 + i * 54;
+    int x = 44 + i * 49;
     bool selected = (draftAlarm.weekMask & kWeekBits[i]) != 0;
     bool focused = editFocus == FOCUS_DAY_START + i;
     if (selected && weekly) {
-      display->display.fillRoundRect(x, 224, 40, 26, 6, GxEPD_BLACK);
+      display->display.fillRoundRect(x, 181, 38, 25, 6, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
       display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
     } else {
-      display->display.drawRoundRect(x, 224, 40, 26, 6, GxEPD_BLACK);
+      display->display.drawRoundRect(x, 181, 38, 25, 6, GxEPD_BLACK);
       display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
       display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
     }
     if (focused) {
-      display->display.drawRoundRect(x - 2, 222, 44, 30, 8, GxEPD_BLACK);
+      display->display.drawRoundRect(x - 2, 179, 42, 29, 8, GxEPD_BLACK);
     }
     int width = display->u8g2Fonts.getUTF8Width(kWeekLabels[i]);
-    display->u8g2Fonts.setCursor(x + (40 - width) / 2, 243);
+    display->u8g2Fonts.setCursor(x + (38 - width) / 2, 199);
     display->u8g2Fonts.print(kWeekLabels[i]);
     display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
     display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
   }
+}
+
+void AlarmScreen::drawRingtoneSelector(DisplayDriver *display) {
+  const int x = 18;
+  const int y = 213;
+  const int width = 364;
+  const int height = 30;
+  bool focused = editFocus == FOCUS_RINGTONE;
+
+  if (focused) {
+    display->display.fillRoundRect(x, y, width, height, 7, GxEPD_BLACK);
+    display->u8g2Fonts.setForegroundColor(GxEPD_WHITE);
+    display->u8g2Fonts.setBackgroundColor(GxEPD_BLACK);
+  } else {
+    display->display.drawRoundRect(x, y, width, height, 7, GxEPD_BLACK);
+    display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+    display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+  }
+
+  String label = String("铃声  ") + getRingtoneLabel();
+  display->u8g2Fonts.setFont(u8g2_font_wqy12_t_gb2312);
+  int labelWidth = display->u8g2Fonts.getUTF8Width(label.c_str());
+  display->u8g2Fonts.setCursor(x + (width - labelWidth) / 2, y + 20);
+  display->u8g2Fonts.print(label);
+  display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+  display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
 }
 
 void AlarmScreen::drawList(DisplayDriver *display) {
@@ -230,6 +296,16 @@ String AlarmScreen::getListRowTitle(int itemIndex) const {
     return "返回";
   }
   return getTimeText(alarmMgr->getAlarm(itemIndex));
+}
+
+String AlarmScreen::getRingtoneLabel() const {
+  String ringtone = AlarmRingtones::normalize(draftAlarm.ringtone);
+  for (size_t i = 0; i < AlarmRingtones::BUILTIN_COUNT; ++i) {
+    if (ringtone == AlarmRingtones::BUILTIN[i].value) {
+      return AlarmRingtones::BUILTIN[i].label;
+    }
+  }
+  return ringtone.startsWith("sd:/") ? "SD 自定义铃声" : "默认闹铃";
 }
 
 String AlarmScreen::getTimeText(const AlarmConfig &alarm) const {

@@ -14,6 +14,7 @@ public:
 
   void enter() override;
   void exit() override;
+  void update() override;
   void draw(DisplayDriver *display) override;
   bool onInput(UIKey key) override;
   bool shouldDrawAfterInput() const override;
@@ -33,6 +34,7 @@ private:
   ConnectionManager *conn;
   uint8_t selectedItem = MENU_HARDWARE;
   bool redrawAfterInput = true;
+  int8_t renderedPortalState = -1;
 
   void drawPage(DisplayDriver *display, const BatteryInfo &info);
   void drawSidebar(DisplayDriver *display);
@@ -44,7 +46,7 @@ private:
   void drawRestartContent(DisplayDriver *display);
   void drawPortalContent(DisplayDriver *display, const String &payload,
                          const char *title, const String &address,
-                         bool active);
+                         const char *statusText);
   void drawQrCode(DisplayDriver *display, const String &payload, int x, int y,
                   int boxSize);
   void drawQrModules(DisplayDriver *display, const SimpleQRCode &qr, int x,
@@ -53,6 +55,7 @@ private:
   void drawText(DisplayDriver *display, int x, int y, const char *text,
                 const uint8_t *font);
   String getGatewayIp() const;
+  int8_t getSelectedPortalState() const;
   void runManualHardwareCheck();
   bool runDeviceChecks(DisplayDriver *display);
   void showDeviceCheckResult(DisplayDriver *display, const char *name, bool ok,

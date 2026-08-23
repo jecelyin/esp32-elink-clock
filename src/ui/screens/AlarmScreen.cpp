@@ -4,7 +4,7 @@
 AlarmScreen::AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar)
     : alarmMgr(alarmMgr), statusBar(statusBar), mode(MODE_LIST),
       helperText(""), editFocus(FOCUS_HOUR), listFocus(0), listScroll(0),
-      creatingAlarm(false), editingIndex(0) {
+      partialRefreshPending(false), creatingAlarm(false), editingIndex(0) {
   resetListState();
   resetEditorState();
 }
@@ -12,16 +12,24 @@ AlarmScreen::AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar)
 void AlarmScreen::init() {
   listFocus = 0;
   listScroll = 0;
+  partialRefreshPending = false;
   resetListState();
 }
 
 void AlarmScreen::enter() {
   listFocus = 0;
   listScroll = 0;
+  partialRefreshPending = false;
   resetListState();
 }
 
 void AlarmScreen::draw(DisplayDriver *display) {
+  if (partialRefreshPending) {
+    partialRefreshPending = false;
+    drawContentPartial(display);
+    return;
+  }
+
   display->display.setFullWindow();
   display->display.firstPage();
   do {
@@ -33,15 +41,17 @@ void AlarmScreen::draw(DisplayDriver *display) {
 }
 
 bool AlarmScreen::onInput(UIKey key) {
-  ScreenState stateBefore = uiManager->getCurrentState();
   bool handled = false;
   if (mode == MODE_EDITOR) {
     handled = handleEditorInput(key);
   } else {
     handled = handleListInput(key);
   }
-  if (handled && stateBefore == uiManager->getCurrentState()) {
-    refreshContentPartial();
+  if (handled && uiManager->getCurrentState() == SCREEN_ALARM) {
+    // UIManager will call draw() after input while holding its drawing guard.
+    // Defer the partial refresh until then instead of driving the panel from
+    // inside the input callback.
+    partialRefreshPending = true;
   }
   return handled;
 }
@@ -75,7 +85,7 @@ void AlarmScreen::beginCreate() {
   editingIndex = alarmMgr->getAlarmCount();
   draftAlarm = alarmMgr->buildDefaultAlarm();
   setRepeatFocus();
-  helperText = "回车选择字段，长按退出";
+  helperText = "左右选择，回车修改，长按退出";
   mode = MODE_EDITOR;
 }
 
@@ -85,7 +95,7 @@ void AlarmScreen::beginEdit(size_t index) {
   editingIndex = index;
   draftAlarm = alarmMgr->getAlarm(index);
   setRepeatFocus();
-  helperText = "回车选择字段，长按退出";
+  helperText = "左右选择，回车修改，长按退出";
   mode = MODE_EDITOR;
 }
 
@@ -151,9 +161,20 @@ void AlarmScreen::handleDeleteAction() {
 }
 
 bool AlarmScreen::handleEditorEnter() {
-  if (editFocus == FOCUS_HOUR || editFocus == FOCUS_MINUTE) {
+  if (editFocus == FOCUS_HOUR) {
     adjustCurrentValue(1);
-    helperText = editFocus == FOCUS_HOUR ? "小时已加 1" : "分钟已加 1";
+    helperText = "小时已加 1";
+  } else if (editFocus == FOCUS_MINUTE) {
+    adjustCurrentValue(10);
+    helperText = "分钟已加 10";
+  } else if (editFocus == FOCUS_MINUTE_FINE_DOWN) {
+    draftAlarm.minute = (draftAlarm.minute + 59) % 60;
+    helperText = "分钟已减 1";
+  } else if (editFocus == FOCUS_MINUTE_FINE_UP) {
+    draftAlarm.minute = (draftAlarm.minute + 1) % 60;
+    helperText = "分钟已加 1";
+  } else if (editFocus == FOCUS_RINGTONE) {
+    selectNextRingtone();
   } else if (isRepeatFocus()) {
     applyRepeatSelection();
   } else if (isEditorDayFocus()) {
@@ -203,6 +224,11 @@ bool AlarmScreen::isAlarmIndex(int itemIndex) const {
   return itemIndex >= 0 && itemIndex < static_cast<int>(alarmMgr->getAlarmCount());
 }
 
+bool AlarmScreen::isEditorFocusAvailable(int focus) const {
+  return draftAlarm.repeatType == ALARM_REPEAT_WEEKLY ||
+         focus < FOCUS_DAY_START || focus > FOCUS_DAY_END;
+}
+
 bool AlarmScreen::isEditorDayFocus() const {
   return editFocus >= FOCUS_DAY_START && editFocus <= FOCUS_DAY_END;
 }
@@ -224,13 +250,15 @@ int AlarmScreen::getRepeatFocus(AlarmRepeatType repeatType) const {
 }
 
 void AlarmScreen::moveEditorFocus(int delta) {
-  editFocus += delta;
-  if (editFocus > getLastEditorFocus()) {
-    editFocus = FOCUS_HOUR;
-  }
-  if (editFocus < FOCUS_HOUR) {
-    editFocus = getLastEditorFocus();
-  }
+  do {
+    editFocus += delta;
+    if (editFocus > getLastEditorFocus()) {
+      editFocus = FOCUS_HOUR;
+    }
+    if (editFocus < FOCUS_HOUR) {
+      editFocus = getLastEditorFocus();
+    }
+  } while (!isEditorFocusAvailable(editFocus));
 }
 
 void AlarmScreen::moveListFocus(int delta) {
@@ -248,29 +276,29 @@ void AlarmScreen::openEditorForFocus() {
   }
 }
 
-void AlarmScreen::refreshContentPartial() {
-  if (uiManager == nullptr || uiManager->getDisplayDriver() == nullptr) {
-    return;
-  }
-
-  DisplayDriver *display = uiManager->getDisplayDriver();
-  display->display.setPartialWindow(0, 28, 400, 272);
-  display->display.firstPage();
-  do {
-    // 关键逻辑：闹钟页左右键只重绘内容区，不动顶部状态栏，
-    // 这样可以把“切焦点全刷闪屏”收敛成局刷。
-    display->display.fillRect(0, 28, 400, 272, GxEPD_WHITE);
-    renderContent(display);
-  } while (display->display.nextPage());
-  display->powerOff();
-}
-
 void AlarmScreen::renderContent(DisplayDriver *display) {
   if (mode == MODE_LIST) {
     drawList(display);
     return;
   }
   drawEditor(display);
+}
+
+void AlarmScreen::selectNextRingtone() {
+  String current = AlarmRingtones::normalize(draftAlarm.ringtone);
+  for (size_t i = 0; i < AlarmRingtones::BUILTIN_COUNT; ++i) {
+    if (current == AlarmRingtones::BUILTIN[i].value) {
+      size_t next = (i + 1) % AlarmRingtones::BUILTIN_COUNT;
+      draftAlarm.ringtone = AlarmRingtones::BUILTIN[next].value;
+      helperText = String("铃声：") + AlarmRingtones::BUILTIN[next].label;
+      return;
+    }
+  }
+
+  // A custom SD ringtone remains untouched unless the user explicitly cycles
+  // this field. The first press switches it to the first built-in sound.
+  draftAlarm.ringtone = AlarmRingtones::DEFAULT_VALUE;
+  helperText = String("铃声：") + AlarmRingtones::BUILTIN[0].label;
 }
 
 void AlarmScreen::setRepeatFocus() { editFocus = getRepeatFocus(draftAlarm.repeatType); }

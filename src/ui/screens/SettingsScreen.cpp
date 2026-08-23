@@ -24,12 +24,24 @@ SettingsScreen::SettingsScreen(ConfigManager *config, StatusBar *statusBar,
 void SettingsScreen::enter() {
   selectedItem = MENU_HARDWARE;
   redrawAfterInput = true;
+  renderedPortalState = -1;
 }
 
 void SettingsScreen::exit() {
   // 系统配置服务只在设置页存活，避免离开页面后与音乐/闹铃争用 SD。
   if (conn->isSystemPortalActive()) {
     conn->enableNetwork(false);
+  }
+}
+
+void SettingsScreen::update() {
+  int8_t currentPortalState = getSelectedPortalState();
+  if (currentPortalState >= 0 && renderedPortalState >= 0 &&
+      currentPortalState != renderedPortalState && uiManager != nullptr &&
+      uiManager->getDisplayDriver() != nullptr) {
+    // The AP starts asynchronously on Core 0. Refresh once when the visible
+    // status moves from idle -> starting -> active, without another key press.
+    draw(uiManager->getDisplayDriver());
   }
 }
 
@@ -41,6 +53,7 @@ void SettingsScreen::draw(DisplayDriver *display) {
     drawPage(display, info);
   } while (display->display.nextPage());
   display->powerOff();
+  renderedPortalState = getSelectedPortalState();
 }
 
 bool SettingsScreen::onInput(UIKey key) {
@@ -61,9 +74,14 @@ bool SettingsScreen::onInput(UIKey key) {
     redrawAfterInput = false;
     runManualHardwareCheck();
   } else if (selectedItem == MENU_NETWORK) {
-    conn->startAP();
+    if (!conn->isConfigPortalActive() && !conn->isConfigPortalStarting()) {
+      conn->startAP();
+    }
   } else if (selectedItem == MENU_SYSTEM) {
-    conn->startSystemAP();
+    if (!conn->isSystemPortalActive() &&
+        !conn->isSystemPortalStarting()) {
+      conn->startSystemAP();
+    }
   } else {
     redrawAfterInput = false;
     restartDevice();
@@ -146,15 +164,22 @@ void SettingsScreen::drawHardwareContent(DisplayDriver *display,
 
 void SettingsScreen::drawNetworkContent(DisplayDriver *display) {
   String address = "http://" + getGatewayIp();
+  bool active = conn->isConfigPortalActive();
+  bool starting = conn->isConfigPortalStarting();
   drawPortalContent(display, ConfigPortal::buildWiFiQrPayload(), "网络配置",
-                    address, conn->isConfigPortalActive());
+                    address, active ? "已开启"
+                                    : starting ? "正在开启..."
+                                               : "按确认键开启");
 }
 
 void SettingsScreen::drawSystemContent(DisplayDriver *display) {
   String address = ConfigPortal::buildSystemUrl(getGatewayIp());
+  bool active = conn->isSystemPortalActive();
+  bool starting = conn->isSystemPortalStarting();
   drawPortalContent(display, ConfigPortal::buildWiFiQrPayload(), "系统设置",
-                    address,
-                    conn->isSystemPortalActive());
+                    address, active ? "已开启"
+                                    : starting ? "正在开启..."
+                                               : "按确认键开启");
 }
 
 void SettingsScreen::drawRestartContent(DisplayDriver *display) {
@@ -168,10 +193,11 @@ void SettingsScreen::drawRestartContent(DisplayDriver *display) {
 void SettingsScreen::drawPortalContent(DisplayDriver *display,
                                        const String &payload,
                                        const char *title,
-                                       const String &address, bool active) {
+                                       const String &address,
+                                       const char *statusText) {
   drawText(display, CONTENT_X, 52, title, u8g2_font_wqy16_t_gb2312);
   drawQrCode(display, payload, CONTENT_X, 66, QR_SIZE);
-  drawText(display, CONTENT_X + 126, 82, active ? "已开启" : "按确认键开启",
+  drawText(display, CONTENT_X + 126, 82, statusText,
            u8g2_font_wqy12_t_gb2312);
   drawText(display, CONTENT_X + 126, 112, "SSID",
            u8g2_font_helvB08_tr);
@@ -245,6 +271,22 @@ String SettingsScreen::getGatewayIp() const {
     return ConfigPortal::DEFAULT_GATEWAY;
   }
   return ip.toString();
+}
+
+int8_t SettingsScreen::getSelectedPortalState() const {
+  if (selectedItem == MENU_NETWORK) {
+    if (conn->isConfigPortalActive()) {
+      return 2;
+    }
+    return conn->isConfigPortalStarting() ? 1 : 0;
+  }
+  if (selectedItem == MENU_SYSTEM) {
+    if (conn->isSystemPortalActive()) {
+      return 2;
+    }
+    return conn->isSystemPortalStarting() ? 1 : 0;
+  }
+  return -1;
 }
 
 void SettingsScreen::runManualHardwareCheck() {

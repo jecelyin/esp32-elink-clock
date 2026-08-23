@@ -9,6 +9,15 @@
 
 class ConnectionManager {
 public:
+  class NetworkGuard {
+  public:
+    explicit NetworkGuard(ConnectionManager *owner);
+    ~NetworkGuard();
+
+  private:
+    ConnectionManager *owner;
+  };
+
   ConnectionManager();
   void begin(ConfigManager *config, RtcDriver *rtc);
   void loop();
@@ -24,7 +33,9 @@ public:
   bool isNetworkEnabled() const;
   bool isSyncComplete();
   bool isSystemPortalActive() const;
+  bool isSystemPortalStarting() const;
   bool isConfigPortalActive() const;
+  bool isConfigPortalStarting() const;
 
 private:
   enum NetworkAction : uint8_t {

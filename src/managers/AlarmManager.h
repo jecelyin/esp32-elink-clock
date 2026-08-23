@@ -13,6 +13,7 @@ public:
 
   void begin(ConfigManager *config);
   bool addAlarm(const AlarmConfig &alarm);
+  void addStartupTestAlarm(const DateTime &now, uint8_t delayMinutes = 1);
   AlarmConfig buildDefaultAlarm() const;
   void check(const DateTime &now);
   HolidayDayType getHolidayDayType(const DateTime &date);
@@ -26,6 +27,7 @@ public:
   String getRepeatText(const AlarmConfig &alarm) const;
   bool hasEnabledAlarms() const;
   bool isRinging() const;
+  uint32_t getTriggerSequence() const;
   bool removeAlarm(size_t index);
   void snooze();
   void stop();
@@ -47,6 +49,7 @@ private:
   bool ringing;
   bool prefsReady;
   uint32_t lastCheck;
+  uint32_t triggerSequence;
   String activeRingtone;
 
   AlarmRepeatType inferRepeatType(uint8_t weekMask) const;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AlarmRingtones.h"
 #include <Arduino.h>
 
 enum AlarmRepeatType : uint8_t {
@@ -14,6 +15,7 @@ struct AlarmConfig {
   bool enabled = true;
   AlarmRepeatType repeatType = ALARM_REPEAT_DAILY;
   uint8_t weekMask = 0x7F;
-  String ringtone = "spiffs:/alarm.mp3";
+  String ringtone = AlarmRingtones::DEFAULT_VALUE;
   uint32_t lastTriggeredMinuteKey = 0;
+  bool transient = false; // Runtime-only alarm; never persisted to NVS.
 };
