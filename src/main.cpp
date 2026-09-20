@@ -533,9 +533,9 @@ void networkTask(void *pvParameters) {
       bool settingsVisible = state == SCREEN_SETTINGS;
 
       // Keep the local configuration server as the only lwIP/HTTP workload
-      // while the phone is connected to the SoftAP. Entering Settings also
-      // suspends background HTTP before the AP request, so it cannot sit behind
-      // a weather/holiday download while the display says "starting".
+      // during an on-demand system settings session. Entering Settings also
+      // suspends background HTTP before the network request, so it cannot sit
+      // behind a weather/holiday download while the display says "starting".
       if (!systemPortalActive && !settingsVisible) {
         alarmManager.updateHolidayCache(rtcDriver.getSoftwareTime());
         if (shouldUpdateWeatherWhileOnline(systemPortalActive)) {

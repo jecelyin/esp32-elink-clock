@@ -34,6 +34,13 @@ private:
     MENU_COUNT = 4
   };
 
+  enum SystemConnectionChoice : uint8_t {
+    SYSTEM_CONNECTION_LAN = 0,
+    SYSTEM_CONNECTION_AP = 1,
+    SYSTEM_CONNECTION_BACK = 2,
+    SYSTEM_CONNECTION_COUNT = 3
+  };
+
   ConfigManager *config;
   StatusBar *statusBar;
   BatteryDriver *battery;
@@ -44,6 +51,8 @@ private:
   int8_t renderedPortalState = -1;
   int8_t portalStateForDraw = -1;
   RefreshMode refreshMode = REFRESH_FULL;
+  bool systemConnectionView = false;
+  uint8_t systemConnectionChoice = SYSTEM_CONNECTION_LAN;
 
   void drawFull(DisplayDriver *display, const BatteryInfo &info);
   void drawNavigationPartial(DisplayDriver *display);
@@ -56,6 +65,10 @@ private:
   void drawHardwareContent(DisplayDriver *display, const BatteryInfo &info);
   void drawNetworkContent(DisplayDriver *display);
   void drawSystemContent(DisplayDriver *display);
+  void drawSystemConnectionSelector(DisplayDriver *display);
+  void drawSystemLANContent(DisplayDriver *display, int8_t state);
+  void drawSystemChoice(DisplayDriver *display, uint8_t choice, int y,
+                        const char *label);
   void drawRestartContent(DisplayDriver *display);
   void drawPortalContent(DisplayDriver *display, const String &payload,
                          const char *title, const String &address,
@@ -68,7 +81,9 @@ private:
   void drawText(DisplayDriver *display, int x, int y, const char *text,
                 const uint8_t *font);
   String getGatewayIp() const;
+  String getSystemAddress() const;
   int8_t getSelectedPortalState() const;
+  bool handleSystemConnectionInput(UIKey key);
   void runManualHardwareCheck();
   bool runDeviceChecks(DisplayDriver *display);
   void showDeviceCheckResult(DisplayDriver *display, const char *name, bool ok,

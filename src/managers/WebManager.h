@@ -51,6 +51,8 @@ private:
   bool parseBody(JsonDocument &doc);
   bool authorizeRequest();
   bool isSystemClient();
+  bool isSameSubnet(const IPAddress &remote, const IPAddress &local,
+                    const IPAddress &mask) const;
   bool mountSD();
   bool isSafePath(const String &path) const;
   bool isValidStationName(const String &name) const;

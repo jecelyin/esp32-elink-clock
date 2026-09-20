@@ -18,8 +18,8 @@ void WebManager::loop() {
   // WiFi/AP mode change performed by ConnectionManager on Core 0, while the
   // request handlers remain on the UI core where their managers are owned.
   ConnectionManager::NetworkGuard networkGuard(conn);
-  // 关键逻辑：业务 WebServer 只在用户主动开启“系统设置”热点时监听，
-  // 避免设备连接家庭 WiFi 同步天气期间把配置接口暴露到局域网。
+  // 关键逻辑：业务 WebServer 只在用户主动开启“系统设置”访问会话时监听，
+  // 普通天气同步即使连接家庭 WiFi，也不会暴露配置接口。
   if (conn != nullptr && conn->isSystemPortalActive()) {
     if (!serverStarted) {
       server.begin();
@@ -418,14 +418,32 @@ bool WebManager::isSystemClient() {
   if (conn == nullptr || !conn->isSystemPortalActive()) {
     return false;
   }
-  IPAddress gateway = WiFi.softAPIP();
   WiFiClient client = server.client();
   IPAddress local = client.localIP();
   IPAddress remote = client.remoteIP();
+  if (conn->isSystemPortalLAN()) {
+    IPAddress station = WiFi.localIP();
+    // 关键逻辑：局域网入口只接受从 STA 网卡进入且处于同一子网的请求，
+    // 避免未来增加其他网络接口后意外扩大系统配置接口的暴露范围。
+    return local == station &&
+           isSameSubnet(remote, station, WiFi.subnetMask());
+  }
+  IPAddress gateway = WiFi.softAPIP();
   // 关键逻辑：localIP 必须等于 SoftAP 网关，才能排除 AP+STA 模式下
   // 从家庭局域网接口进入的连接；远端同时还要属于热点子网。
   return local == gateway && gateway[0] == remote[0] &&
          gateway[1] == remote[1] && gateway[2] == remote[2];
+}
+
+bool WebManager::isSameSubnet(const IPAddress &remote,
+                              const IPAddress &local,
+                              const IPAddress &mask) const {
+  for (uint8_t i = 0; i < 4; ++i) {
+    if ((remote[i] & mask[i]) != (local[i] & mask[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool WebManager::mountSD() {

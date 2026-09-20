@@ -54,7 +54,8 @@ void ConnectionManager::enableNetwork(bool enable) {
     pendingAction = NETWORK_ACTION_DISABLE;
     networkStopping = true;
   } else if (pendingAction != NETWORK_ACTION_CONFIG_PORTAL &&
-             pendingAction != NETWORK_ACTION_SYSTEM_PORTAL) {
+             pendingAction != NETWORK_ACTION_SYSTEM_PORTAL &&
+             pendingAction != NETWORK_ACTION_SYSTEM_LAN) {
     // Hourly synchronization runs on every main-loop pass until Core 0 accepts
     // it. Never let that low-priority request overwrite a user portal request.
     pendingAction = NETWORK_ACTION_ENABLE;
@@ -80,6 +81,8 @@ void ConnectionManager::processPendingAction() {
     activateConfigPortal();
   } else if (action == NETWORK_ACTION_SYSTEM_PORTAL) {
     activateSystemPortal();
+  } else if (action == NETWORK_ACTION_SYSTEM_LAN) {
+    activateSystemLAN();
   }
   unlockNetwork();
 }
@@ -94,6 +97,11 @@ void ConnectionManager::loop() {
   // while WebServer is selecting on an AP socket can invalidate lwIP's route
   // tables, especially if ENTER was pressed twice during asynchronous startup.
   if (systemPortalActive) {
+    return;
+  }
+
+  if (systemPortalStarting && systemPortalLAN) {
+    completeSystemLANStartup();
     return;
   }
 
@@ -170,11 +178,33 @@ bool ConnectionManager::isSystemPortalStarting() const {
   return starting;
 }
 
+bool ConnectionManager::isSystemPortalFailed() const {
+  lockNetwork();
+  bool failed = systemPortalFailed;
+  unlockNetwork();
+  return failed;
+}
+
+bool ConnectionManager::isSystemPortalLAN() const {
+  lockNetwork();
+  bool lan = systemPortalLAN;
+  unlockNetwork();
+  return lan;
+}
+
 String ConnectionManager::getSoftAPAddress() const {
   lockNetwork();
   IPAddress ip = WiFi.softAPIP();
   String address = ip == IPAddress(0, 0, 0, 0) ? String()
                                                 : ip.toString();
+  unlockNetwork();
+  return address;
+}
+
+String ConnectionManager::getStationAddress() const {
+  lockNetwork();
+  IPAddress ip = WiFi.localIP();
+  String address = ip == IPAddress(0, 0, 0, 0) ? String() : ip.toString();
   unlockNetwork();
   return address;
 }
@@ -238,6 +268,8 @@ void ConnectionManager::startSystemAP() {
     pendingAction = NETWORK_ACTION_SYSTEM_PORTAL;
     networkStopping = false;
     systemPortalStarting = true;
+    systemPortalFailed = false;
+    systemPortalLAN = false;
     configPortalStarting = false;
   }
   unlockNetwork();
@@ -247,6 +279,22 @@ void ConnectionManager::startSystemAP() {
   } else {
     Serial.println("System settings access point request queued");
   }
+}
+
+void ConnectionManager::startSystemLAN() {
+  lockNetwork();
+  bool duplicate = systemPortalActive || systemPortalStarting;
+  if (!duplicate) {
+    pendingAction = NETWORK_ACTION_SYSTEM_LAN;
+    networkStopping = false;
+    systemPortalStarting = true;
+    systemPortalFailed = false;
+    systemPortalLAN = true;
+    configPortalStarting = false;
+  }
+  unlockNetwork();
+  Serial.println(duplicate ? "System LAN request ignored: already active/starting"
+                           : "System LAN request queued");
 }
 
 void ConnectionManager::activateSystemPortal() {
@@ -303,6 +351,59 @@ void ConnectionManager::activateSystemPortal() {
     return;
   }
   Serial.println("System settings access point started");
+}
+
+void ConnectionManager::activateSystemLAN() {
+  stopPortalIfActive();
+  if (WiFi.getMode() != WIFI_MODE_NULL) {
+    if (!WiFi.mode(WIFI_OFF)) {
+      powerOffNetwork();
+      systemPortalFailed = true;
+      systemPortalLAN = true;
+      Serial.println("System LAN previous WiFi session stop failed");
+      return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(WIFI_MODE_SETTLE_MS));
+  }
+
+  // 关键逻辑：局域网系统设置是独立的按需会话，不经过 WiFiManager 的
+  // autoConnect，避免连接失败时自动开启配网热点并混淆两种访问方式。
+  networkEnabled = true;
+  networkStopping = false;
+  currentSessionSynced = false;
+  firstConnectAttempted = true;
+  lastReconnectAttempt = 0;
+  lastNetworkPowerOnTime = millis();
+  systemLANStartTime = millis();
+  if (!WiFi.mode(WIFI_STA)) {
+    powerOffNetwork();
+    systemPortalFailed = true;
+    systemPortalLAN = true;
+    Serial.println("System LAN mode initialization failed");
+    return;
+  }
+  WiFi.setSleep(false);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  WiFi.begin();
+  Serial.println("System LAN connection started");
+}
+
+void ConnectionManager::completeSystemLANStartup() {
+  if (WiFi.status() == WL_CONNECTED) {
+    systemPortalActive = true;
+    systemPortalStarting = false;
+    systemPortalFailed = false;
+    Serial.printf("System LAN connected: %s\n",
+                  WiFi.localIP().toString().c_str());
+    return;
+  }
+  if (millis() - systemLANStartTime < WIFI_CONNECT_TIMEOUT_SEC * 1000UL) {
+    return;
+  }
+  powerOffNetwork();
+  systemPortalFailed = true;
+  systemPortalLAN = true;
+  Serial.println("System LAN connection timed out");
 }
 
 void ConnectionManager::flushPendingRtcSync() {
@@ -427,6 +528,8 @@ void ConnectionManager::powerOffNetwork() {
   configPortalStarting = false;
   systemPortalStarting = false;
   systemPortalActive = false;
+  systemPortalLAN = false;
+  systemLANStartTime = 0;
   Serial.println("WiFi Power Off to save energy");
 }
 

@@ -25,6 +25,8 @@ void SettingsScreen::enter() {
   previousSelectedItem = selectedItem;
   redrawAfterInput = true;
   renderedPortalState = -1;
+  systemConnectionView = false;
+  systemConnectionChoice = SYSTEM_CONNECTION_LAN;
   refreshMode = REFRESH_FULL;
 }
 
@@ -112,6 +114,9 @@ void SettingsScreen::drawContentPartial(DisplayDriver *display,
 
 bool SettingsScreen::onInput(UIKey key) {
   redrawAfterInput = true;
+  if (systemConnectionView) {
+    return handleSystemConnectionInput(key);
+  }
   if (key == UI_KEY_LEFT) {
     previousSelectedItem = selectedItem;
     selectedItem = (selectedItem + MENU_COUNT - 1) % MENU_COUNT;
@@ -140,11 +145,10 @@ bool SettingsScreen::onInput(UIKey key) {
       conn->startAP();
     }
   } else if (selectedItem == MENU_SYSTEM) {
-    if (conn->isSystemPortalActive() || conn->isSystemPortalStarting()) {
-      conn->enableNetwork(false);
-    } else if (!conn->isNetworkStopping()) {
-      conn->startSystemAP();
-    }
+    // 关键逻辑：系统设置先进入连接方式选择页，默认局域网；热点入口
+    // 仍保留为独立选项，避免改变原有离线配置能力。
+    systemConnectionView = true;
+    systemConnectionChoice = SYSTEM_CONNECTION_LAN;
   } else {
     redrawAfterInput = false;
     restartDevice();
@@ -237,14 +241,80 @@ void SettingsScreen::drawNetworkContent(DisplayDriver *display) {
 }
 
 void SettingsScreen::drawSystemContent(DisplayDriver *display) {
-  String address = ConfigPortal::buildSystemUrl(getGatewayIp());
+  if (!systemConnectionView) {
+    drawText(display, CONTENT_X, 52, "系统设置",
+             u8g2_font_wqy16_t_gb2312);
+    drawText(display, CONTENT_X, 92, "支持局域网和设备热点两种方式",
+             u8g2_font_wqy12_t_gb2312);
+    drawText(display, CONTENT_X, 132, "按确认键选择连接方式",
+             u8g2_font_wqy12_t_gb2312);
+    return;
+  }
   int8_t state = portalStateForDraw >= 0 ? portalStateForDraw
                                         : getSelectedPortalState();
+  if (state == 0 || state == 4) {
+    drawSystemConnectionSelector(display);
+    return;
+  }
+  if (conn->isSystemPortalLAN()) {
+    drawSystemLANContent(display, state);
+    return;
+  }
+  String address = ConfigPortal::buildSystemUrl(getGatewayIp());
   drawPortalContent(display, ConfigPortal::buildWiFiQrPayload(), "系统设置",
                     address, state == 2   ? "已开启，确认关闭"
                              : state == 1 ? "正在开启..."
                              : state == 3 ? "正在关闭..."
                                           : "按确认键开启");
+}
+
+void SettingsScreen::drawSystemConnectionSelector(DisplayDriver *display) {
+  drawText(display, CONTENT_X, 52, "选择连接方式",
+           u8g2_font_wqy16_t_gb2312);
+  drawSystemChoice(display, SYSTEM_CONNECTION_LAN, 72, "局域网（默认）");
+  drawSystemChoice(display, SYSTEM_CONNECTION_AP, 120, "设备 WiFi 热点");
+  drawSystemChoice(display, SYSTEM_CONNECTION_BACK, 168, "返回");
+  const char *status = conn->isSystemPortalFailed()
+                           ? "局域网连接失败，请检查已保存的 WiFi"
+                           : "左右选择，确认开启";
+  drawText(display, CONTENT_X, 238, status, u8g2_font_wqy12_t_gb2312);
+}
+
+void SettingsScreen::drawSystemChoice(DisplayDriver *display, uint8_t choice,
+                                      int y, const char *label) {
+  bool selected = systemConnectionChoice == choice;
+  uint16_t background = selected ? GxEPD_BLACK : GxEPD_WHITE;
+  uint16_t foreground = selected ? GxEPD_WHITE : GxEPD_BLACK;
+  display->display.fillRect(CONTENT_X, y, CONTENT_W, 38, background);
+  display->display.drawRect(CONTENT_X, y, CONTENT_W, 38, GxEPD_BLACK);
+  display->u8g2Fonts.setForegroundColor(foreground);
+  display->u8g2Fonts.setBackgroundColor(background);
+  drawText(display, CONTENT_X + 12, y + 25, label,
+           u8g2_font_wqy12_t_gb2312);
+  display->u8g2Fonts.setForegroundColor(GxEPD_BLACK);
+  display->u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
+}
+
+void SettingsScreen::drawSystemLANContent(DisplayDriver *display,
+                                          int8_t state) {
+  String address = getSystemAddress();
+  if (state == 2) {
+    drawQrCode(display, address, CONTENT_X, 66, QR_SIZE);
+  } else {
+    display->display.drawRect(CONTENT_X, 66, QR_SIZE, QR_SIZE, GxEPD_BLACK);
+  }
+  drawText(display, CONTENT_X, 52, "系统设置 · 局域网",
+           u8g2_font_wqy16_t_gb2312);
+  const char *status = state == 2   ? "已开启，确认关闭"
+                       : state == 1 ? "正在连接已保存的 WiFi..."
+                                    : "正在关闭...";
+  drawText(display, CONTENT_X + 126, 92, status,
+           u8g2_font_wqy12_t_gb2312);
+  drawText(display, CONTENT_X, 208, "访问地址",
+           u8g2_font_wqy12_t_gb2312);
+  drawText(display, CONTENT_X, 230, address.c_str(), u8g2_font_helvR10_tf);
+  drawText(display, CONTENT_X, 268, "同一局域网内通过浏览器访问",
+           u8g2_font_wqy12_t_gb2312);
 }
 
 void SettingsScreen::drawRestartContent(DisplayDriver *display) {
@@ -338,6 +408,48 @@ String SettingsScreen::getGatewayIp() const {
   return address;
 }
 
+String SettingsScreen::getSystemAddress() const {
+  String ip = conn->getStationAddress();
+  if (ip.length() == 0) {
+    return "正在获取 IP";
+  }
+  return ConfigPortal::buildSystemUrl(ip);
+}
+
+bool SettingsScreen::handleSystemConnectionInput(UIKey key) {
+  bool busy = conn->isSystemPortalActive() ||
+              conn->isSystemPortalStarting() || conn->isNetworkStopping();
+  refreshMode = REFRESH_CONTENT;
+  if (busy) {
+    if (key == UI_KEY_ENTER && !conn->isNetworkStopping()) {
+      conn->enableNetwork(false);
+    }
+    return key == UI_KEY_LEFT || key == UI_KEY_RIGHT || key == UI_KEY_ENTER;
+  }
+  if (key == UI_KEY_LEFT) {
+    systemConnectionChoice =
+        (systemConnectionChoice + SYSTEM_CONNECTION_COUNT - 1) %
+        SYSTEM_CONNECTION_COUNT;
+    return true;
+  }
+  if (key == UI_KEY_RIGHT) {
+    systemConnectionChoice =
+        (systemConnectionChoice + 1) % SYSTEM_CONNECTION_COUNT;
+    return true;
+  }
+  if (key != UI_KEY_ENTER) {
+    return false;
+  }
+  if (systemConnectionChoice == SYSTEM_CONNECTION_BACK) {
+    systemConnectionView = false;
+  } else if (systemConnectionChoice == SYSTEM_CONNECTION_LAN) {
+    conn->startSystemLAN();
+  } else {
+    conn->startSystemAP();
+  }
+  return true;
+}
+
 int8_t SettingsScreen::getSelectedPortalState() const {
   if ((selectedItem == MENU_NETWORK || selectedItem == MENU_SYSTEM) &&
       conn->isNetworkStopping()) {
@@ -353,7 +465,10 @@ int8_t SettingsScreen::getSelectedPortalState() const {
     if (conn->isSystemPortalActive()) {
       return 2;
     }
-    return conn->isSystemPortalStarting() ? 1 : 0;
+    if (conn->isSystemPortalStarting()) {
+      return 1;
+    }
+    return conn->isSystemPortalFailed() ? 4 : 0;
   }
   return -1;
 }

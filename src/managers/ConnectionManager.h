@@ -25,6 +25,7 @@ public:
   bool isConnected();
   void startAP();
   void startSystemAP();
+  void startSystemLAN();
   void syncTime();
   void flushPendingRtcSync();
   void enableNetwork(bool enable);
@@ -35,9 +36,12 @@ public:
   bool isSyncComplete();
   bool isSystemPortalActive() const;
   bool isSystemPortalStarting() const;
+  bool isSystemPortalFailed() const;
+  bool isSystemPortalLAN() const;
   bool isConfigPortalActive() const;
   bool isConfigPortalStarting() const;
   String getSoftAPAddress() const;
+  String getStationAddress() const;
 
 private:
   enum NetworkAction : uint8_t {
@@ -45,11 +49,14 @@ private:
     NETWORK_ACTION_ENABLE,
     NETWORK_ACTION_DISABLE,
     NETWORK_ACTION_CONFIG_PORTAL,
-    NETWORK_ACTION_SYSTEM_PORTAL
+    NETWORK_ACTION_SYSTEM_PORTAL,
+    NETWORK_ACTION_SYSTEM_LAN
   };
 
   void activateConfigPortal();
   void activateSystemPortal();
+  void activateSystemLAN();
+  void completeSystemLANStartup();
   void beginAutoConnect();
   void configurePortal(bool manual);
   uint32_t getRtcSyncRetryInterval() const;
@@ -73,6 +80,9 @@ private:
   bool configPortalStarting = false;
   bool systemPortalStarting = false;
   bool systemPortalActive = false;
+  bool systemPortalFailed = false;
+  bool systemPortalLAN = false;
+  uint32_t systemLANStartTime = 0;
   NetworkAction pendingAction = NETWORK_ACTION_NONE;
   mutable SemaphoreHandle_t networkMutex = nullptr;
   DateTime ntpTime;
