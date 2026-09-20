@@ -23,6 +23,8 @@ public:
   String getHolidayStatusText(uint16_t fullYear) const;
   AlarmConfig getAlarm(size_t index) const;
   size_t getAlarmCount() const;
+  bool getNextAlarmInfo(const DateTime &now, DateTime &next,
+                        uint32_t &minutesUntil, uint8_t &daysUntil);
   uint32_t getNextWakeDelayMs(const DateTime &now, uint32_t nowMs);
   String getRepeatText(const AlarmConfig &alarm) const;
   bool hasEnabledAlarms() const;

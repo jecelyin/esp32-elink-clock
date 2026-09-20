@@ -4,6 +4,7 @@
 
 #include "../../drivers/RtcDriver.h"
 #include "../../managers/ConnectionManager.h"
+#include "../../managers/AlarmManager.h"
 #include "../../managers/TodoManager.h"
 #include "../../managers/WeatherManager.h"
 #include "../Screen.h"
@@ -30,9 +31,9 @@ class HomeScreen : public Screen {
 public:
   HomeScreen(RtcDriver *rtc, WeatherManager *weather, SensorDriver *sensor,
              StatusBar *statusBar, TodoManager *todoMgr,
-             ConnectionManager *conn)
+             ConnectionManager *conn, AlarmManager *alarmMgr)
       : rtc(rtc), weather(weather), sensor(sensor), statusBar(statusBar),
-        todoMgr(todoMgr), conn(conn) {}
+        todoMgr(todoMgr), conn(conn), alarmMgr(alarmMgr) {}
 
   void init() override {
     fullRefreshNeeded = true;
@@ -90,9 +91,11 @@ public:
       return;
     }
 
-    if (now.minute != lastMinute) {
+    String nextAlarmText = buildNextAlarmText(now);
+    if (now.minute != lastMinute || nextAlarmText != lastNextAlarmText) {
       renderTimePartial(displayDrv);
       lastMinute = now.minute;
+      lastNextAlarmText = nextAlarmText;
     }
 
     refreshWeatherIfNeeded(displayDrv);
@@ -135,6 +138,7 @@ private:
   StatusBar *statusBar;
   TodoManager *todoMgr;
   ConnectionManager *conn;
+  AlarmManager *alarmMgr;
 
   // State for change detection
   bool fullRefreshNeeded = true;
@@ -153,6 +157,7 @@ private:
   int lastTaskCount = -1;
   bool lastWifiState = false;
   int lastStatusBarMinute = -1;
+  String lastNextAlarmText = "";
 
   bool refreshHourlyIfNeeded(DisplayDriver *displayDrv, const DateTime &now) {
     // 关键逻辑：仅在首页首次检测到整点时执行一次全刷。
@@ -203,6 +208,7 @@ private:
     lastTaskCount = todoMgr->getVisibleTodos(now).size();
     lastWifiState = conn->isConnected();
     lastStatusBarMinute = now.minute;
+    lastNextAlarmText = buildNextAlarmText(now);
   }
 
   bool hasWeatherChanged() const {
@@ -255,11 +261,11 @@ private:
     auto &display = displayDrv->display;
     // Time Area: Left side, top part.
     // Static Lines: y=199/200, x=280.
-    // Safe Rect: (0, 50, 280, 145) -> y[50, 194], x[0, 279]
-    display.setPartialWindow(0, 50, 280, 145);
+    // Safe Rect: (0, 25, 280, 170) -> y[25, 194], x[0, 279]
+    display.setPartialWindow(0, 25, 280, 170);
     display.firstPage();
     do {
-      display.fillRect(0, 50, 280, 145, GxEPD_WHITE);
+      display.fillRect(0, 25, 280, 170, GxEPD_WHITE);
       drawTimeSection(displayDrv);
     } while (display.nextPage());
     displayDrv->powerOff();
@@ -355,6 +361,14 @@ private:
     u8g2.setForegroundColor(GxEPD_BLACK);
     u8g2.setBackgroundColor(GxEPD_WHITE);
 
+    String nextAlarmText = buildNextAlarmText(now);
+    if (!nextAlarmText.isEmpty()) {
+      u8g2.setFont(u8g2_font_wqy12_t_gb2312);
+      int alarmTextWidth = u8g2.getUTF8Width(nextAlarmText.c_str());
+      u8g2.setCursor((280 - alarmTextWidth) / 2, 43);
+      u8g2.print(nextAlarmText);
+    }
+
     // Time
     u8g2.setFont(u8g2_font_logisoso92_tn);
     char timeStr[6];
@@ -382,6 +396,29 @@ private:
     u8g2.print(weekdayStr);
     u8g2.setForegroundColor(GxEPD_BLACK);
     u8g2.setBackgroundColor(GxEPD_WHITE);
+  }
+
+  String buildNextAlarmText(const DateTime &now) const {
+    DateTime next;
+    uint32_t minutesUntil = 0;
+    uint8_t daysUntil = 0;
+    if (alarmMgr == nullptr ||
+        !alarmMgr->getNextAlarmInfo(now, next, minutesUntil, daysUntil)) {
+      return "";
+    }
+
+    String text = "下次闹钟 ";
+    if (daysUntil == 0) {
+      text += minutesUntil < 60 ? String(minutesUntil) + "分钟后"
+                                : String(minutesUntil / 60) + "小时后";
+      return text;
+    }
+
+    text += daysUntil == 1 ? "明天 " : String(daysUntil) + "天后 ";
+    char timeText[6];
+    sprintf(timeText, "%02d:%02d", next.hour, next.minute);
+    text += timeText;
+    return text;
   }
 
   void drawSensorSection(DisplayDriver *displayDrv) {

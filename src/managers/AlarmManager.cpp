@@ -152,13 +152,11 @@ AlarmConfig AlarmManager::getAlarm(size_t index) const {
 
 size_t AlarmManager::getAlarmCount() const { return alarms.size(); }
 
-uint32_t AlarmManager::getNextWakeDelayMs(const DateTime &now, uint32_t nowMs) {
-  if (!hasEnabledAlarms()) {
-    return UINT32_MAX;
-  }
-
+bool AlarmManager::getNextAlarmInfo(const DateTime &now, DateTime &next,
+                                    uint32_t &minutesUntil,
+                                    uint8_t &daysUntil) {
   time_t nowTime = toTimeT(now);
-  time_t bestWakeTime = 0;
+  time_t bestAlarmTime = 0;
   for (size_t i = 0; i < alarms.size(); ++i) {
     if (!alarms[i].enabled) {
       continue;
@@ -167,16 +165,35 @@ uint32_t AlarmManager::getNextWakeDelayMs(const DateTime &now, uint32_t nowMs) {
     if (candidateTime == 0 || candidateTime <= nowTime) {
       continue;
     }
-    if (bestWakeTime == 0 || candidateTime < bestWakeTime) {
-      bestWakeTime = candidateTime;
+    if (bestAlarmTime == 0 || candidateTime < bestAlarmTime) {
+      bestAlarmTime = candidateTime;
     }
   }
 
-  if (bestWakeTime == 0) {
+  if (bestAlarmTime == 0) {
+    return false;
+  }
+
+  // 关键逻辑：倒计时分钟向上取整，避免在距离响铃不足 60 秒时显示“0分钟后”。
+  uint32_t delaySeconds = static_cast<uint32_t>(bestAlarmTime - nowTime);
+  minutesUntil = (delaySeconds + 59U) / 60U;
+  next = toDateTime(bestAlarmTime);
+  time_t todayStart = nowTime - now.hour * 3600L - now.minute * 60L - now.second;
+  time_t alarmDayStart =
+      bestAlarmTime - next.hour * 3600L - next.minute * 60L - next.second;
+  daysUntil = static_cast<uint8_t>((alarmDayStart - todayStart) / 86400L);
+  return true;
+}
+
+uint32_t AlarmManager::getNextWakeDelayMs(const DateTime &now, uint32_t nowMs) {
+  DateTime next;
+  uint32_t minutesUntil = 0;
+  uint8_t daysUntil = 0;
+  if (!getNextAlarmInfo(now, next, minutesUntil, daysUntil)) {
     return UINT32_MAX;
   }
 
-  uint32_t delaySeconds = static_cast<uint32_t>(bestWakeTime - nowTime);
+  time_t delaySeconds = toTimeT(next) - toTimeT(now);
   return (delaySeconds - 1) * 1000UL +
          WakeTiming::getMsUntilNextSecondBoundary(nowMs);
 }
