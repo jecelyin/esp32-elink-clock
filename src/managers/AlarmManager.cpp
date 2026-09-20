@@ -298,9 +298,12 @@ bool AlarmManager::saveAlarmsFromJSON(const String &json) {
     int hour = item["h"] | -1;
     int minute = item["m"] | -1;
     int repeat = item["r"] | -1;
+    int weekMask = item["w"] | -1;
     String ringtone = item["s"] | AlarmRingtones::DEFAULT_VALUE;
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
         repeat < ALARM_REPEAT_DAILY || repeat > ALARM_REPEAT_WORKDAY ||
+        weekMask < 0 || weekMask > 0x7F ||
+        (repeat == ALARM_REPEAT_WEEKLY && weekMask == 0) ||
         ringtone.length() > 96 || ringtone.indexOf("..") >= 0) {
       return false;
     }
@@ -311,7 +314,7 @@ bool AlarmManager::saveAlarmsFromJSON(const String &json) {
     alarm.minute = minute;
     alarm.enabled = item["e"] | true;
     alarm.repeatType = static_cast<AlarmRepeatType>(repeat);
-    alarm.weekMask = item["w"] | 0x7F;
+    alarm.weekMask = static_cast<uint8_t>(weekMask);
     alarm.ringtone = ringtone;
     updated.push_back(sanitizeAlarm(alarm));
   }

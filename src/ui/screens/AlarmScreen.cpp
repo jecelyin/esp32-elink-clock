@@ -67,12 +67,21 @@ void AlarmScreen::adjustCurrentValue(int delta) {
 }
 
 void AlarmScreen::applyRepeatSelection() {
+  AlarmRepeatType previousRepeatType = draftAlarm.repeatType;
   if (editFocus == FOCUS_REPEAT_DAILY) {
     draftAlarm.repeatType = ALARM_REPEAT_DAILY;
   } else if (editFocus == FOCUS_REPEAT_WEEKLY) {
     draftAlarm.repeatType = ALARM_REPEAT_WEEKLY;
   } else {
     draftAlarm.repeatType = ALARM_REPEAT_WORKDAY;
+  }
+  // 关键逻辑：每天/工作日的 weekMask 表示整组规则，不能直接沿用为
+  // “指定星期”的初始勾选，否则用户再按目标日期会把它们反向取消。
+  if (draftAlarm.repeatType == ALARM_REPEAT_WEEKLY &&
+      previousRepeatType != ALARM_REPEAT_WEEKLY) {
+    draftAlarm.weekMask = 0;
+    helperText = "请选择至少一个星期";
+    return;
   }
   helperText = draftAlarm.repeatType == ALARM_REPEAT_WORKDAY
                    ? "法定休息日会跳过，补班日会响铃"
