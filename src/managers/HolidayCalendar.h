@@ -3,6 +3,7 @@
 #include "../drivers/RtcDriver.h"
 #include "ConfigManager.h"
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <vector>
@@ -71,6 +72,9 @@ private:
   bool loadYearFromFile(uint16_t fullYear);
   bool parseCacheDocument(const String &json, uint16_t fullYear,
                           HolidayYearCache &cache) const;
+  bool appendDateOverrides(JsonVariantConst dates, const String &name,
+                           bool isOffDay, HolidayYearCache &cache) const;
+  bool parseDateKey(JsonVariantConst value, uint32_t &dateKey) const;
   bool readTextFile(const String &path, String &content) const;
   bool saveTextFile(const String &path, const String &content) const;
   void syncYearIfNeeded(uint16_t fullYear);

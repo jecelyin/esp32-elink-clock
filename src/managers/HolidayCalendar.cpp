@@ -20,12 +20,12 @@ void HolidayCalendar::begin(ConfigManager *config) { configMgr = config; }
 
 HolidayDayType HolidayCalendar::getDayType(const DateTime &date) {
   HolidayOverride holiday;
-  if (tryResolveHoliday(date, holiday) && holiday.isOffDay) {
-    return HOLIDAY_DAY_OFFDAY;
+  if (tryResolveHoliday(date, holiday)) {
+    // 法定日历中的放假和调休记录优先于星期规则，确保周末调休也能响铃。
+    return holiday.isOffDay ? HOLIDAY_DAY_OFFDAY : HOLIDAY_DAY_MAKEUP_WORKDAY;
   }
 
-  // 关键逻辑：新节假日 API 的 off=false 表示“该节日不放假”，
-  // 不能等同于调休上班；工作/休息仍回退到周末基础规则。
+  // 没有法定安排记录的普通日期，继续使用周末基础规则。
   return isWeekend(date) ? HOLIDAY_DAY_WEEKEND : HOLIDAY_DAY_WORKDAY;
 }
 
@@ -37,7 +37,7 @@ bool HolidayCalendar::isWorkday(const DateTime &date) {
 String HolidayCalendar::getHolidayName(const DateTime &date) {
   HolidayOverride holiday;
   if (tryResolveHoliday(date, holiday)) {
-    return holiday.name;
+    return holiday.isOffDay ? holiday.name : "";
   }
   return "";
 }
@@ -49,7 +49,8 @@ HolidayCalendar::getNextHolidayCountdown(const DateTime &date,
   DateTime cursor = date;
   for (uint16_t offset = 0; offset <= maxDays; ++offset) {
     HolidayOverride holiday;
-    if (tryResolveHoliday(cursor, holiday) && holiday.name.length() > 0) {
+    if (tryResolveHoliday(cursor, holiday) && holiday.isOffDay &&
+        holiday.name.length() > 0) {
       countdown.name = holiday.name;
       countdown.days = offset;
       countdown.valid = true;
@@ -171,12 +172,12 @@ uint8_t HolidayCalendar::getMonthDays(uint16_t fullYear, uint8_t month) const {
 }
 
 String HolidayCalendar::getRemoteUrl(uint16_t fullYear) const {
-  return "https://apicx.asia/api/holiday?action=year&year=" +
+  return "https://v1.apizero.cn/api/holiday?year=" +
          String(fullYear);
 }
 
 String HolidayCalendar::getStoragePath(uint16_t fullYear) const {
-  return "/holiday_apicx_" + String(fullYear) + ".json";
+  return "/holiday_apizero_" + String(fullYear) + ".json";
 }
 
 bool HolidayCalendar::hasLoadedCache(const HolidayYearCache &cache) const {
@@ -215,36 +216,77 @@ bool HolidayCalendar::parseCacheDocument(const String &json, uint16_t fullYear,
     return false;
   }
 
-  if (doc["code"].as<int>() != 200) {
-    Serial.printf("Holiday api code invalid: %d\n", doc["code"].as<int>());
+  if (!doc["code"].is<int>() || doc["code"].as<int>() != 0) {
+    Serial.printf("Holiday API rejected year=%u code=%d message=%s\n",
+                  fullYear, doc["code"].as<int>(), doc["msg"] | "missing code");
     return false;
   }
 
   JsonObject data = doc["data"].as<JsonObject>();
-  if (data["query_year"].as<uint16_t>() != fullYear) {
-    Serial.printf("Holiday year mismatch: %u\n", fullYear);
+  if (data["year"].as<uint16_t>() != fullYear ||
+      !data["list"].is<JsonArray>()) {
+    Serial.printf("Holiday response year/list invalid: expected=%u actual=%u\n",
+                  fullYear, data["year"].as<uint16_t>());
     return false;
   }
 
   cache = HolidayYearCache();
   cache.year = fullYear;
   cache.loaded = true;
-  JsonArray days = data["holidays"].as<JsonArray>();
-  for (JsonObject item : days) {
-    String date = item["date"].as<String>();
-    if (date.length() < 10) {
-      continue;
+  for (JsonObject item : data["list"].as<JsonArray>()) {
+    String name = item["name"].as<String>();
+    if (name.length() == 0 ||
+        !appendDateOverrides(item["holiday"], name, true, cache) ||
+        !appendDateOverrides(item["workday"], name, false, cache)) {
+      Serial.printf("Holiday date arrays invalid: year=%u name=%s\n",
+                    fullYear, name.c_str());
+      return false;
     }
-    uint16_t itemYear = date.substring(0, 4).toInt();
-    uint8_t month = date.substring(5, 7).toInt();
-    uint8_t day = date.substring(8, 10).toInt();
-    HolidayOverride entry;
-    entry.dateKey = getDateKey(itemYear, month, day);
-    entry.isOffDay = item["off"].as<bool>();
-    entry.name = item["name"].as<String>();
-    cache.overrides.push_back(entry);
   }
   return !cache.overrides.empty();
+}
+
+bool HolidayCalendar::appendDateOverrides(JsonVariantConst dates,
+                                         const String &name, bool isOffDay,
+                                         HolidayYearCache &cache) const {
+  if (!dates.is<JsonArrayConst>()) {
+    return false;
+  }
+  for (JsonVariantConst value : dates.as<JsonArrayConst>()) {
+    HolidayOverride entry;
+    if (!parseDateKey(value, entry.dateKey)) {
+      return false;
+    }
+    entry.isOffDay = isOffDay;
+    entry.name = name;
+    cache.overrides.push_back(entry);
+  }
+  return true;
+}
+
+bool HolidayCalendar::parseDateKey(JsonVariantConst value,
+                                   uint32_t &dateKey) const {
+  if (!value.is<const char *>()) {
+    return false;
+  }
+  String date = value.as<String>();
+  if (date.length() != 10 || date[4] != '-' || date[7] != '-') {
+    return false;
+  }
+  for (uint8_t i = 0; i < 10; ++i) {
+    if (i != 4 && i != 7 && (date[i] < '0' || date[i] > '9')) {
+      return false;
+    }
+  }
+  uint16_t year = date.substring(0, 4).toInt();
+  uint8_t month = date.substring(5, 7).toInt();
+  uint8_t day = date.substring(8, 10).toInt();
+  if (year < 2000 || month < 1 || month > 12 || day < 1 ||
+      day > getMonthDays(year, month)) {
+    return false;
+  }
+  dateKey = getDateKey(year, month, day);
+  return true;
 }
 
 bool HolidayCalendar::readTextFile(const String &path, String &content) const {
@@ -322,13 +364,11 @@ bool HolidayCalendar::tryFetchYear(uint16_t fullYear) {
 }
 
 bool HolidayCalendar::tryFetchYearBody(uint16_t fullYear, String &body) const {
-  String apiToken =
-      configMgr == nullptr ? "" : configMgr->getHolidayApiToken();
-  if (apiToken.length() == 0) {
-    Serial.println("Holiday request skipped: API token is empty");
-    return false;
-  }
-
+  // 仅发送新服务格式的 Key，避免升级后把旧服务 Token 发给新提供方。
+  String apiKey = configMgr == nullptr ? "" : configMgr->getHolidayApiToken();
+  bool hasApiKey = apiKey.startsWith("sk_live_") ||
+                   apiKey.startsWith("sk_test_") ||
+                   apiKey.startsWith("sk_stag_");
   WiFiClientSecure client;
   client.setInsecure();
 
@@ -341,7 +381,9 @@ bool HolidayCalendar::tryFetchYearBody(uint16_t fullYear, String &body) const {
   http.setReuse(false);
   http.setTimeout(8000);
   http.addHeader("Accept-Encoding", "identity");
-  http.addHeader("Authorization", apiToken);
+  if (hasApiKey) {
+    http.addHeader("Authorization", "Bearer " + apiKey);
+  }
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
     Serial.printf("Holiday request failed: %d\n", httpCode);
@@ -369,8 +411,7 @@ bool HolidayCalendar::tryResolveHoliday(const DateTime &date,
     return false;
   }
 
-  // 关键逻辑：该 API 的全年列表可能包含下一年 1 月的农历节日，
-  // 因此查询 1 月日期时要回看上一年的 API 缓存，避免跨年节日丢失。
+  // 假期安排可能跨年，查询 1 月时也检查上一年缓存中的跨年日期。
   ensureYearLoaded(fullYear - 1);
   HolidayYearCache previousCache = getCacheSnapshot(fullYear - 1);
   return hasLoadedCache(previousCache) &&

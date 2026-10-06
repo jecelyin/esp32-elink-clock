@@ -375,6 +375,9 @@ void ConnectionManager::activateSystemLAN() {
   lastReconnectAttempt = 0;
   lastNetworkPowerOnTime = millis();
   systemLANStartTime = millis();
+  // 关键逻辑：WiFiManager 会留下 persistent(false)，关闭驱动后再次
+  // 初始化将使用 RAM 存储。必须在初始化前恢复 Flash 存储，读取已保存凭据。
+  WiFi.persistent(true);
   if (!WiFi.mode(WIFI_STA)) {
     powerOffNetwork();
     systemPortalFailed = true;
@@ -540,6 +543,9 @@ void ConnectionManager::powerOnNetwork() {
   firstConnectAttempted = false;
   lastReconnectAttempt = 0;
   lastNetworkPowerOnTime = millis();
+  // 关键逻辑：省电关机后驱动需要重新初始化；WiFiManager 留下的
+  // persistent(false) 会使初始化选择 RAM，导致自动连接看不到 Flash 凭据。
+  WiFi.persistent(true);
   WiFi.mode(WIFI_STA);
   // 关键逻辑：关联和 WPA 四次握手期间必须保持射频持续工作。
   // 提前启用 MIN_MODEM 省电可能造成握手报文超时（Reason 15）；本轮联网
