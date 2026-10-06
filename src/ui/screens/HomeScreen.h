@@ -10,6 +10,7 @@
 #include "../Screen.h"
 #include "../UIManager.h"
 #include "../components/StatusBar.h"
+#include "../components/HomeBottomSection.h"
 
 #include "../../drivers/SensorDriver.h"
 #include "../../utils/WakeTiming.h"
@@ -102,11 +103,13 @@ public:
 
     std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
     bool tasksNeedUpdate =
-        (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount);
+        (now.minute != lastTasksMinute) || (tasks.size() != lastTaskCount) ||
+        (tasks.empty() && HomeBottomSection::snapshot(weather->data) != lastBottomWeather);
     if (tasksNeedUpdate) {
       renderTasksPartial(displayDrv);
       lastTaskCount = tasks.size();
       lastTasksMinute = now.minute;
+      lastBottomWeather = HomeBottomSection::snapshot(weather->data);
     }
 
     bool wifiState = conn->isConnected();
@@ -155,6 +158,7 @@ private:
   String lastForecastWeatherStr = "";
   String lastForecastIcon = "";
   int lastTaskCount = -1;
+  String lastBottomWeather = "";
   bool lastWifiState = false;
   int lastStatusBarMinute = -1;
   String lastNextAlarmText = "";
@@ -206,6 +210,7 @@ private:
     updateWeatherSnapshot();
 
     lastTaskCount = todoMgr->getVisibleTodos(now).size();
+    lastBottomWeather = HomeBottomSection::snapshot(weather->data);
     lastWifiState = conn->isConnected();
     lastStatusBarMinute = now.minute;
     lastNextAlarmText = buildNextAlarmText(now);
@@ -484,51 +489,8 @@ private:
   }
 
   void drawTasksSection(DisplayDriver *displayDrv) {
-    auto &u8g2 = displayDrv->u8g2Fonts;
-    auto &display = displayDrv->display;
     DateTime now = rtc->getTime();
-    std::vector<TodoItem> tasks = todoMgr->getVisibleTodos(now);
-
-    u8g2.setFont(u8g2_font_helvB08_tr);
-    u8g2.setCursor(10, 215);
-    u8g2.print("UPCOMING TASKS");
-
-    display.fillRect(370, 205, 20, 14, GxEPD_BLACK);
-    u8g2.setForegroundColor(GxEPD_WHITE);
-    u8g2.setBackgroundColor(GxEPD_BLACK);
-    u8g2.setCursor(377, 216);
-    u8g2.print(tasks.size());
-    u8g2.setForegroundColor(GxEPD_BLACK);
-    u8g2.setBackgroundColor(GxEPD_WHITE);
-
-    int startY = 221;
-    int rowHeight = 26;
-    u8g2.setFont(u8g2_font_wqy12_t_gb2312);
-
-    for (int i = 0; i < 3 && i < tasks.size(); i++) {
-      int itemY = startY + (i * rowHeight);
-
-      if (tasks[i].highPriority) {
-        display.fillRect(5, itemY + 4, 4, 18, GxEPD_BLACK);
-      } else {
-        display.drawRect(5, itemY + 4, 4, 18, GxEPD_BLACK);
-      }
-
-      u8g2.setCursor(18, itemY + 18);
-      u8g2.print(tasks[i].time);
-
-      display.drawLine(55, itemY + 4, 55, itemY + 22, GxEPD_BLACK);
-
-      u8g2.setCursor(65, itemY + 18);
-      u8g2.print(tasks[i].content);
-
-      int cdWidth = u8g2.getUTF8Width(tasks[i].countdown.c_str());
-      u8g2.setCursor(390 - cdWidth, itemY + 18);
-      u8g2.print(tasks[i].countdown);
-
-      if (i < 2)
-        display.drawLine(0, itemY + rowHeight, 400, itemY + rowHeight,
-                         GxEPD_BLACK);
-    }
+    HomeBottomSection::draw(displayDrv, now, todoMgr->getVisibleTodos(now),
+                            weather->data);
   }
 };

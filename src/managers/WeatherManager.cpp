@@ -195,6 +195,7 @@ bool WeatherManager::fetchHourlyWeather() {
         JsonObject item = hourlyItems[i];
         HourlyData hData;
         String fxTime = item["fxTime"].as<String>();
+        hData.dateTime = fxTime;
         // Extract HH:00 from ISO time
         int tIndex = fxTime.indexOf('T');
         if (tIndex != -1) {

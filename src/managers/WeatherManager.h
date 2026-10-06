@@ -6,6 +6,7 @@
 #include <vector>
 
 struct HourlyData {
+  String dateTime; // 保留完整预报时间，供首页过滤已经过去的小时。
   String time;
   int temp;
   int icon_code;
