@@ -8,6 +8,7 @@ constexpr i2s_port_t ALARM_I2S_PORT = I2S_NUM_0;
 constexpr uint16_t PCM_FORMAT = 1;
 constexpr uint16_t REQUIRED_CHANNELS = 1;
 constexpr uint16_t REQUIRED_BITS_PER_SAMPLE = 16;
+constexpr uint32_t I2S_WRITE_MARGIN_MS = 500UL;
 
 uint16_t readLe16(const uint8_t *bytes) {
   return static_cast<uint16_t>(bytes[0]) |
@@ -96,31 +97,9 @@ void AlarmPcmPlayer::loop() {
   }
 
   size_t samples = bytesRead / sizeof(int16_t);
-  for (size_t i = 0; i < samples; ++i) {
-    // ES8311 has one DAC path, while ESP32 I2S uses a conventional stereo
-    // frame. Duplicate mono into both slots so either codec slot selection
-    // receives the same alarm sample.
-    stereoBuffer[i * 2] = monoBuffer[i];
-    stereoBuffer[i * 2 + 1] = monoBuffer[i];
-  }
-
-  size_t requested = samples * 2 * sizeof(int16_t);
-  size_t written = 0;
-  esp_err_t error = i2s_write(ALARM_I2S_PORT, stereoBuffer, requested,
-                              &written, portMAX_DELAY);
-  if (error != ESP_OK || written != requested) {
-    Serial.printf("[Alarm][PCM] I2S write failed error=%d requested=%u "
-                  "written=%u\n",
-                  static_cast<int>(error), static_cast<unsigned>(requested),
-                  static_cast<unsigned>(written));
+  if (!writeSamples(samples)) {
     stop();
     return;
-  }
-
-  if (!firstWriteLogged) {
-    firstWriteLogged = true;
-    Serial.printf("[Alarm][PCM] first I2S write=%u bytes\n",
-                  static_cast<unsigned>(written));
   }
 
   dataRemaining -= bytesRead;
@@ -131,6 +110,41 @@ void AlarmPcmPlayer::loop() {
                   static_cast<unsigned long>(loopCount),
                   static_cast<unsigned long>(sourceBytesPlayed));
   }
+}
+
+bool AlarmPcmPlayer::writeSamples(size_t samples) {
+  for (size_t i = 0; i < samples; ++i) {
+    // ES8311 has one DAC path, while ESP32 I2S uses a conventional stereo
+    // frame. Duplicate mono into both slots so either codec slot selection
+    // receives the same alarm sample.
+    stereoBuffer[i * 2] = monoBuffer[i];
+    stereoBuffer[i * 2 + 1] = monoBuffer[i];
+  }
+
+  size_t requested = samples * 2 * sizeof(int16_t);
+  size_t written = 0;
+  // 关键逻辑：按采样率保留完整一块音频的播放时间，再留 500ms 余量，
+  // 避免低采样率文件被固定超时误停。DMA 卡住后沿用停止/重试逻辑，
+  // 确保主循环仍能处理确认键，不再无限等待音频硬件。
+  uint32_t timeoutMs = static_cast<uint32_t>(
+      (samples * 1000ULL + sampleRate - 1) / sampleRate) + I2S_WRITE_MARGIN_MS;
+  esp_err_t error = i2s_write(ALARM_I2S_PORT, stereoBuffer, requested,
+                              &written, pdMS_TO_TICKS(timeoutMs));
+  if (error != ESP_OK || written != requested) {
+    Serial.printf("[Alarm][PCM] I2S write failed error=%d requested=%u "
+                  "written=%u\n",
+                  static_cast<int>(error), static_cast<unsigned>(requested),
+                  static_cast<unsigned>(written));
+    return false;
+  }
+
+  if (!firstWriteLogged) {
+    firstWriteLogged = true;
+    Serial.printf("[Alarm][PCM] first I2S write=%u bytes\n",
+                  static_cast<unsigned>(written));
+  }
+
+  return true;
 }
 
 void AlarmPcmPlayer::stop() {

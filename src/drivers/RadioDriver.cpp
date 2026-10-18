@@ -1,5 +1,6 @@
 #include "RadioDriver.h"
 #include "../utils/I2CBus.h"
+#include "../utils/RuntimeHealth.h"
 
 namespace {
 constexpr uint32_t RADIO_I2C_LOCK_TIMEOUT_MS = 300UL;
@@ -207,6 +208,8 @@ uint8_t RadioDriver::scanStations(uint16_t *stations, uint8_t maxStations) {
     }
 
     lastFrequency = normalizeFrequency(freq);
+    // 单次 seek 已完成且频点在推进，长时间全频段扫描属于正常进度。
+    RuntimeHealth::progress();
     lastSeekFreq = freq;
     if (!isSeekStationUsable(freq, info, lastSavedFreq)) {
       continue;

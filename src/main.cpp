@@ -17,7 +17,8 @@
 #include "ui/UIManager.h"
 #include "utils/HardwareCheck.h"
 #include "utils/I2CBus.h"
-#include "utils/SleepLogger.h"
+#include "utils/IdleSleep.h"
+#include "utils/RuntimeHealth.h"
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <SPIFFS.h>
@@ -488,17 +489,13 @@ void idleOrLightSleep() {
   }
   uint64_t sleepDurationUs = static_cast<uint64_t>(sleepDelayMs) * 1000ULL;
 
-  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-  esp_sleep_enable_timer_wakeup(sleepDurationUs);
-  gpio_wakeup_enable((gpio_num_t)KEY_LEFT, GPIO_INTR_LOW_LEVEL);
-  gpio_wakeup_enable((gpio_num_t)KEY_RIGHT, GPIO_INTR_LOW_LEVEL);
-  gpio_wakeup_enable((gpio_num_t)KEY_ENTER, GPIO_INTR_LOW_LEVEL);
-  esp_sleep_enable_gpio_wakeup();
-  SleepLogger::logEnterLightSleep();
-  esp_light_sleep_start();
-
+  bool slept = IdleSleep::enter(sleepDurationUs);
+  RuntimeHealth::mark(RuntimeHealth::Stage::Idle, uiManager.getCurrentState());
+  if (!slept) {
+    delay(ACTIVE_LOOP_DELAY_MS);
+    return;
+  }
   esp_sleep_wakeup_cause_t wakeupCause = esp_sleep_get_wakeup_cause();
-  SleepLogger::logWakeFromLightSleep(wakeupCause);
 
   if (wakeupCause == ESP_SLEEP_WAKEUP_GPIO) {
     // 关键逻辑：被按键从轻睡眠唤醒后，需要立即把“当前仍按下”的状态
@@ -509,8 +506,6 @@ void idleOrLightSleep() {
   }
 }
 } // namespace
-
-#include <esp_task_wdt.h>
 
 bool shouldUpdateWeatherWhileOnline(bool systemPortalActive);
 
@@ -691,6 +686,7 @@ void serviceAlarmPlayback() {
 
 void setup() {
   startSerialDebug();
+  RuntimeHealth::reportBoot();
   configurePowerSaving();
   configureBootPins();
   initBootDrivers();
@@ -698,6 +694,7 @@ void setup() {
   initRtcSensorAndStorage();
   initOptionalDrivers();
   initManagers();
+  RuntimeHealth::begin();
 
   // Create background network task on Core 0 (shared with WiFi protocol stack)
   // This physically isolates network logic from the main UI/Hardware thread on
@@ -707,28 +704,30 @@ void setup() {
 }
 
 void loop() {
-  uint32_t t_start = millis();
-
+  using RuntimeHealth::Stage;
+  RuntimeHealth::mark(Stage::ScheduledTasks, uiManager.getCurrentState());
   runScheduledTasks();
+  RuntimeHealth::mark(Stage::RtcSync, uiManager.getCurrentState());
   connectionManager.flushPendingRtcSync();
 
-  t_start = millis();
+  RuntimeHealth::mark(Stage::UiUpdate, uiManager.getCurrentState());
   uiManager.update();
-  // Serial.printf("UI update: %ums\n", millis() - t_start);
 
-  t_start = millis();
+  RuntimeHealth::mark(Stage::Audio, uiManager.getCurrentState());
   audioDriver.loop(); // For audio processing
   alarmPcmPlayer.loop();
-  // Serial.printf("Audio loop: %ums\n", millis() - t_start);
 
+  RuntimeHealth::mark(Stage::Alarm, uiManager.getCurrentState());
   serviceAlarmPlayback();
 
+  RuntimeHealth::mark(Stage::Input, uiManager.getCurrentState());
   handleInputEvents();
-  // Serial.printf("Input loop: %ums\n", millis() - t_start);
 
+  RuntimeHealth::mark(Stage::Power, uiManager.getCurrentState());
   ScreenState currentState = uiManager.getCurrentState();
   manageAudioPower(currentState);
   manageRadioPower(currentState);
 
+  RuntimeHealth::mark(Stage::Idle, currentState);
   idleOrLightSleep();
 }

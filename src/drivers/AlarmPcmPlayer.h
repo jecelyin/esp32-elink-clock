@@ -15,6 +15,7 @@ private:
   bool installI2S();
   bool restartData();
   bool readExact(uint8_t *buffer, size_t length);
+  bool writeSamples(size_t samples);
 
   File file;
   uint32_t sampleRate = 0;

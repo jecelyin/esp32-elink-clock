@@ -528,6 +528,7 @@ void ConnectionManager::powerOffNetwork() {
   lastReconnectAttempt = 0;
   networkEnabled = false;
   networkStopping = false;
+  ntpRequestStarted = false;
   configPortalStarting = false;
   systemPortalStarting = false;
   systemPortalActive = false;
@@ -541,6 +542,7 @@ void ConnectionManager::powerOnNetwork() {
   networkEnabled = true;
   currentSessionSynced = false;
   firstConnectAttempted = false;
+  ntpRequestStarted = false;
   lastReconnectAttempt = 0;
   lastNetworkPowerOnTime = millis();
   // 关键逻辑：省电关机后驱动需要重新初始化；WiFiManager 留下的
@@ -582,28 +584,38 @@ void ConnectionManager::stopPortalIfActive() {
 }
 
 void ConnectionManager::syncTime() {
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
-    lockNetwork();
-    ntpTime.second = timeinfo.tm_sec;
-    ntpTime.minute = timeinfo.tm_min;
-    ntpTime.hour = timeinfo.tm_hour;
-    ntpTime.day = timeinfo.tm_mday;
-    ntpTime.month = timeinfo.tm_mon + 1;
-    ntpTime.year = timeinfo.tm_year % 100;
-    ntpTime.week = timeinfo.tm_wday;
-
-    // 关键逻辑：NTP 已经给出了可信时间，先刷新软件时钟供 UI 使用；
-    // RX8010 如果因 I2C 超时暂时写失败，后台 pending 仍会继续补写硬件 RTC。
-    if (rtcDriver != nullptr) {
-      rtcDriver->setSoftwareTime(ntpTime);
-    }
-    pendingSync = true;
-    currentSessionSynced = true;
-    lastRtcSyncAttempt = 0;
-    lastSyncTime = millis();
-    unlockNetwork();
-    Serial.println("Time fetched from NTP, pending RTC update");
+  // 关键逻辑：SNTP 在后台同步，持网络锁时不能等待 getLocalTime 默认的
+  // 5 秒超时，否则另一核的 UI/按键也会被锁住。每轮只检查结果，未就绪
+  // 时交还网络任务，下轮重试；同一次请求只初始化一次 SNTP。
+  if (!ntpRequestStarted) {
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    ntpRequestStarted = true;
   }
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 0)) {
+    applyNtpTime(timeinfo);
+  }
+}
+
+void ConnectionManager::applyNtpTime(const struct tm &timeinfo) {
+  NetworkGuard guard(this);
+  ntpTime.second = timeinfo.tm_sec;
+  ntpTime.minute = timeinfo.tm_min;
+  ntpTime.hour = timeinfo.tm_hour;
+  ntpTime.day = timeinfo.tm_mday;
+  ntpTime.month = timeinfo.tm_mon + 1;
+  ntpTime.year = timeinfo.tm_year % 100;
+  ntpTime.week = timeinfo.tm_wday;
+
+  // 关键逻辑：先刷新软件时钟供 UI 使用；RTC 若因 I2C 超时写失败，
+  // pending 状态仍由原来的指数退避流程重试，不能因轮询改造丢失对时。
+  if (rtcDriver != nullptr) {
+    rtcDriver->setSoftwareTime(ntpTime);
+  }
+  pendingSync = true;
+  currentSessionSynced = true;
+  lastRtcSyncAttempt = 0;
+  lastSyncTime = millis();
+  ntpRequestStarted = false;
+  Serial.println("Time fetched from NTP, pending RTC update");
 }

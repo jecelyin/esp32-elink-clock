@@ -1,6 +1,7 @@
 #include "WebManager.h"
 #include "ConfigPortal.h"
 #include "SystemWebPage.h"
+#include "../utils/HealthFile.h"
 #include <ArduinoJson.h>
 
 WebManager::WebManager(TodoManager *todo, AlarmManager *alarm,
@@ -257,7 +258,8 @@ void WebManager::handleDownloadFile() {
     sendResult(404, false, "File not found");
     return;
   }
-  server.streamFile(file, getContentType(path));
+  HealthFile download(file);
+  server.streamFile(download, getContentType(path));
   file.close();
   sd->end();
 }
@@ -357,6 +359,9 @@ void WebManager::handleFileUpload() {
     }
     uploadFailed =
         uploadFile.write(upload.buf, upload.currentSize) != upload.currentSize;
+    if (!uploadFailed && upload.currentSize > 0) {
+      RuntimeHealth::progress();
+    }
   } else if (upload.status == UPLOAD_FILE_END ||
              upload.status == UPLOAD_FILE_ABORTED) {
     if (upload.status == UPLOAD_FILE_ABORTED)

@@ -59,6 +59,7 @@ private:
   void completeSystemLANStartup();
   void beginAutoConnect();
   void configurePortal(bool manual);
+  void applyNtpTime(const struct tm &timeinfo);
   uint32_t getRtcSyncRetryInterval() const;
   void powerOffNetwork();
   void powerOnNetwork();
@@ -76,6 +77,7 @@ private:
   bool firstConnectAttempted = false;
   bool pendingSync = false;
   bool currentSessionSynced = false;
+  bool ntpRequestStarted = false;
   bool networkStopping = false;
   bool configPortalStarting = false;
   bool systemPortalStarting = false;
