@@ -114,11 +114,11 @@ void AlarmPcmPlayer::loop() {
 
 bool AlarmPcmPlayer::writeSamples(size_t samples) {
   for (size_t i = 0; i < samples; ++i) {
-    // ES8311 has one DAC path, while ESP32 I2S uses a conventional stereo
-    // frame. Duplicate mono into both slots so either codec slot selection
-    // receives the same alarm sample.
-    stereoBuffer[i * 2] = monoBuffer[i];
-    stereoBuffer[i * 2 + 1] = monoBuffer[i];
+    // 关键逻辑：PCM 绕过 AudioDriver，必须在送入 I2S 前独立施加闹钟
+    // 增益。使用 32 位乘法保留正负采样范围，再复制到左右声道。
+    int16_t sample = static_cast<int32_t>(monoBuffer[i]) * gain / 32768;
+    stereoBuffer[i * 2] = sample;
+    stereoBuffer[i * 2 + 1] = sample;
   }
 
   size_t requested = samples * 2 * sizeof(int16_t);
@@ -162,6 +162,10 @@ void AlarmPcmPlayer::stop() {
 }
 
 bool AlarmPcmPlayer::isPlaying() const { return active; }
+
+void AlarmPcmPlayer::setGain(uint16_t value) {
+  gain = min(value, static_cast<uint16_t>(32768));
+}
 
 bool AlarmPcmPlayer::parseWav() {
   uint8_t riffHeader[12];

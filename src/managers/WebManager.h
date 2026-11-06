@@ -36,6 +36,8 @@ private:
   void handleSaveTodos();
   void handleGetAlarms();
   void handleSaveAlarms();
+  void handleGetAlarmSettings();
+  void handleSaveAlarmSettings();
   void handleGetRadio();
   void handleSaveRadio();
   void handleGetApiSettings();

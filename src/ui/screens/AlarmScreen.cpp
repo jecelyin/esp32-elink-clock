@@ -1,8 +1,9 @@
 #include "AlarmScreen.h"
 #include "../UIManager.h"
 
-AlarmScreen::AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar)
-    : alarmMgr(alarmMgr), statusBar(statusBar), mode(MODE_LIST),
+AlarmScreen::AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar,
+                         ConfigManager *configMgr)
+    : alarmMgr(alarmMgr), statusBar(statusBar), configMgr(configMgr), mode(MODE_LIST),
       helperText(""), editFocus(FOCUS_HOUR), listFocus(0), listScroll(0),
       partialRefreshPending(false), creatingAlarm(false), editingIndex(0) {
   resetListState();
@@ -44,6 +45,8 @@ bool AlarmScreen::onInput(UIKey key) {
   bool handled = false;
   if (mode == MODE_EDITOR) {
     handled = handleEditorInput(key);
+  } else if (mode == MODE_SOUND) {
+    handled = handleSoundInput(key);
   } else {
     handled = handleListInput(key);
   }
@@ -225,6 +228,10 @@ bool AlarmScreen::handleListInput(UIKey key) {
     beginCreate();
     return true;
   }
+  if (listFocus == getSoundIndex()) {
+    beginSoundSettings();
+    return true;
+  }
   if (listFocus == getBackIndex()) {
     uiManager->switchScreen(SCREEN_MENU);
     return true;
@@ -290,6 +297,10 @@ void AlarmScreen::openEditorForFocus() {
 }
 
 void AlarmScreen::renderContent(DisplayDriver *display) {
+  if (mode == MODE_SOUND) {
+    drawSoundSettings(display);
+    return;
+  }
   if (mode == MODE_LIST) {
     drawList(display);
     return;

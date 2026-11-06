@@ -50,6 +50,10 @@ void WebManager::registerRoutes() {
             [this]() { if (authorizeRequest()) handleGetAlarms(); });
   server.on("/api/alarms", HTTP_POST,
             [this]() { if (authorizeRequest()) handleSaveAlarms(); });
+  server.on("/api/alarm-settings", HTTP_GET,
+            [this]() { if (authorizeRequest()) handleGetAlarmSettings(); });
+  server.on("/api/alarm-settings", HTTP_POST,
+            [this]() { if (authorizeRequest()) handleSaveAlarmSettings(); });
   server.on("/api/radio", HTTP_GET,
             [this]() { if (authorizeRequest()) handleGetRadio(); });
   server.on("/api/radio", HTTP_POST,
@@ -93,19 +97,6 @@ void WebManager::handleSaveTodos() {
     return;
   }
   sendResult(200, true, "Todo saved");
-}
-
-void WebManager::handleGetAlarms() {
-  sendJson(200, alarmMgr->getAlarmsJSON());
-}
-
-void WebManager::handleSaveAlarms() {
-  if (!server.hasArg("plain") ||
-      !alarmMgr->saveAlarmsFromJSON(server.arg("plain"))) {
-    sendResult(400, false, "Alarm data is invalid");
-    return;
-  }
-  sendResult(200, true, "Alarms saved");
 }
 
 void WebManager::handleGetRadio() {
@@ -302,33 +293,6 @@ void WebManager::handleTrashFile() {
   sd->end();
   sendResult(ok ? 200 : 400, ok,
              ok ? "Moved to .trash" : "Move to trash failed");
-}
-
-void WebManager::handleGetRingtones() {
-  JsonDocument doc;
-  JsonArray items = doc.to<JsonArray>();
-  for (size_t i = 0; i < AlarmRingtones::BUILTIN_COUNT; ++i) {
-    JsonObject item = items.add<JsonObject>();
-    item["value"] = AlarmRingtones::BUILTIN[i].value;
-    item["label"] = AlarmRingtones::BUILTIN[i].label;
-    item["builtin"] = true;
-  }
-  if (mountSD()) {
-    for (const FileInfo &file : sd->listDir("/")) {
-      if (!file.isDirectory && file.name.endsWith(".mp3")) {
-        String path = file.name.startsWith("/") ? file.name
-                                                : "/" + file.name;
-        JsonObject item = items.add<JsonObject>();
-        item["value"] = "sd:" + path;
-        item["label"] = "SD 卡 · " + file.name;
-        item["builtin"] = false;
-      }
-    }
-    sd->end();
-  }
-  String json;
-  serializeJson(doc, json);
-  sendJson(200, json);
 }
 
 void WebManager::handleFileUpload() {

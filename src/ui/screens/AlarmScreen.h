@@ -1,12 +1,14 @@
 #pragma once
 
 #include "../../managers/AlarmManager.h"
+#include "../../managers/ConfigManager.h"
 #include "../Screen.h"
 #include "../components/StatusBar.h"
 
 class AlarmScreen : public Screen {
 public:
-  AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar);
+  AlarmScreen(AlarmManager *alarmMgr, StatusBar *statusBar,
+              ConfigManager *configMgr);
 
   void init() override;
   void enter() override;
@@ -14,7 +16,11 @@ public:
   bool onInput(UIKey key) override;
 
 private:
-  enum AlarmScreenMode { MODE_LIST = 0, MODE_EDITOR = 1 };
+  enum AlarmScreenMode { MODE_LIST = 0, MODE_EDITOR = 1, MODE_SOUND = 2 };
+  enum SoundFocus {
+    SOUND_VOLUME_DOWN, SOUND_VOLUME_UP, SOUND_FADE_DOWN, SOUND_FADE_UP,
+    SOUND_SAVE, SOUND_CANCEL, SOUND_FOCUS_COUNT
+  };
 
   static const int FOCUS_HOUR = 0;
   static const int FOCUS_MINUTE_FINE_DOWN = 1;
@@ -34,8 +40,12 @@ private:
 
   AlarmManager *alarmMgr;
   StatusBar *statusBar;
+  ConfigManager *configMgr;
   AlarmScreenMode mode;
   AlarmConfig draftAlarm;
+  AlarmSoundSettings draftSound;
+  int soundFocus = SOUND_VOLUME_DOWN;
+  bool soundSaveError = false;
   String helperText;
   int editFocus;
   int listFocus;
@@ -67,6 +77,7 @@ private:
   int getLastEditorFocus() const;
   int getActionRowCount() const;
   int getAddIndex() const;
+  int getSoundIndex() const;
   int getBackIndex() const;
   int getItemCount() const;
   String getListRowSubtitle(int itemIndex) const;
@@ -93,4 +104,15 @@ private:
   void setRepeatFocus();
   void resetEditorState();
   void resetListState();
+  void beginSoundSettings();
+  bool handleSoundInput(UIKey key);
+  void adjustSoundValue();
+  void saveSoundSettings();
+  void closeSoundSettings();
+  void drawSoundSettings(DisplayDriver *display);
+  void drawSoundValue(DisplayDriver *display, int y, const String &label,
+                      uint8_t value, uint8_t maximum, int downFocus);
+  void drawSoundButton(DisplayDriver *display, int x, int y, int width,
+                       const char *label, int focus);
+  void drawSoundSaveError(DisplayDriver *display);
 };

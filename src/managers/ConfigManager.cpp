@@ -1,5 +1,20 @@
 #include "ConfigManager.h"
 
+namespace {
+uint32_t encodeAlarmSoundSettings(const AlarmSoundSettings &settings) {
+  return static_cast<uint32_t>(settings.volume) |
+         (static_cast<uint32_t>(settings.fadeInSeconds) << 8);
+}
+
+AlarmSoundSettings decodeAlarmSoundSettings(uint32_t stored) {
+  AlarmSoundSettings settings;
+  settings.volume = stored & 0xFF;
+  settings.fadeInSeconds = (stored >> 8) & 0xFF;
+  // 旧设备没有该键时使用默认值；损坏或越界的存储也整体回退，避免意外静音。
+  return stored <= 0xFFFF && settings.isValid() ? settings : AlarmSoundSettings{};
+}
+} // namespace
+
 ConfigManager::ConfigManager() {
   // Defaults
   config.volume = 10;
@@ -30,6 +45,8 @@ void ConfigManager::begin() {
 void ConfigManager::load() {
   lockConfig();
   config.volume = prefs.getUChar("vol", 10);
+  config.alarmSound = decodeAlarmSoundSettings(
+      prefs.getUInt("alarm_sound", encodeAlarmSoundSettings(AlarmSoundSettings{})));
   config.radio_focus_index = prefs.getUChar("radio_focus", 0);
   config.radio_preset_page = prefs.getUChar("radio_page", 0);
   config.radio_seek_step = prefs.getUShort("radio_step", 10);
@@ -100,6 +117,30 @@ void ConfigManager::saveVolume() {
   lockConfig();
   prefs.putUChar("vol", config.volume);
   unlockConfig();
+}
+
+AlarmSoundSettings ConfigManager::getAlarmSoundSettings() const {
+  lockConfig();
+  AlarmSoundSettings settings = config.alarmSound;
+  unlockConfig();
+  return settings;
+}
+
+bool ConfigManager::saveAlarmSoundSettings(const AlarmSoundSettings &settings) {
+  if (!prefsReady || !settings.isValid()) {
+    return false;
+  }
+
+  lockConfig();
+  // 音量和渐强时长合并到一个 NVS 值，避免断电只保存其中一项。
+  // 仅在持久化成功后更新内存，确保界面与重启后的实际配置一致。
+  bool saved = prefs.putUInt("alarm_sound", encodeAlarmSoundSettings(settings)) ==
+               sizeof(uint32_t);
+  if (saved) {
+    config.alarmSound = settings;
+  }
+  unlockConfig();
+  return saved;
 }
 
 void ConfigManager::saveHardwareCheck() {

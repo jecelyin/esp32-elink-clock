@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AlarmSoundSettings.h"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <freertos/FreeRTOS.h>
@@ -9,6 +10,7 @@ static const uint8_t RADIO_PRESET_COUNT = 50;
 
 struct AppConfig {
   uint8_t volume;
+  AlarmSoundSettings alarmSound;
   uint16_t radio_presets[RADIO_PRESET_COUNT];
   uint16_t radio_alias_frequencies[RADIO_PRESET_COUNT];
   String radio_names[RADIO_PRESET_COUNT];
@@ -33,6 +35,8 @@ public:
   String getRadioName(uint16_t frequency) const;
   bool setRadioName(uint16_t frequency, const String &name);
   void saveVolume();
+  AlarmSoundSettings getAlarmSoundSettings() const;
+  bool saveAlarmSoundSettings(const AlarmSoundSettings &settings);
   void saveHardwareCheck();
   void saveRadioUiState();
   void saveRadioPresets();

@@ -1,6 +1,7 @@
 #include "RuntimeFakes.h"
 #include "../../src/config.h"
 #include "../../src/drivers/AlarmPcmPlayer.h"
+#include "../../src/managers/AlarmVolumeRamp.h"
 #include <driver/i2s.h>
 #include <iostream>
 
@@ -114,6 +115,54 @@ void testFailure(bool partial) {
   player.stop();
 }
 
+void assertGain(uint16_t gain) {
+  assert(output.size() == 1024);
+  for (size_t index = 0; index < 512; ++index) {
+    int16_t expected = static_cast<int32_t>(mono[index % mono.size()]) * gain /
+                       AlarmVolumeRamp::UNITY_GAIN;
+    assert(output[index * 2] == expected);
+    assert(output[index * 2 + 1] == expected);
+  }
+}
+
+void testGain() {
+  fs::FS fs;
+  fs.content = makeWav(16000);
+  AlarmPcmPlayer player;
+  assert(player.begin(fs, "/alarm.wav"));
+  for (uint16_t gain : {0, 512, 16384, 32768, 65535}) {
+    player.setGain(gain);
+    player.loop();
+    assertGain(gain > 32768 ? 32768 : gain);
+  }
+  player.stop();
+}
+
+void testFadePlayback() {
+  fs::FS fs;
+  fs.content = makeWav(16000);
+  AlarmPcmPlayer player;
+  AlarmVolumeRamp ramp;
+  AlarmSoundSettings settings;
+  ramp.reset(settings);
+  player.setGain(ramp.gain(0));
+  assert(player.begin(fs, "/alarm.wav"));
+  ramp.start(0);
+  for (uint32_t now = 0; now <= 3100; now += 100) {
+    player.setGain(ramp.gain(now));
+    player.loop(); // WAV 每块循环一次，渐强进度仍持续推进。
+    assertGain(ramp.gain(now));
+  }
+  assertGain(AlarmVolumeRamp::UNITY_GAIN);
+  player.stop();
+  ramp.reset(settings);
+  player.setGain(ramp.gain(4000));
+  assert(player.begin(fs, "/alarm.wav"));
+  player.loop();
+  assertGain(0); // 停止后的新一轮闹钟不会沿用旧响铃的满音量。
+  player.stop();
+}
+
 int main(int argc, char **argv) {
   assert(argc == 2);
   std::string test = argv[1];
@@ -121,6 +170,8 @@ int main(int argc, char **argv) {
   else if (test == "low-rate") testPlayback(610);
   else if (test == "i2s-error") testFailure(false);
   else if (test == "partial-write") testFailure(true);
+  else if (test == "gain") testGain();
+  else if (test == "fade-playback") testFadePlayback();
   else throw std::logic_error("Unknown audio test case: " + test);
   std::cout << "PASS audio-" << test << '\n';
 }

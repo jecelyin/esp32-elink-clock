@@ -25,6 +25,7 @@ const char SYSTEM_WEB_PAGE[] PROGMEM = R"rawliteral(
     .list{display:grid;gap:10px}.item{border:1px solid var(--line);border-radius:10px;padding:12px}.days{display:flex;gap:5px;flex-wrap:wrap}.days label{display:flex;gap:3px;align-items:center;font-size:12px}
     .file{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #eaecf0}.file:last-child{border:0}
     .status{font-size:13px;color:var(--muted)}#toast{position:fixed;right:20px;bottom:20px;max-width:320px;background:#101828;color:#fff;padding:12px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.2s}
+    fieldset{margin:0;padding:0;border:0;min-width:0}.btn:disabled{opacity:.5;cursor:wait}input[type=range]{width:100%;accent-color:var(--accent)}.sound-volume{display:flex;align-items:center;gap:10px}.sound-volume output{white-space:nowrap;min-width:55px}
     #toast.show{opacity:1}.modal-backdrop{display:none;position:fixed;inset:0;background:#10182899;align-items:center;justify-content:center;padding:20px}.modal-backdrop.open{display:flex}
     .modal{background:#fff;width:min(430px,100%);border-radius:12px;padding:20px}.modal h3{margin-top:0}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
     @media(max-width:720px){.shell{grid-template-columns:1fr}aside{height:auto;position:static;padding:14px}aside h1{margin:0 8px 12px}.nav{display:flex;overflow:auto}.nav button{white-space:nowrap}main{padding:18px}.grid{grid-template-columns:1fr}.file{grid-template-columns:1fr auto}.file .secondary{display:none}}
@@ -41,7 +42,13 @@ const char SYSTEM_WEB_PAGE[] PROGMEM = R"rawliteral(
   </nav></aside>
   <main>
     <section id="todos" class="active"><div class="head"><div><h2>首页 Todo</h2><p class="sub">保存在设备 NVS，不依赖 SDCard。</p></div><button class="btn primary" id="saveTodos">保存</button></div><div id="todoList" class="list"></div><button class="btn" id="addTodo">新增事项</button></section>
-    <section id="alarms"><div class="head"><div><h2>闹钟配置</h2><p class="sub">铃声可选择内置文件或 SDCard 根目录 MP3。</p></div><button class="btn primary" id="saveAlarms">保存</button></div><div id="alarmList" class="list"></div><button class="btn" id="addAlarm">新增闹钟</button></section>
+    <section id="alarms"><div class="head"><div><h2>闹钟配置</h2><p class="sub">铃声可选择内置文件或 SDCard 根目录 MP3。</p></div><button class="btn primary" id="saveAlarms">保存闹钟</button></div>
+      <form id="alarmSoundForm" class="card"><fieldset id="alarmSoundFields" disabled>
+        <div class="head"><div><h3>闹钟声音</h3><p class="sub">所有闹钟共用，与音乐和收音机音量分开。</p></div><button class="btn primary" id="saveAlarmSound">保存声音设置</button></div>
+        <div class="grid"><label>闹钟音量<div class="sound-volume"><input id="alarmVolume" type="range" min="0" max="21" step="1" value="21" aria-label="闹钟音量"><output id="alarmVolumeValue" for="alarmVolume">21 / 21</output></div></label>
+        <label>音量渐强时长（秒）<input id="alarmFadeIn" type="number" min="0" max="60" step="1" value="3" required></label></div>
+        <p class="status">响铃时从静音逐渐达到设定音量。0 秒关闭渐强；音量 0 为静音。</p>
+      </fieldset></form><div id="alarmList" class="list"></div><button class="btn" id="addAlarm">新增闹钟</button></section>
     <section id="files"><div class="head"><div><h2>SDCard 文件管理</h2><p class="sub" id="filePath">/</p></div><button class="btn" id="refreshFiles">刷新</button></div><div class="card"><form id="uploadForm" class="row"><input type="file" id="uploadFile" required><button class="btn primary">上传</button></form></div><div class="card" id="fileList"></div></section>
     <section id="radio"><div class="head"><div><h2>收音机</h2><p class="sub">步进单位基于当前 100 kHz 信道模型。</p></div><button class="btn primary" id="saveRadio">保存</button></div><div class="card grid">
       <label>单步频率<select id="radioStep"><option value="10">0.1 MHz</option><option value="20">0.2 MHz</option><option value="50">0.5 MHz</option><option value="100">1.0 MHz</option></select></label>
@@ -77,6 +84,26 @@ const char SYSTEM_WEB_PAGE[] PROGMEM = R"rawliteral(
   function ringtoneSelect(value){const select=document.createElement("select");state.ringtones.forEach(item=>select.add(new Option(item.label,item.value,false,item.value===value)));return select}
   function renderAlarms(){const list=$("#alarmList");list.replaceChildren();state.alarms.forEach((alarm,index)=>{const card=document.createElement("div");card.className="item";const row=document.createElement("div");row.className="row";const enabled=document.createElement("input");enabled.type="checkbox";enabled.checked=alarm.e;enabled.addEventListener("change",()=>alarm.e=enabled.checked);const time=document.createElement("input");time.type="time";time.value=String(alarm.h).padStart(2,"0")+":"+String(alarm.m).padStart(2,"0");time.addEventListener("change",()=>{[alarm.h,alarm.m]=time.value.split(":").map(Number)});const repeat=document.createElement("select");[["每天",0],["指定星期",1],["工作日",2]].forEach(item=>repeat.add(new Option(item[0],item[1],false,Number(alarm.r)===item[1])));const sound=ringtoneSelect(alarm.s);sound.addEventListener("change",()=>alarm.s=sound.value);row.append(enabled,time,repeat,sound,itemButton("移除",()=>{state.alarms.splice(index,1);renderAlarms()},true));const dayBox=buildDays(alarm.w,()=>alarm.w=readDays(dayBox));repeat.addEventListener("change",()=>{const previous=Number(alarm.r);alarm.r=Number(repeat.value);if(alarm.r===1&&previous!==1){alarm.w=0;dayBox.querySelectorAll("input").forEach(input=>input.checked=false)}});card.append(row,dayBox);list.append(card)})}
   async function loadAlarms(){const [alarms,ringtones]=await Promise.all([request("/api/alarms"),request("/api/ringtones")]);state.alarms=alarms;state.ringtones=ringtones;renderAlarms()}
+  function updateAlarmVolumeLabel(){const volume=Number($("#alarmVolume").value);$("#alarmVolumeValue").textContent=volume===0?"静音":volume+" / 21"}
+  function renderAlarmSound(settings){$("#alarmVolume").value=settings.volume;$("#alarmFadeIn").value=settings.fadeInSeconds;updateAlarmVolumeLabel();$("#alarmSoundFields").disabled=false}
+  function showAlarmSoundError(title,error){console.error(error);openModal(title,error.message,null,()=>{})}
+  async function loadAlarmSound(){
+    try{renderAlarmSound(await request("/api/alarm-settings"))}
+    catch(error){showAlarmSoundError("闹钟声音设置加载失败",error)}
+  }
+  async function saveAlarmSound(event){
+    event.preventDefault();
+    const button=$("#saveAlarmSound");button.disabled=true;
+    try{
+      const settings={volume:$("#alarmVolume").valueAsNumber,fadeInSeconds:$("#alarmFadeIn").valueAsNumber};
+      if(!Number.isInteger(settings.volume)||settings.volume<0||settings.volume>21)throw new Error("闹钟音量必须是 0 到 21 之间的整数");
+      if(!Number.isInteger(settings.fadeInSeconds)||settings.fadeInSeconds<0||settings.fadeInSeconds>60)throw new Error("闹钟渐强时长必须是 0 到 60 秒之间的整数");
+      // Render the confirmed values only after the device has persisted both settings.
+      renderAlarmSound(await request("/api/alarm-settings",jsonOptions(settings)));
+      toast("闹钟声音设置已保存");
+    }catch(error){showAlarmSoundError("闹钟声音设置保存失败",error)}
+    finally{button.disabled=false}
+  }
   function addAlarm(){state.alarms.push({h:7,m:30,e:true,r:0,w:127,s:state.ringtones[0].value});renderAlarms()}
   async function loadRadio(){state.radio=await request("/api/radio");$("#radioStep").value=state.radio.step;$("#radioThreshold").value=state.radio.threshold;$("#radioBass").checked=state.radio.bass;$("#radioMono").checked=state.radio.mono;$("#radioSoftMute").checked=state.radio.softMute;const list=$("#stationList");list.replaceChildren();state.radio.stations.forEach(station=>{const row=document.createElement("label");row.className="row";const frequency=document.createElement("span");frequency.textContent=(station.frequency/100).toFixed(1)+" MHz";const name=document.createElement("input");name.type="text";name.maxLength=24;name.value=station.name;name.addEventListener("input",()=>station.name=name.value);row.append(frequency,name);list.append(row)})}
   async function loadApis(){const data=await request("/api/api-settings");$("#weatherToken").placeholder=data.weatherConfigured?"已配置，留空不修改":"未配置";$("#holidayToken").placeholder=data.holidayConfigured?"已配置，留空不修改":"留空使用匿名额度"}
@@ -90,11 +117,12 @@ const char SYSTEM_WEB_PAGE[] PROGMEM = R"rawliteral(
   $("#modalCancel").addEventListener("click",closeModal);$("#modalBackdrop").addEventListener("click",event=>{if(event.target===$("#modalBackdrop"))closeModal()});
   $("#addTodo").addEventListener("click",addTodo);$("#saveTodos").addEventListener("click",()=>run(()=>request("/api/todos",jsonOptions(state.todos)),"Todo 已保存"));
   $("#addAlarm").addEventListener("click",addAlarm);$("#saveAlarms").addEventListener("click",()=>run(()=>request("/api/alarms",jsonOptions(state.alarms)),"闹钟已保存"));
+  $("#alarmVolume").addEventListener("input",updateAlarmVolumeLabel);$("#alarmSoundForm").addEventListener("submit",saveAlarmSound);
   $("#saveRadio").addEventListener("click",()=>run(()=>request("/api/radio",jsonOptions({step:Number($("#radioStep").value),threshold:Number($("#radioThreshold").value),bass:$("#radioBass").checked,mono:$("#radioMono").checked,softMute:$("#radioSoftMute").checked,stations:state.radio.stations})),"收音机设置已保存"));
   function persistApis(){run(()=>request("/api/api-settings",jsonOptions({weatherToken:$("#weatherToken").value,holidayToken:$("#holidayToken").value,clearWeather:$("#clearWeather").checked,clearHoliday:$("#clearHoliday").checked})),"API 设置已保存")}
   $("#saveApis").addEventListener("click",()=>{if($("#clearWeather").checked||$("#clearHoliday").checked)openModal("确认清除 Token","清除后相关在线数据将停止更新。",null,persistApis);else persistApis()});
   $("#refreshFiles").addEventListener("click",()=>run(loadFiles));$("#uploadForm").addEventListener("submit",event=>{event.preventDefault();run(async()=>{const data=new FormData();data.append("file",$("#uploadFile").files[0]);await request("/api/files/upload?path="+encodeURIComponent(state.path),{method:"POST",body:data});$("#uploadForm").reset();await loadFiles()},"文件已上传")});
-  run(async()=>{await Promise.all([loadTodos(),loadAlarms(),loadRadio(),loadApis()]);await loadFiles()});
+  run(async()=>{await Promise.all([loadTodos(),loadAlarms(),loadAlarmSound(),loadRadio(),loadApis()]);await loadFiles()});
 </script>
 </body>
 </html>

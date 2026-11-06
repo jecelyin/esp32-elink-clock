@@ -69,7 +69,7 @@ UIManager::UIManager(DisplayDriver *disp, RtcDriver *rtc,
       new HomeScreen(rtc, weather, sensor, statusBar, todoMgr, conn, alarmMgr);
   menuScreen = new MenuScreen(statusBar);
   calendarScreen = new CalendarScreen(rtc, statusBar, alarmMgr, weather);
-  alarmScreen = new AlarmScreen(alarmMgr, statusBar);
+  alarmScreen = new AlarmScreen(alarmMgr, statusBar, config);
   radioScreen = new RadioScreen(radio, statusBar, config);
   musicScreen = new MusicScreen(music, statusBar, config);
   weatherScreen = new WeatherScreen(weather, statusBar);

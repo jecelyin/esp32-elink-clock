@@ -266,13 +266,15 @@ int AlarmScreen::getLastEditorFocus() const {
   return creatingAlarm ? ACTION_CANCEL : ACTION_TOGGLE_ENABLED;
 }
 
-int AlarmScreen::getActionRowCount() const { return 2; }
+int AlarmScreen::getActionRowCount() const { return 3; }
 
 int AlarmScreen::getAddIndex() const {
   return static_cast<int>(alarmMgr->getAlarmCount());
 }
 
-int AlarmScreen::getBackIndex() const { return getAddIndex() + 1; }
+int AlarmScreen::getSoundIndex() const { return getAddIndex() + 1; }
+
+int AlarmScreen::getBackIndex() const { return getSoundIndex() + 1; }
 
 int AlarmScreen::getItemCount() const {
   return static_cast<int>(alarmMgr->getAlarmCount()) + getActionRowCount();
@@ -281,6 +283,9 @@ int AlarmScreen::getItemCount() const {
 String AlarmScreen::getListRowSubtitle(int itemIndex) const {
   if (itemIndex == getAddIndex()) {
     return "工作日 / 每天 / 多选星期";
+  }
+  if (itemIndex == getSoundIndex()) {
+    return "闹钟音量 / 音量渐强";
   }
   if (itemIndex == getBackIndex()) {
     return "返回菜单";
@@ -291,6 +296,9 @@ String AlarmScreen::getListRowSubtitle(int itemIndex) const {
 String AlarmScreen::getListRowTitle(int itemIndex) const {
   if (itemIndex == getAddIndex()) {
     return "新增闹钟";
+  }
+  if (itemIndex == getSoundIndex()) {
+    return "声音设置";
   }
   if (itemIndex == getBackIndex()) {
     return "返回";

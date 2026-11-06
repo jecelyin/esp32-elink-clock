@@ -9,6 +9,7 @@ public:
   void loop();
   void stop();
   bool isPlaying() const;
+  void setGain(uint16_t gain);
 
 private:
   bool parseWav();
@@ -27,6 +28,7 @@ private:
   bool active = false;
   bool i2sInstalled = false;
   bool firstWriteLogged = false;
+  uint16_t gain = 32768; // Q15，32768 表示原始音量，0 表示静音。
 
   static constexpr size_t MONO_SAMPLES_PER_CHUNK = 512;
   int16_t monoBuffer[MONO_SAMPLES_PER_CHUNK];
